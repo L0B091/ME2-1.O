@@ -29,6 +29,7 @@ data class LocalAssetMemory(
 data class LocalJoiMemory(
     val version: Int = 2,
     val userId: String,
+    val characterName: String? = null,
     val preferredName: String? = null,
     val conversation: MutableList<LocalConversationEntry> = mutableListOf(),
     val shortTermFocus: String = "general",
@@ -45,6 +46,7 @@ data class LocalJoiMemory(
     fun toJson(): JSONObject = JSONObject().apply {
         put("version", version)
         put("userId", userId)
+        characterName?.let { put("characterName", it) }
         preferredName?.let { put("preferredName", it) }
         put("shortTermFocus", shortTermFocus)
         put("shortTermIntent", shortTermIntent)
@@ -69,6 +71,7 @@ data class LocalJoiMemory(
     fun toBackendContext(): JSONObject = JSONObject().apply {
         put("source", "android_local_primary")
         put("version", version)
+        characterName?.let { put("characterName", it) }
         put("shortTermFocus", shortTermFocus)
         put("shortTermIntent", shortTermIntent)
         preferredName?.let { put("preferredName", it) }
@@ -93,6 +96,7 @@ data class LocalJoiMemory(
             return LocalJoiMemory(
                 version = json.optInt("version", 1).coerceAtLeast(1),
                 userId = json.optString("userId"),
+                characterName = json.optString("characterName").ifBlank { null },
                 preferredName = json.optString("preferredName").ifBlank { null },
                 conversation = jsonArrayToConversation(json.optJSONArray("conversation")),
                 shortTermFocus = json.optString("shortTermFocus", "general"),
@@ -221,6 +225,7 @@ class LocalMemoryStore(context: Context) {
     fun isEffectivelyEmpty(userId: String): Boolean {
         val memory = load(userId)
         return memory.conversation.isEmpty() &&
+            memory.characterName.isNullOrBlank() &&
             memory.preferredName.isNullOrBlank() &&
             memory.persistentMemories.isEmpty() &&
             memory.importantMemories.isEmpty() &&
@@ -232,9 +237,9 @@ class LocalMemoryStore(context: Context) {
         val memory = load(userId)
         val text = rawText.trim()
         if (text.isEmpty()) return
-        val preferredName = extractPreferredName(text, memory) ?: memory.preferredName
+        val characterName = extractCharacterName(text, memory) ?: memory.characterName
         val updated = memory.copy(
-            preferredName = preferredName,
+            characterName = characterName,
             conversation = (memory.conversation + LocalConversationEntry("user", text, nextMessageTime(memory)))
                 .takeLast(200)
                 .toMutableList(),
@@ -313,34 +318,53 @@ class LocalMemoryStore(context: Context) {
         }
     }
 
-    private fun extractPreferredName(text: String, memory: LocalJoiMemory): String? {
-        extractPreferredNameFromPattern(text)?.let { return it }
+    private fun extractCharacterName(text: String, memory: LocalJoiMemory): String? {
+        extractCharacterNameFromPattern(text)?.let { return it }
         val lastAssistantMessage = memory.conversation.lastOrNull { it.role == "assistant" }?.text.orEmpty()
-        return if (PREFERRED_NAME_PROMPT.containsMatchIn(lastAssistantMessage)) {
-            normalizePreferredName(text)
+        return if (CHARACTER_NAME_PROMPT in lastAssistantMessage) {
+            normalizeCharacterName(text)
         } else {
             null
         }
     }
 
-    private fun extractPreferredNameFromPattern(text: String): String? {
+    private fun extractCharacterNameFromPattern(text: String): String? {
         val patterns = listOf(
-            Regex("""(?:quiero|quisiera|prefiero)\s+que\s+me\s+llames?\s+(.+)""", RegexOption.IGNORE_CASE),
-            Regex("""(?:pod[eé]s|puedes)\s+llamarme\s+(.+)""", RegexOption.IGNORE_CASE),
-            Regex("""ll[aá]mame\s+(.+)""", RegexOption.IGNORE_CASE),
-            Regex("""me\s+llamo\s+(.+)""", RegexOption.IGNORE_CASE),
-            Regex("""mi\s+nombre\s+es\s+(.+)""", RegexOption.IGNORE_CASE)
+            "quiero que te llames ",
+            "quiero llamarte ",
+            "te voy a llamar ",
+            "voy a llamarte ",
+            "quiero ponerte ",
+            "quiero darte ",
+            "tu nombre va a ser ",
+            "tu nombre será ",
+            "tu nombre sera ",
+            "vas a llamarte ",
+            "te llamaré ",
+            "te llamare "
         )
+        val lowered = text.lowercase(Locale.US).trim()
         for (pattern in patterns) {
-            val match = pattern.find(text) ?: continue
-            val value = match.groupValues.getOrNull(1).orEmpty()
-                .split(Regex("""(?:\s+por\s+|,\s*|[.?!])"""))[0]
-            normalizePreferredName(value)?.let { return it }
+            val index = lowered.indexOf(pattern)
+            if (index < 0) continue
+            val value = text.substring(index + pattern.length)
+            normalizeCharacterName(trimCharacterName(value))?.let { return it }
         }
         return null
     }
 
-    private fun normalizePreferredName(raw: String): String? {
+    private fun trimCharacterName(raw: String): String {
+        val lowered = raw.lowercase(Locale.US)
+        val separators = listOf(" por ", " y además", " y ademas", " pero ", " porque ", ",", ".", "?", "!", ";", ":")
+        var cut = raw.length
+        for (separator in separators) {
+            val index = lowered.indexOf(separator)
+            if (index >= 0 && index < cut) cut = index
+        }
+        return raw.substring(0, cut)
+    }
+
+    private fun normalizeCharacterName(raw: String): String? {
         val cleaned = raw.trim()
             .trim('"', '\'', '“', '”', '‘', '’', '.', ',', ';', ':', '!', '?', '…')
             .replace(Regex("""\s+"""), " ")
@@ -350,8 +374,9 @@ class LocalMemoryStore(context: Context) {
         }
         val lowered = cleaned.lowercase(Locale.US)
         if (lowered in setOf(
-                "vos", "tú", "tu", "usted", "como quieras", "da igual",
-                "hola", "holi", "buenas", "buen día", "buen dia", "gracias", "ninguno"
+                "joi", "me2", "hola", "holi", "buenas", "gracias", "ninguno",
+                "como quieras", "da igual", "sin nombre", "ningún nombre", "ningun nombre",
+                "nombre", "un nombre", "nickname", "un nickname", "apodo", "un apodo"
             )
         ) return null
         if (cleaned.split(" ").size > 4) return null
@@ -408,7 +433,6 @@ class LocalMemoryStore(context: Context) {
     }
 
     companion object {
-        private val PREFERRED_NAME_PROMPT =
-            Regex("""c[oó]mo quer[eé]s que te llame""", RegexOption.IGNORE_CASE)
+        private const val CHARACTER_NAME_PROMPT = "¿Qué nombre o nickname querés que tenga?"
     }
 }

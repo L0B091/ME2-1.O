@@ -5,9 +5,15 @@ import orquestador from "../orquestador/orquestadorChat.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
 import datosUsuario from "../memoria/datosUsuario.js";
 
-test("pregunta cómo llamar al usuario en el primer contacto", async () => {
-  const result = await orquestador("Hola", {
-    userId: "pref-name-first-contact",
+test("no asigna un nombre por defecto al personaje", () => {
+  assert.equal(preferenciaNombre.obtenerNombrePersonaje({}), null);
+  assert.equal(preferenciaNombre.normalizarNombre("Joi"), null);
+  assert.equal(preferenciaNombre.normalizarNombre("ME2"), null);
+});
+
+test("pregunta por el nombre del personaje cuando el usuario quiere asignarlo", async () => {
+  const result = await orquestador("Quiero ponerte un nombre.", {
+    userId: "character-name-ask",
     memoriaLocal: {
       source: "android_local_primary",
       recentConversation: [],
@@ -18,50 +24,29 @@ test("pregunta cómo llamar al usuario en el primer contacto", async () => {
     }
   });
 
-  assert.equal(result.respuesta, "Antes de empezar, ¿cómo querés que te llame?");
+  assert.equal(result.respuesta, "Claro. ¿Qué nombre o nickname querés que tenga?");
 });
 
-test("confirma el nombre preferido cuando el usuario lo indica", async () => {
-  const result = await orquestador("Quiero que me llames Alex.", {
-    userId: "pref-name-confirmation",
-    memoriaLocal: {
-      source: "android_local_primary",
-      recentConversation: [],
-      persistentMemories: [],
-      importantMemories: [],
-      codeMemories: [],
-      fiscalMemories: []
-    }
-  });
-
-  assert.equal(result.respuesta, "Perfecto, Alex.");
-});
-
-test("interpreta una respuesta breve después de preguntar el nombre", () => {
-  const nombre = preferenciaNombre.extraerNombrePreferido("Mora", {
+test("interpreta una respuesta breve como nombre del personaje después de preguntar", () => {
+  const nombre = preferenciaNombre.extraerNombrePersonaje("Luna", {
     memoriaLocal: {
       recentConversation: [
-        { role: "assistant", text: "Hola, soy ME2. Antes de empezar, ¿cómo querés que te llame?" }
+        { role: "assistant", text: "Claro. ¿Qué nombre o nickname querés que tenga?" }
       ]
     }
   });
 
-  assert.equal(nombre, "Mora");
+  assert.equal(nombre, "Luna");
 });
 
-test("guarda y recupera la preferencia de nombre en la memoria existente", () => {
-  const userId = "pref-name-storage";
+test("guarda y confirma el nombre del personaje", async () => {
+  const userId = "character-name-save";
   try {
-    preferenciaNombre.guardarNombrePreferido(userId, "Alex");
+    const result = await orquestador("Quiero que te llames Nova.", { userId });
+    assert.equal(result.respuesta, "Perfecto. Entonces voy a llamarme Nova.");
     assert.equal(
-      datosUsuario.obtener(userId)?.configuracion?.nombrePreferido,
-      "Alex"
-    );
-    assert.equal(
-      preferenciaNombre.obtenerNombrePreferido({
-        datosUsuario: datosUsuario.obtener(userId)
-      }),
-      "Alex"
+      datosUsuario.obtener(userId)?.configuracion?.nombrePersonaje,
+      "Nova"
     );
   } finally {
     datosUsuario.reset(userId);

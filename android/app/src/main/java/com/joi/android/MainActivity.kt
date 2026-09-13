@@ -262,9 +262,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun seedConversation() {
         if (fullConversation.isNotEmpty()) return
-        val intro = localMemoryStore.load(currentSession.id).preferredName
-            ?.let { "Hola, $it. Soy ME2 y ya estoy lista para acompañarte." }
-            ?: "Hola, soy ME2. Antes de empezar, ¿cómo querés que te llame?"
+        val intro = localMemoryStore.load(currentSession.id).characterName
+            ?.let { "Hola. Podés llamarme $it." }
+            ?: "Hola. Estoy lista para acompañarte."
         fullConversation += ChatMessage(intro, true)
         localMemoryStore.appendAssistantMessage(currentSession.id, intro)
         visibleConversation += fullConversation

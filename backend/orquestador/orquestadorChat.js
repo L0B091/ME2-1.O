@@ -52,7 +52,7 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
 
   return {
     source: memoriaLocal.source || "android_local_primary",
-    preferredName: memoriaLocal.preferredName || null,
+    characterName: memoriaLocal.characterName || null,
     shortTermFocus: memoriaLocal.shortTermFocus || null,
     shortTermIntent: memoriaLocal.shortTermIntent || null,
     recentConversation,
@@ -73,22 +73,21 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   let memoriaUsuario = null;
-  const memoriaLocal = normalizarMemoriaLocal(
-    contexto.memoriaLocal
-  );
+  const memoriaLocal = Object.prototype.hasOwnProperty.call(contexto, "memoriaLocal")
+    ? normalizarMemoriaLocal(contexto.memoriaLocal)
+    : null;
   const persistirEnServidor =
-    memoriaLocal?.source !== "android_local_primary";
-  const nombreDetectado = preferenciaNombre.extraerNombrePreferido(
+    !memoriaLocal || memoriaLocal.source !== "android_local_primary";
+  const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(
     mensajeUsuario,
     { memoriaLocal }
   );
 
-  if (contexto.userId && nombreDetectado && persistirEnServidor) {
-    datosUsuario.actualizar(contexto.userId, {
-      configuracion: {
-        nombrePreferido: nombreDetectado
-      }
-    });
+  if (contexto.userId && nombrePersonajeDetectado && persistirEnServidor) {
+    preferenciaNombre.guardarNombrePersonaje(
+      contexto.userId,
+      nombrePersonajeDetectado
+    );
   }
 
   if (contexto.userId) {
@@ -158,18 +157,18 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     }
   };
 
-  if (nombreDetectado) {
+  if (nombrePersonajeDetectado) {
     contextoCompleto.memoriaLocal = {
       ...(contextoCompleto.memoriaLocal || {}),
-      preferredName: nombreDetectado
+      characterName: nombrePersonajeDetectado
     };
   }
 
-  const nombrePreferido = preferenciaNombre.obtenerNombrePreferido({
+  const nombrePersonaje = preferenciaNombre.obtenerNombrePersonaje({
     ...contextoCompleto,
     datosUsuario: contexto.userId ? datosUsuario.obtener(contexto.userId) : null
   });
-  contextoCompleto.preferredUserName = nombrePreferido;
+  contextoCompleto.characterName = nombrePersonaje;
 
   if (memoriaLocal?.shortTermFocus) {
     contextoCompleto.memoriaSistema = {
@@ -215,10 +214,13 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   contextoCompleto.personalidad = perfilPersonalidad;
 
-  if (nombreDetectado || preferenciaNombre.debePreguntarNombre(mensajeUsuario, contextoCompleto)) {
-    const respuesta = nombreDetectado
-      ? preferenciaNombre.construirConfirmacion(nombreDetectado)
-      : preferenciaNombre.construirPreguntaNombre();
+  if (
+    nombrePersonajeDetectado ||
+    preferenciaNombre.debePreguntarNombrePersonaje(mensajeUsuario, contextoCompleto)
+  ) {
+    const respuesta = nombrePersonajeDetectado
+      ? preferenciaNombre.construirConfirmacionNombrePersonaje(nombrePersonajeDetectado)
+      : preferenciaNombre.construirPreguntaNombrePersonaje();
     const expresion = expresionFinal.aplicarExpresionFinal(
       respuesta,
       contextoCompleto
@@ -245,8 +247,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
         memoriaLocal,
         memoriaUsuario,
         memoriaSistema,
-        preferredUserName: contextoCompleto.preferredUserName,
-        nombreDetectado
+        characterName: contextoCompleto.characterName,
+        nombrePersonajeDetectado
       }
     };
   }

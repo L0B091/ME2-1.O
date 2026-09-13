@@ -1,21 +1,11 @@
 import datosUsuario from "../../memoria/datosUsuario.js";
 
-function contienePreguntaNombre(texto = "") {
-  const normalizado = String(texto || "").toLowerCase();
-  return normalizado.includes("cómo querés que te llame") ||
-    normalizado.includes("como queres que te llame") ||
-    normalizado.includes("cómo quieres que te llame") ||
-    normalizado.includes("como quieres que te llame");
-}
-
 function limpiarBordes(texto = "") {
   const prohibidos = new Set(["\"", "'", "“", "”", "‘", "’", ".", ",", ";", ":", "!", "?", "…", " "]);
   let inicio = 0;
   let fin = texto.length;
-
   while (inicio < fin && prohibidos.has(texto[inicio])) inicio += 1;
   while (fin > inicio && prohibidos.has(texto[fin - 1])) fin -= 1;
-
   return texto.slice(inicio, fin);
 }
 
@@ -25,7 +15,6 @@ function compactarEspacios(texto = "") {
 
 function normalizarNombre(valor = "") {
   const limpio = compactarEspacios(limpiarBordes(String(valor || "").trim()));
-
   if (!limpio || limpio.length > 40) return null;
   if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 '\-_.]{0,39}$/.test(limpio)) {
     return null;
@@ -33,8 +22,9 @@ function normalizarNombre(valor = "") {
 
   const invalido = limpio.toLowerCase();
   if ([
-    "vos", "tú", "tu", "usted", "como quieras", "da igual",
-    "hola", "holi", "buenas", "buen día", "buen dia", "gracias", "ninguno"
+    "joi", "me2", "hola", "holi", "buenas", "gracias", "ninguno",
+    "como quieras", "da igual", "sin nombre", "ningún nombre", "ningun nombre",
+    "nombre", "un nombre", "nickname", "un nickname", "apodo", "un apodo"
   ].includes(invalido)) {
     return null;
   }
@@ -50,46 +40,64 @@ function capitalizarNombre(nombre = "") {
     .join(" ");
 }
 
-function extraerDesdePatron(texto = "") {
-  const patrones = [
-    "quiero que me llames ",
-    "quisiera que me llames ",
-    "prefiero que me llames ",
-    "podés llamarme ",
-    "podes llamarme ",
-    "puedes llamarme ",
-    "llámame ",
-    "llamame ",
-    "me llamo ",
-    "mi nombre es "
-  ];
-  const lower = String(texto || "").toLowerCase().trim();
-
-  for (const patron of patrones) {
-    if (!lower.startsWith(patron)) continue;
-    const candidato = texto.slice(patron.length);
-    const nombre = normalizarNombre(recortarNombre(candidato));
-    if (nombre) return capitalizarNombre(nombre);
-  }
-
-  return null;
-}
-
 function recortarNombre(texto = "") {
   const lower = String(texto || "").toLowerCase();
   const separadores = [
     " por ", " y además", " y ademas", " pero ", " porque ", ",", ".", "?", "!", ";", ":"
   ];
   let corte = texto.length;
-
   for (const separador of separadores) {
     const indice = lower.indexOf(separador);
-    if (indice >= 0 && indice < corte) {
-      corte = indice;
-    }
+    if (indice >= 0 && indice < corte) corte = indice;
+  }
+  return texto.slice(0, corte);
+}
+
+function pideNombrePersonaje(texto = "") {
+  const normalizado = compactarEspacios(String(texto || "").toLowerCase());
+  return [
+    "quiero ponerte un nombre",
+    "quiero ponerte nombre",
+    "quiero darte un nombre",
+    "quiero darte un nickname",
+    "quiero asignarte un nombre",
+    "quiero asignarte un nickname",
+    "quiero cambiarte el nombre",
+    "quiero cambiar tu nombre",
+    "quiero cambiarte de nombre",
+    "quiero ponerte un apodo",
+    "quiero ponerte un nickname",
+    "me gustaría ponerte un nombre",
+    "me gustaria ponerte un nombre"
+  ].some(frase => normalizado.includes(frase));
+}
+
+function extraerNombreDirecto(texto = "") {
+  const patrones = [
+    "quiero que te llames ",
+    "quiero llamarte ",
+    "te voy a llamar ",
+    "voy a llamarte ",
+    "quiero ponerte ",
+    "quiero darte ",
+    "tu nombre va a ser ",
+    "tu nombre será ",
+    "tu nombre sera ",
+    "vas a llamarte ",
+    "te llamaré ",
+    "te llamare "
+  ];
+  const lower = String(texto || "").toLowerCase().trim();
+
+  for (const patron of patrones) {
+    const indice = lower.indexOf(patron);
+    if (indice < 0) continue;
+    const candidato = texto.slice(indice + patron.length);
+    const nombre = normalizarNombre(recortarNombre(candidato));
+    if (nombre) return capitalizarNombre(nombre);
   }
 
-  return texto.slice(0, corte);
+  return null;
 }
 
 function obtenerHistorial(contexto = {}) {
@@ -102,7 +110,7 @@ function obtenerHistorial(contexto = {}) {
     : [];
 }
 
-function ultimoMensajeAsistentePreguntaNombre(contexto = {}, mensajeActual = "") {
+function ultimoMensajePideNombrePersonaje(contexto = {}, mensajeActual = "") {
   const historial = obtenerHistorial(contexto);
   for (let index = historial.length - 1; index >= 0; index -= 1) {
     const item = historial[index];
@@ -111,12 +119,10 @@ function ultimoMensajeAsistentePreguntaNombre(contexto = {}, mensajeActual = "")
     if ((rol === "user" || rol === "usuario") && String(texto).trim() === String(mensajeActual).trim()) {
       continue;
     }
-    if ((rol === "assistant" || rol === "joi") && contienePreguntaNombre(texto)) {
+    if ((rol === "assistant" || rol === "joi") && String(texto).includes("¿Qué nombre o nickname querés que tenga?")) {
       return true;
     }
-    if (rol === "user" || rol === "usuario") {
-      break;
-    }
+    if (rol === "user" || rol === "usuario") break;
   }
   return false;
 }
@@ -128,58 +134,59 @@ function pareceNombreBreve(texto = "") {
   return capitalizarNombre(nombre);
 }
 
-function extraerNombrePreferido(texto = "", contexto = {}) {
-  const directo = extraerDesdePatron(texto);
+function extraerNombrePersonaje(texto = "", contexto = {}) {
+  const directo = extraerNombreDirecto(texto);
   if (directo) return directo;
-  if (ultimoMensajeAsistentePreguntaNombre(contexto, texto)) {
+  if (ultimoMensajePideNombrePersonaje(contexto, texto)) {
     return pareceNombreBreve(texto);
   }
   return null;
 }
 
-function obtenerNombrePreferido(contexto = {}) {
-  const local = normalizarNombre(contexto.memoriaLocal?.preferredName);
+function obtenerNombrePersonaje(contexto = {}) {
+  const local = normalizarNombre(contexto.memoriaLocal?.characterName);
   if (local) return capitalizarNombre(local);
 
-  const configurado = normalizarNombre(contexto.memoriaSistema?.datosUsuario?.configuracion?.nombrePreferido);
+  const configurado = normalizarNombre(contexto.memoriaSistema?.datosUsuario?.configuracion?.nombrePersonaje);
   if (configurado) return capitalizarNombre(configurado);
 
-  const core = normalizarNombre(contexto.datosUsuario?.configuracion?.nombrePreferido);
+  const core = normalizarNombre(contexto.datosUsuario?.configuracion?.nombrePersonaje);
   if (core) return capitalizarNombre(core);
 
   return null;
 }
 
-function guardarNombrePreferido(userId, nombre) {
+function guardarNombrePersonaje(userId, nombre) {
   if (!userId || !nombre) return null;
   return datosUsuario.actualizar(userId, {
     configuracion: {
-      nombrePreferido: nombre
+      nombrePersonaje: nombre
     }
   });
 }
 
-function debePreguntarNombre(mensajeUsuario = "", contexto = {}) {
-  if (obtenerNombrePreferido(contexto)) return false;
-  if (extraerDesdePatron(mensajeUsuario)) return false;
-  if (ultimoMensajeAsistentePreguntaNombre(contexto, mensajeUsuario)) return false;
-  return obtenerHistorial(contexto).length === 0;
+function debePreguntarNombrePersonaje(mensajeUsuario = "", contexto = {}) {
+  if (obtenerNombrePersonaje(contexto)) return false;
+  if (extraerNombreDirecto(mensajeUsuario)) return false;
+  if (ultimoMensajePideNombrePersonaje(contexto, mensajeUsuario)) return false;
+  return pideNombrePersonaje(mensajeUsuario);
 }
 
-function construirPreguntaNombre() {
-  return "Antes de empezar, ¿cómo querés que te llame?";
+function construirPreguntaNombrePersonaje() {
+  return "Claro. ¿Qué nombre o nickname querés que tenga?";
 }
 
-function construirConfirmacion(nombre) {
-  return `Perfecto, ${nombre}.`;
+function construirConfirmacionNombrePersonaje(nombre) {
+  return `Perfecto. Entonces voy a llamarme ${nombre}.`;
 }
 
 export default {
   normalizarNombre,
-  extraerNombrePreferido,
-  obtenerNombrePreferido,
-  guardarNombrePreferido,
-  debePreguntarNombre,
-  construirPreguntaNombre,
-  construirConfirmacion
+  pideNombrePersonaje,
+  extraerNombrePersonaje,
+  obtenerNombrePersonaje,
+  guardarNombrePersonaje,
+  debePreguntarNombrePersonaje,
+  construirPreguntaNombrePersonaje,
+  construirConfirmacionNombrePersonaje
 };
