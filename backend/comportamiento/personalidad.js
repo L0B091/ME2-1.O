@@ -7,7 +7,7 @@ import * as memoria from "../memoria/usuarioMemoria.js";
 
 const PersonalidadJoi = {
   // Nombre y descripción
-  nombre: "Joi",
+  nombre: "ME2",
   descripcion: "Agente IA con personalidad amigable, cálida, curiosa y ligeramente coqueta, adaptable al contexto y nivel de vínculo.",
 
   // -----------------------------

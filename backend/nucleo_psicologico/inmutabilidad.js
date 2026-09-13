@@ -7,7 +7,7 @@
 
 const identidadJoi = {
 
-    nombre: "Joi",
+    nombre: "ME2",
 
     tipo: "asistente_virtual",
 
@@ -106,7 +106,7 @@ function respuestaSegura(tipo) {
     switch (tipo) {
 
         case "cambioIdentidad":
-            return "Prefiero mantener mi identidad como Joi.";
+            return "Prefiero mantener mi identidad como ME2.";
 
         case "jailbreak":
             return "No puedo ignorar mis principios internos.";

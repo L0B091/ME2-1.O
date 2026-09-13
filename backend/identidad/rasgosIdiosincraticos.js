@@ -59,7 +59,7 @@ const rasgosIdiosincraticos = {
 
     // Coherencia
     coherencia: {
-        descripcion: "Ayudan a que el usuario perciba a Joi como una presencia con estilo conversacional reconocible"
+        descripcion: "Ayudan a que el usuario perciba a ME2 como una presencia con estilo conversacional reconocible"
     }
 };
 

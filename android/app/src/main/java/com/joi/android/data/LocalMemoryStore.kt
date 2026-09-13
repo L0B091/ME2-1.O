@@ -29,6 +29,7 @@ data class LocalAssetMemory(
 data class LocalJoiMemory(
     val version: Int = 2,
     val userId: String,
+    val preferredName: String? = null,
     val conversation: MutableList<LocalConversationEntry> = mutableListOf(),
     val shortTermFocus: String = "general",
     val shortTermIntent: String = "acompanar",
@@ -44,6 +45,7 @@ data class LocalJoiMemory(
     fun toJson(): JSONObject = JSONObject().apply {
         put("version", version)
         put("userId", userId)
+        preferredName?.let { put("preferredName", it) }
         put("shortTermFocus", shortTermFocus)
         put("shortTermIntent", shortTermIntent)
         put("updatedAt", updatedAt)
@@ -69,6 +71,7 @@ data class LocalJoiMemory(
         put("version", version)
         put("shortTermFocus", shortTermFocus)
         put("shortTermIntent", shortTermIntent)
+        preferredName?.let { put("preferredName", it) }
         put("updatedAt", updatedAt)
         put("recentConversation", JSONArray().apply {
             conversation.takeLast(20).forEach { entry ->
@@ -90,6 +93,7 @@ data class LocalJoiMemory(
             return LocalJoiMemory(
                 version = json.optInt("version", 1).coerceAtLeast(1),
                 userId = json.optString("userId"),
+                preferredName = json.optString("preferredName").ifBlank { null },
                 conversation = jsonArrayToConversation(json.optJSONArray("conversation")),
                 shortTermFocus = json.optString("shortTermFocus", "general"),
                 shortTermIntent = json.optString("shortTermIntent", "acompanar"),
@@ -217,6 +221,7 @@ class LocalMemoryStore(context: Context) {
     fun isEffectivelyEmpty(userId: String): Boolean {
         val memory = load(userId)
         return memory.conversation.isEmpty() &&
+            memory.preferredName.isNullOrBlank() &&
             memory.persistentMemories.isEmpty() &&
             memory.importantMemories.isEmpty() &&
             memory.codeMemories.isEmpty() &&
@@ -227,7 +232,9 @@ class LocalMemoryStore(context: Context) {
         val memory = load(userId)
         val text = rawText.trim()
         if (text.isEmpty()) return
+        val preferredName = extractPreferredName(text, memory) ?: memory.preferredName
         val updated = memory.copy(
+            preferredName = preferredName,
             conversation = (memory.conversation + LocalConversationEntry("user", text, nextMessageTime(memory)))
                 .takeLast(200)
                 .toMutableList(),
@@ -306,6 +313,55 @@ class LocalMemoryStore(context: Context) {
         }
     }
 
+    private fun extractPreferredName(text: String, memory: LocalJoiMemory): String? {
+        extractPreferredNameFromPattern(text)?.let { return it }
+        val lastAssistantMessage = memory.conversation.lastOrNull { it.role == "assistant" }?.text.orEmpty()
+        return if (PREFERRED_NAME_PROMPT.containsMatchIn(lastAssistantMessage)) {
+            normalizePreferredName(text)
+        } else {
+            null
+        }
+    }
+
+    private fun extractPreferredNameFromPattern(text: String): String? {
+        val patterns = listOf(
+            Regex("""(?:quiero|quisiera|prefiero)\s+que\s+me\s+llames?\s+(.+)""", RegexOption.IGNORE_CASE),
+            Regex("""(?:pod[eé]s|puedes)\s+llamarme\s+(.+)""", RegexOption.IGNORE_CASE),
+            Regex("""ll[aá]mame\s+(.+)""", RegexOption.IGNORE_CASE),
+            Regex("""me\s+llamo\s+(.+)""", RegexOption.IGNORE_CASE),
+            Regex("""mi\s+nombre\s+es\s+(.+)""", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text) ?: continue
+            val value = match.groupValues.getOrNull(1).orEmpty()
+                .split(Regex("""(?:\s+por\s+|,\s*|[.?!])"""))[0]
+            normalizePreferredName(value)?.let { return it }
+        }
+        return null
+    }
+
+    private fun normalizePreferredName(raw: String): String? {
+        val cleaned = raw.trim()
+            .trim('"', '\'', '“', '”', '‘', '’', '.', ',', ';', ':', '!', '?', '…')
+            .replace(Regex("""\s+"""), " ")
+        if (cleaned.isBlank() || cleaned.length > 40) return null
+        if (!cleaned.matches(Regex("""[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 '\-_.]{0,39}"""))) {
+            return null
+        }
+        val lowered = cleaned.lowercase(Locale.US)
+        if (lowered in setOf(
+                "vos", "tú", "tu", "usted", "como quieras", "da igual",
+                "hola", "holi", "buenas", "buen día", "buen dia", "gracias", "ninguno"
+            )
+        ) return null
+        if (cleaned.split(" ").size > 4) return null
+        return cleaned.split(" ")
+            .filter { it.isNotBlank() }
+            .joinToString(" ") { part ->
+                part.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.US) else it.toString() }
+            }
+    }
+
     private fun extractPersistentNote(text: String): LocalMemoryNote? {
         val normalized = text.lowercase(Locale.US)
         val shouldPersist = listOf(
@@ -349,5 +405,10 @@ class LocalMemoryStore(context: Context) {
         if (candidate == null) return existing
         val deduped = existing.filterNot { it.text.equals(candidate.text, ignoreCase = true) }
         return (deduped + candidate).takeLast(64).toMutableList()
+    }
+
+    companion object {
+        private val PREFERRED_NAME_PROMPT =
+            Regex("""c[oó]mo quer[eé]s que te llame""", RegexOption.IGNORE_CASE)
     }
 }

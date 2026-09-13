@@ -173,7 +173,7 @@ class MainActivity : AppCompatActivity() {
         val planLabel = if (session.isPremium) "ESTABLE (PREMIUM)" else "ESTABLE (FREE)"
         binding.statusText.text = "ESTADO // $planLabel"
         binding.legendText.text = buildString {
-            append(if (backendClient.isConfigured()) "[JOI] ${getString(R.string.bitacora_sync_wait)}\n" else "[JOI] MODO LOCAL PRIMARIO\n")
+            append(if (backendClient.isConfigured()) "[ME2] ${getString(R.string.bitacora_sync_wait)}\n" else "[ME2] MODO LOCAL PRIMARIO\n")
             append("[MEMORIA] MEMORIA LOCAL MULTICAPA ACTIVA\n")
             append("[USUARIO] SESIÓN VINCULADA A ${session.email.uppercase(Locale.getDefault())}\n")
             append("[SISTEMA] VIDEO LOCAL, CHAT, NOTIFICACIONES Y BITÁCORA DISPONIBLES")
@@ -223,8 +223,8 @@ class MainActivity : AppCompatActivity() {
             ensureNotificationPermission()
             notificationCoordinator.showMessageNotification(
                 userId = currentSession.id,
-                title = "JOI",
-                message = "Canal JOI_MESSAGES listo para prueba."
+                title = "ME2",
+                message = "Canal de mensajes listo para prueba."
             )
             Toast.makeText(this, getString(R.string.message_notification_sent), Toast.LENGTH_SHORT).show()
         }
@@ -262,10 +262,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun seedConversation() {
         if (fullConversation.isNotEmpty()) return
-        fullConversation += ChatMessage("SINCRONIZACIÓN COMPLETA. ESTOY LISTA PARA CUSTODIAR TU JORNADA.", true)
-        fullConversation += ChatMessage("APRENDO DE TUS INTERACCIONES Y AJUSTO MI CONTEXTO AUTOMÁTICAMENTE.", true)
-        localMemoryStore.appendAssistantMessage(currentSession.id, "Sincronización completa. Estoy lista para custodiar tu jornada.")
-        localMemoryStore.appendAssistantMessage(currentSession.id, "Aprendo de tus interacciones y ajusto mi contexto automáticamente.")
+        val intro = localMemoryStore.load(currentSession.id).preferredName
+            ?.let { "Hola, $it. Soy ME2 y ya estoy lista para acompañarte." }
+            ?: "Hola, soy ME2. Antes de empezar, ¿cómo querés que te llame?"
+        fullConversation += ChatMessage(intro, true)
+        localMemoryStore.appendAssistantMessage(currentSession.id, intro)
         visibleConversation += fullConversation
         renderConversation()
     }
@@ -323,7 +324,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPremiumDialog() {
         val builder = AlertDialog.Builder(this)
-            .setTitle("PREMIUM JOI")
+            .setTitle("PREMIUM ME2")
             .setMessage("MODO PREMIUM HABILITA M/A, MEMORIA EXTENDIDA, GESTIÓN DE ARCHIVOS Y RESPALDO DE MEMORIA COMPLETA DURANTE 30 DÍAS.")
 
         if (currentSession.isPremium && !currentSession.authToken.isNullOrBlank()) {

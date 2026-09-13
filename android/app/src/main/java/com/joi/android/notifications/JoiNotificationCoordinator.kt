@@ -90,7 +90,7 @@ class JoiNotificationCoordinator(private val context: Context) {
     }
 
     fun showInitiativeNotification(userId: String, initiative: JSONObject): Boolean =
-        showMessageNotification(userId, "JOI", initiative.getString("mensaje").take(240), false, initiative.getString("id"))
+        showMessageNotification(userId, "ME2", initiative.getString("mensaje").take(240), false, initiative.getString("id"))
 
     fun cancelInitiative(userId: String, id: String) {
         NotificationManagerCompat.from(context).cancel(initiativeTag(userId, id), id.hashCode())

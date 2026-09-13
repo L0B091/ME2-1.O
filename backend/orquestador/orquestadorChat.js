@@ -33,6 +33,8 @@ import premiumManager from "../modulos/premium/premiumManager.js";
 import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import personalityEngine from "../modulos/personalidad/personalityEngine.js";
+import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
+import datosUsuario from "../memoria/datosUsuario.js";
 
 function normalizarMemoriaLocal(memoriaLocal = {}) {
   if (!memoriaLocal || typeof memoriaLocal !== "object") {
@@ -50,6 +52,7 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
 
   return {
     source: memoriaLocal.source || "android_local_primary",
+    preferredName: memoriaLocal.preferredName || null,
     shortTermFocus: memoriaLocal.shortTermFocus || null,
     shortTermIntent: memoriaLocal.shortTermIntent || null,
     recentConversation,
@@ -75,6 +78,18 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   );
   const persistirEnServidor =
     memoriaLocal?.source !== "android_local_primary";
+  const nombreDetectado = preferenciaNombre.extraerNombrePreferido(
+    mensajeUsuario,
+    { memoriaLocal }
+  );
+
+  if (contexto.userId && nombreDetectado && persistirEnServidor) {
+    datosUsuario.actualizar(contexto.userId, {
+      configuracion: {
+        nombrePreferido: nombreDetectado
+      }
+    });
+  }
 
   if (contexto.userId) {
     try {
@@ -143,6 +158,19 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     }
   };
 
+  if (nombreDetectado) {
+    contextoCompleto.memoriaLocal = {
+      ...(contextoCompleto.memoriaLocal || {}),
+      preferredName: nombreDetectado
+    };
+  }
+
+  const nombrePreferido = preferenciaNombre.obtenerNombrePreferido({
+    ...contextoCompleto,
+    datosUsuario: contexto.userId ? datosUsuario.obtener(contexto.userId) : null
+  });
+  contextoCompleto.preferredUserName = nombrePreferido;
+
   if (memoriaLocal?.shortTermFocus) {
     contextoCompleto.memoriaSistema = {
       ...memoriaSistema,
@@ -186,6 +214,42 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     );
 
   contextoCompleto.personalidad = perfilPersonalidad;
+
+  if (nombreDetectado || preferenciaNombre.debePreguntarNombre(mensajeUsuario, contextoCompleto)) {
+    const respuesta = nombreDetectado
+      ? preferenciaNombre.construirConfirmacion(nombreDetectado)
+      : preferenciaNombre.construirPreguntaNombre();
+    const expresion = expresionFinal.aplicarExpresionFinal(
+      respuesta,
+      contextoCompleto
+    );
+    const video = selectorVideo.seleccionarVideo(
+      contextoCompleto,
+      expresion.metadata
+    );
+
+    if (contexto.userId && respuesta && persistirEnServidor) {
+      historialConversacion.registrarMensaje(
+        contexto.userId,
+        respuesta,
+        "joi"
+      );
+    }
+
+    return {
+      respuesta: expresion.mensaje,
+      expresion: expresion.metadata,
+      video,
+      premium: contextoCompleto.memoriaEspecializada.premium,
+      debug: {
+        memoriaLocal,
+        memoriaUsuario,
+        memoriaSistema,
+        preferredUserName: contextoCompleto.preferredUserName,
+        nombreDetectado
+      }
+    };
+  }
 
   let debugMemoriaEscritura = null;
 

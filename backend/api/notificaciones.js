@@ -34,11 +34,11 @@ function notificarBuenosDias(usuarioID, mensajeCorto) {
 }
 
 function notificarRecordatorio(usuarioID, evento, fecha) {
-  return enviarNotificacion(usuarioID, "Recordatorio de Joi", `No olvides: ${evento} el ${new Date(fecha).toLocaleString()}`, "alta");
+  return enviarNotificacion(usuarioID, "Recordatorio de ME2", `No olvides: ${evento} el ${new Date(fecha).toLocaleString()}`, "alta");
 }
 
 function notificarNoticias(usuarioID, noticia) {
-  return enviarNotificacion(usuarioID, "Joi te informa", noticia, "baja");
+  return enviarNotificacion(usuarioID, "ME2 te informa", noticia, "baja");
 }
 
 function notificarAlarma(usuarioID, mensaje) {

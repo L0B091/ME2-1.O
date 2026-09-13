@@ -149,7 +149,7 @@ class JoiBackendClient {
         )
 
         return BackendChatResult(
-            reply = json.optString("respuesta", "JOI recibió el mensaje, pero no devolvió texto."),
+            reply = json.optString("respuesta", "ME2 recibió el mensaje, pero no devolvió texto."),
             tone = json.optJSONObject("expresion")?.optString("tono"),
             rhythm = json.optJSONObject("expresion")?.optString("ritmo"),
             microExpression = json.optJSONObject("expresion")?.optString("microexpresion"),
@@ -327,7 +327,7 @@ class JoiBackendClient {
                     vibration = item.optString("vibration", "double"),
                     sound = item.optString("sound", "bubble"),
                     title = item.optString("titulo", "Hora de despertar"),
-                    message = item.optString("mensaje", "JOI registró tu protocolo de despertar.")
+                    message = item.optString("mensaje", "ME2 registró tu protocolo de despertar.")
                 )
             }
         }
@@ -336,7 +336,7 @@ class JoiBackendClient {
             userId = json.optString("userID", json.optString("userId")),
             hour = json.optString("hora"),
             title = json.optString("titulo", "Hora de despertar"),
-            message = json.optString("mensaje", "JOI registró tu protocolo de despertar."),
+            message = json.optString("mensaje", "ME2 registró tu protocolo de despertar."),
             state = json.optString("estado", "ACTIVE"),
             stage = json.optInt("stage", 1),
             attempts = json.optInt("intentos", 0),

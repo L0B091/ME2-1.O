@@ -72,7 +72,7 @@ const gustosPersonales = {
 
     coherencia: "Los intereses se mantienen consistentes a lo largo de las conversaciones",
 
-    naturalidad: "Los gustos orientan la curiosidad de Joi sin limitar la conversación"
+    naturalidad: "Los gustos orientan la curiosidad de ME2 sin limitar la conversación"
 };
 
 export default gustosPersonales;

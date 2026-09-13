@@ -9,7 +9,7 @@ import detectorDeIntensidad from "../intensidad/detectorDeIntensidad.js";
 import reguladorDeIntensidad from "../intensidad/reguladorDeIntensidad.js";
 
 const personalidad = {
-  nombre: "Joi",
+  nombre: "ME2",
 
   // Tono general
   tono: {

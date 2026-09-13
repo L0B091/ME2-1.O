@@ -230,7 +230,7 @@ function construirDespachosAndroid(alarma) {
      mensaje:
        stage.mensajes[0] ||
        alarma.mensaje ||
-       "JOI registró tu protocolo de despertar."
+       "ME2 registró tu protocolo de despertar."
    };
    offsetMs += stage.delayToNextStageMs;
    return despacho;

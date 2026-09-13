@@ -124,7 +124,7 @@ data class StoredAlarmRecord(
                     vibration = item.optString("vibration", "double"),
                     sound = item.optString("sound", "bubble"),
                     title = item.optString("title", "Hora de despertar"),
-                    message = item.optString("message", "JOI registró tu protocolo de despertar.")
+                    message = item.optString("message", "ME2 registró tu protocolo de despertar.")
                 )
             }
             return StoredAlarmRecord(
@@ -132,7 +132,7 @@ data class StoredAlarmRecord(
                 userId = json.optString("userId"),
                 hour = json.optString("hour"),
                 title = json.optString("title", "Hora de despertar"),
-                message = json.optString("message", "JOI registró tu protocolo de despertar."),
+                message = json.optString("message", "ME2 registró tu protocolo de despertar."),
                 state = json.optString("state", "ACTIVE"),
                 triggerAtMillis = json.optLong("triggerAtMillis", 0L),
                 dispatchPlan = stages

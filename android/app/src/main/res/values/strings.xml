@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">JOI</string>
-    <string name="login_title">J O I</string>
+    <string name="app_name">ME2</string>
+    <string name="login_title">M E 2</string>
     <string name="login_subtitle">AUTO-SYNC // READY</string>
     <string name="login_google">INGRESAR CON GOOGLE</string>
     <string name="login_email_hint">EMAIL</string>
@@ -19,11 +19,11 @@
     <string name="premium_cta">MODO PREMIUM</string>
     <string name="send">Enviar</string>
     <string name="autosync_active">AUTO-SYNC // ACTIVE</string>
-    <string name="joi_data_stream">JOI // DATA_STREAM</string>
+    <string name="joi_data_stream">ME2 // DATA_STREAM</string>
     <string name="message_hint">ESCRIBIR MENSAJE...</string>
     <string name="nodo_prefix">NODO_ID //</string>
     <string name="audio_widget">Audio widget</string>
-    <string name="offline_memory_notice">SIN CONEXIÓN. JOI CONSERVA TU MEMORIA LOCAL HASTA RECUPERAR EL BACKEND.</string>
+    <string name="offline_memory_notice">SIN CONEXIÓN. ME2 CONSERVA TU MEMORIA LOCAL HASTA RECUPERAR EL BACKEND.</string>
     <string name="premium_backup_done">RESPALDO PREMIUM ACTUALIZADO.</string>
     <string name="premium_backup_failed">NO SE PUDO RESPALDAR LA MEMORIA PREMIUM.</string>
     <string name="premium_restore_done">MEMORIA PREMIUM RESTAURADA LOCALMENTE.</string>
@@ -34,17 +34,17 @@
     <string name="bitacora_sync_wait">AUTO-SYNC // WAITING BACKEND</string>
     <string name="premium_backup">RESPALDAR MEMORIA</string>
     <string name="premium_restore">RESTAURAR RESPALDO</string>
-    <string name="notification_permission_needed">JOI NECESITA PERMISO DE NOTIFICACIONES.</string>
-    <string name="exact_alarm_permission_needed">JOI NECESITA PERMISO DE ALARMAS EXACTAS.</string>
-    <string name="message_notification_sent">AVISO JOI ENVIADO.</string>
+    <string name="notification_permission_needed">ME2 NECESITA PERMISO DE NOTIFICACIONES.</string>
+    <string name="exact_alarm_permission_needed">ME2 NECESITA PERMISO DE ALARMAS EXACTAS.</string>
+    <string name="message_notification_sent">AVISO ME2 ENVIADO.</string>
     <string name="alarm_requires_backend">NECESITAS LOGIN LOCAL/BACKEND PARA ALARMAS.</string>
-    <string name="alarm_test_scheduled">ALARMA JOI PROGRAMADA.</string>
-    <string name="alarm_cancelled">ALARMA JOI CANCELADA.</string>
-    <string name="alarm_none_active">NO HAY ALARMAS JOI ACTIVAS.</string>
+    <string name="alarm_test_scheduled">ALARMA ME2 PROGRAMADA.</string>
+    <string name="alarm_cancelled">ALARMA ME2 CANCELADA.</string>
+    <string name="alarm_none_active">NO HAY ALARMAS ME2 ACTIVAS.</string>
     <string name="notification_alarm_opened">EVENTO DE ALARMA RECIBIDO.</string>
-    <string name="notification_message_opened">AVISO JOI RECIBIDO.</string>
+    <string name="notification_message_opened">AVISO ME2 RECIBIDO.</string>
     <string name="alarm_protocol_title">Hora de despertar</string>
-    <string name="alarm_protocol_message">JOI registró tu protocolo de despertar.</string>
+    <string name="alarm_protocol_message">ME2 registró tu protocolo de despertar.</string>
     <string name="initiative_settings">INICIATIVA Y DESCANSO</string>
     <string name="initiative_enable">Activar iniciativas</string>
     <string name="initiative_disable">Pausar iniciativas (las alarmas siguen activas)</string>

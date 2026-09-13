@@ -31,6 +31,7 @@ function estructuraBase(userId) {
       idioma: "es",
       zonaHoraria: null,
       plan: "free",
+      nombrePreferido: null,
       widgetSeleccionado: null
     },
 
@@ -129,6 +130,12 @@ function normalizarUsuario(userId, usuario) {
         typeof usuario.configuracion.plan === "string"
           ? usuario.configuracion.plan
           : base.configuracion.plan,
+
+      nombrePreferido:
+        usuario.configuracion &&
+        typeof usuario.configuracion.nombrePreferido === "string"
+          ? usuario.configuracion.nombrePreferido
+          : null,
 
       widgetSeleccionado:
         usuario.configuracion &&
@@ -322,6 +329,11 @@ function actualizar(userId, datos = {}) {
     if (typeof datos.configuracion.plan === "string") {
       usuario.configuracion.plan =
         datos.configuracion.plan;
+    }
+
+    if (typeof datos.configuracion.nombrePreferido === "string") {
+      usuario.configuracion.nombrePreferido =
+        datos.configuracion.nombrePreferido;
     }
 
     if (typeof datos.configuracion.widgetSeleccionado === "string") {

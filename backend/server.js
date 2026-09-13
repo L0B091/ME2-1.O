@@ -113,7 +113,7 @@ function serializarAlarma(alarma) {
 app.get("/", (req, res) => {
   res.json({
     ok: true,
-    servicio: "JOI BACKEND",
+    servicio: "ME2 BACKEND",
     estado: "activo",
     endpoints: ["/health", "/chat", "/api/auth/*", "/api/bitacora/me"]
   });
@@ -122,7 +122,7 @@ app.get("/", (req, res) => {
 app.get("/health", healthRateLimit, (req, res) => {
   res.status(200).json({
     ok: true,
-    servicio: "Joi Backend",
+    servicio: "ME2 Backend",
     estado: "activo",
     timestamp: new Date().toISOString(),
     llm: veniceClient.obtenerDiagnostico(),
@@ -467,5 +467,5 @@ app.use((err, _req, res, _next) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`🚀 JOI corriendo en http://localhost:${server.address().port}`);
+  console.log(`🚀 ME2 corriendo en http://localhost:${server.address().port}`);
 });

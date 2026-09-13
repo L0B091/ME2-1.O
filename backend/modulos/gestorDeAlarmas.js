@@ -75,7 +75,7 @@ function crearAlarma(userID, hora, data = {}) {
     userID,
     hora: horaNormalizada,
     titulo: data.titulo || "Hora de despertar",
-    mensaje: data.mensaje || "JOI registró tu protocolo de despertar.",
+    mensaje: data.mensaje || "ME2 registró tu protocolo de despertar.",
     stage: Number(data.stage || 1),
     intentos: Number(data.intentos || 0),
     estado: "ACTIVE",

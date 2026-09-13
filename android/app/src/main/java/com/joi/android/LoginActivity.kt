@@ -80,7 +80,7 @@ class LoginActivity : AppCompatActivity() {
         }
 
         val fallbackSession = UserSession(
-            displayName = account.displayName ?: "Usuario JOI",
+            displayName = account.displayName ?: "Usuario ME2",
             email = account.email ?: "",
             id = account.id ?: account.email ?: "user-${System.currentTimeMillis()}",
             photoUrl = account.photoUrl?.toString()

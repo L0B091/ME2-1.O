@@ -18,10 +18,10 @@ object JoiNotificationChannels {
 
         val messageChannel = NotificationChannel(
             CHANNEL_MESSAGES,
-            "JOI Messages",
+            "ME2 Messages",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Mensajes y avisos de JOI"
+            description = "Mensajes y avisos de ME2"
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 120, 70, 120)
             setSound(
@@ -35,10 +35,10 @@ object JoiNotificationChannels {
 
         val alarmChannel = NotificationChannel(
             CHANNEL_ALARMS,
-            "JOI Alarms",
+            "ME2 Alarms",
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Alarmas y protocolo de despertar de JOI"
+            description = "Alarmas y protocolo de despertar de ME2"
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 300, 150, 500, 150, 700)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC

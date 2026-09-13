@@ -75,7 +75,7 @@ async function generarLinkPago(userId, feature = "M/A") {
     items: [
       {
         id: `joi-premium-${feature}`,
-        title: `JOI Premium 30 días - ${feature}`,
+        title: `ME2 Premium 30 días - ${feature}`,
         quantity: 1,
         currency_id: "ARS",
         unit_price: precioARS

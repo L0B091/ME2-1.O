@@ -25,7 +25,7 @@ class JoiAlarmReceiver : BroadcastReceiver() {
             vibration = if (stageNumber >= 3) "alarm" else "double",
             sound = if (stageNumber >= 3) "alarm" else "bubble",
             title = title.ifBlank { "Hora de despertar" },
-            message = message.ifBlank { "JOI registró tu protocolo de despertar." }
+            message = message.ifBlank { "ME2 registró tu protocolo de despertar." }
         )
 
         JoiNotificationCoordinator(context).showAlarmNotification(userId, alarmId, stage)

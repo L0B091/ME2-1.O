@@ -105,7 +105,7 @@ function explicarPlan(feature = "M/A") {
     precioARS: obtenerPrecioPremium(),
     duracionDias: PREMIUM_DIAS,
     renovacionAutomatica: false,
-    mensaje: `Para usar ${feature}, JOI habilita Premium por ${PREMIUM_DIAS} días mediante Mercado Pago. No se renueva automáticamente.`,
+    mensaje: `Para usar ${feature}, ME2 habilita Premium por ${PREMIUM_DIAS} días mediante Mercado Pago. No se renueva automáticamente.`,
     free: PLAN.free,
     premium: PLAN.premium
   };
