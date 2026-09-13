@@ -1,12 +1,30 @@
 import datosUsuario from "../../memoria/datosUsuario.js";
 
-const PREGUNTA_NOMBRE_REGEX = /c[oó]mo quer[eé]s que te llame/i;
+function contienePreguntaNombre(texto = "") {
+  const normalizado = String(texto || "").toLowerCase();
+  return normalizado.includes("cómo querés que te llame") ||
+    normalizado.includes("como queres que te llame") ||
+    normalizado.includes("cómo quieres que te llame") ||
+    normalizado.includes("como quieres que te llame");
+}
+
+function limpiarBordes(texto = "") {
+  const prohibidos = new Set(["\"", "'", "“", "”", "‘", "’", ".", ",", ";", ":", "!", "?", "…", " "]);
+  let inicio = 0;
+  let fin = texto.length;
+
+  while (inicio < fin && prohibidos.has(texto[inicio])) inicio += 1;
+  while (fin > inicio && prohibidos.has(texto[fin - 1])) fin -= 1;
+
+  return texto.slice(inicio, fin);
+}
+
+function compactarEspacios(texto = "") {
+  return String(texto || "").split(/\s+/).filter(Boolean).join(" ");
+}
 
 function normalizarNombre(valor = "") {
-  const limpio = String(valor || "")
-    .trim()
-    .replace(/^["'“”‘’\s]+|["'“”‘’.,;:!?…\s]+$/g, "")
-    .replace(/\s+/g, " ");
+  const limpio = compactarEspacios(limpiarBordes(String(valor || "").trim()));
 
   if (!limpio || limpio.length > 40) return null;
   if (!/^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9][A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9 '\-_.]{0,39}$/.test(limpio)) {
@@ -34,21 +52,44 @@ function capitalizarNombre(nombre = "") {
 
 function extraerDesdePatron(texto = "") {
   const patrones = [
-    /(?:quiero|quisiera|prefiero)\s+que\s+me\s+llames?\s+(.+)$/i,
-    /(?:pod[eé]s|puedes)\s+llamarme\s+(.+)$/i,
-    /ll[aá]mame\s+(.+)$/i,
-    /me\s+llamo\s+(.+)$/i,
-    /mi\s+nombre\s+es\s+(.+)$/i
+    "quiero que me llames ",
+    "quisiera que me llames ",
+    "prefiero que me llames ",
+    "podés llamarme ",
+    "podes llamarme ",
+    "puedes llamarme ",
+    "llámame ",
+    "llamame ",
+    "me llamo ",
+    "mi nombre es "
   ];
+  const lower = String(texto || "").toLowerCase().trim();
 
   for (const patron of patrones) {
-    const match = String(texto || "").match(patron);
-    if (!match?.[1]) continue;
-    const nombre = normalizarNombre(match[1].split(/(?:\s+por\s+|,\s*|[.?!])/)[0]);
+    if (!lower.startsWith(patron)) continue;
+    const candidato = texto.slice(patron.length);
+    const nombre = normalizarNombre(recortarNombre(candidato));
     if (nombre) return capitalizarNombre(nombre);
   }
 
   return null;
+}
+
+function recortarNombre(texto = "") {
+  const lower = String(texto || "").toLowerCase();
+  const separadores = [
+    " por ", " y además", " y ademas", " pero ", " porque ", ",", ".", "?", "!", ";", ":"
+  ];
+  let corte = texto.length;
+
+  for (const separador of separadores) {
+    const indice = lower.indexOf(separador);
+    if (indice >= 0 && indice < corte) {
+      corte = indice;
+    }
+  }
+
+  return texto.slice(0, corte);
 }
 
 function obtenerHistorial(contexto = {}) {
@@ -70,7 +111,7 @@ function ultimoMensajeAsistentePreguntaNombre(contexto = {}, mensajeActual = "")
     if ((rol === "user" || rol === "usuario") && String(texto).trim() === String(mensajeActual).trim()) {
       continue;
     }
-    if ((rol === "assistant" || rol === "joi") && PREGUNTA_NOMBRE_REGEX.test(String(texto))) {
+    if ((rol === "assistant" || rol === "joi") && contienePreguntaNombre(texto)) {
       return true;
     }
     if (rol === "user" || rol === "usuario") {
