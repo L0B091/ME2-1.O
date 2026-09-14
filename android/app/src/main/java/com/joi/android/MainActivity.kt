@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +17,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.GravityCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
@@ -42,6 +45,13 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
+    private enum class AvatarMode { LOOP_NEUTRAL, CONTEXTUAL, PRESENTATION }
+
+    private data class AvatarSelection(
+        val label: String,
+        val gallery: IntArray
+    )
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var sessionStorage: SessionStorage
     private lateinit var localMemoryStore: LocalMemoryStore
@@ -57,10 +67,23 @@ class MainActivity : AppCompatActivity() {
     private val premiumBackupCrypto = PremiumBackupCrypto()
 
     private var player: ExoPlayer? = null
+    private var currentAvatarClipResId: Int? = null
+    private var lastAvatarClipResId: Int? = null
+    private var avatarMode: AvatarMode = AvatarMode.LOOP_NEUTRAL
+    private var currentAvatarGallery: IntArray = intArrayOf(R.raw.joi_texting)
+    private var hasPlayedPresentation = false
     private var sessionStartedAt: Long = 0L
     private lateinit var currentSession: UserSession
     private var startedFromEmptyLocalMemory: Boolean = false
     private var backupMaterial: String? = null
+
+    private val loopNeutralGallery = intArrayOf(R.raw.joi_texting)
+    private val presentationGallery = intArrayOf(R.raw.avatar_presentacion_01)
+    private val calidaGallery = intArrayOf(R.raw.avatar_calida_01)
+    private val alegreGallery = intArrayOf(R.raw.avatar_alegre_01)
+    private val atentaGallery = intArrayOf(R.raw.avatar_atenta_01)
+    private val aliviadaGallery = intArrayOf(R.raw.avatar_aliviada_01)
+    private val agradecidaGallery = intArrayOf(R.raw.avatar_agradecida_01)
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -99,7 +122,9 @@ class MainActivity : AppCompatActivity() {
         setupVideo()
 
         startedFromEmptyLocalMemory = localMemoryStore.isEffectivelyEmpty(currentSession.id)
+        val launchedWithEvent = intent?.getStringExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE) != null
         hydrateConversation()
+        if (!launchedWithEvent) maybePlayPresentation()
         localMemoryStore.observe(currentSession.id).observe(this) { record ->
             if (record != null) hydrateConversation()
         }
@@ -118,6 +143,7 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         sessionStartedAt = SystemClock.elapsedRealtime()
+        restoreAvatarPresence(forceReload = currentAvatarClipResId == null)
         player?.playWhenReady = true
         if (::currentSession.isInitialized) initiativeStore.observeInteraction(currentSession.id)
     }
@@ -137,6 +163,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        binding.playerView.player = null
         player?.release()
         player = null
         super.onDestroy()
@@ -251,12 +278,23 @@ class MainActivity : AppCompatActivity() {
     private fun setupVideo() {
         player = ExoPlayer.Builder(this).build().also { exoPlayer ->
             binding.playerView.player = exoPlayer
-            val mediaItem = MediaItem.fromUri(Uri.parse("android.resource://$packageName/${R.raw.joi_texting}"))
-            exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.repeatMode = ExoPlayer.REPEAT_MODE_ALL
+            binding.playerView.setKeepContentOnPlayerReset(true)
+            binding.playerView.setShutterBackgroundColor(Color.TRANSPARENT)
+            exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
             exoPlayer.volume = 0f
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
+            exoPlayer.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_ENDED) {
+                        handleAvatarPlaybackEnded()
+                    }
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    Log.e("JoiAvatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
+                    fallbackToLoopNeutral(forceReload = true)
+                }
+            })
+            fallbackToLoopNeutral(forceReload = true, resetStateLabel = true)
         }
     }
 
@@ -291,7 +329,9 @@ class MainActivity : AppCompatActivity() {
             fullConversation += message
             if (entry.timestamp > memory.hiddenConversationThrough) visibleConversation += message
         }
-        binding.avatarStateText.text = "STATE // ${memory.shortTermFocus.uppercase(Locale.getDefault())}"
+        if (avatarMode == AvatarMode.LOOP_NEUTRAL) {
+            binding.avatarStateText.text = "STATE // ${memory.shortTermFocus.uppercase(Locale.getDefault())}"
+        }
         renderConversation()
     }
 
@@ -309,6 +349,7 @@ class MainActivity : AppCompatActivity() {
         initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
         binding.avatarStateText.text = "STATE // SYNCING"
+        fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
         renderConversation()
         dispatchChat(content, initiative)
     }
@@ -384,7 +425,7 @@ class MainActivity : AppCompatActivity() {
         visibleConversation += joiReply
         localMemoryStore.appendAssistantMessage(currentSession.id, reply)
         binding.avatarStateText.text = "STATE // $state"
-        binding.videoCaption.text = "AVATAR // LOCAL CLIP // $detail"
+        applyAssistantAvatarState(state, detail)
         renderConversation()
     }
 
@@ -500,6 +541,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleIncomingIntent(intent: Intent?) {
         intent ?: return
+        restoreAvatarPresence()
         val eventType = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE) ?: return
         val title = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_TITLE).orEmpty()
         val message = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_MESSAGE).orEmpty()
@@ -533,6 +575,132 @@ class MainActivity : AppCompatActivity() {
 
         intent.removeExtra(JoiNotificationCoordinator.EXTRA_EVENT_TYPE)
     }
+
+    private fun restoreAvatarPresence(forceReload: Boolean = false) {
+        if (player == null) {
+            setupVideo()
+            return
+        }
+        fallbackToLoopNeutral(
+            forceReload = forceReload || !galleryContainsCurrentClip(loopNeutralGallery),
+            resetStateLabel = currentAvatarClipResId == null
+        )
+    }
+
+    private fun maybePlayPresentation() {
+        if (!startedFromEmptyLocalMemory || hasPlayedPresentation) return
+        val exoPlayer = player ?: return
+        val clip = resolveNextClip(presentationGallery, currentAvatarClipResId) ?: return
+        hasPlayedPresentation = true
+        avatarMode = AvatarMode.PRESENTATION
+        currentAvatarGallery = presentationGallery
+        binding.videoCaption.text = "AVATAR // LOCAL CLIP // PRESENTACION"
+        playAvatarClip(exoPlayer, clip)
+    }
+
+    private fun applyAssistantAvatarState(state: String, detail: String) {
+        val selection = resolveAvatarSelection(state, detail)
+        if (selection == null) {
+            fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+            return
+        }
+        val exoPlayer = player ?: return
+        val clip = resolveNextClip(selection.gallery, currentAvatarClipResId)
+        if (clip == null) {
+            fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+            return
+        }
+        avatarMode = AvatarMode.CONTEXTUAL
+        currentAvatarGallery = selection.gallery
+        binding.videoCaption.text = "AVATAR // LOCAL CLIP // ${selection.label}"
+        playAvatarClip(exoPlayer, clip)
+    }
+
+    private fun resolveAvatarSelection(state: String, detail: String): AvatarSelection? {
+        val normalizedState = state.uppercase(Locale.getDefault())
+        val normalizedDetail = detail.uppercase(Locale.getDefault())
+        val tokens = "$normalizedState $normalizedDetail"
+        return when {
+            normalizedState == "OFFLINE" || normalizedState == "NOTICE" -> null
+            normalizedDetail == "LOCAL" || normalizedDetail == "SYNC" || normalizedDetail == "MESSAGE" || normalizedDetail.startsWith("STAGE_") -> null
+            tokens.contains("AGRADEC") -> AvatarSelection("AGRADECIDA", agradecidaGallery)
+            tokens.contains("ALEGRE") || tokens.contains("HAPPY") || tokens.contains("FELIZ") || tokens.contains("SONRISA") -> AvatarSelection("ALEGRE", alegreGallery)
+            tokens.contains("ATENTA") || tokens.contains("LISTENING") || tokens.contains("MIRADA_ATENTA") || tokens.contains("THINK") -> AvatarSelection("ATENTA", atentaGallery)
+            tokens.contains("ALIVIADA") || tokens.contains("CALMA") || tokens.contains("TRISTE") -> AvatarSelection("ALIVIADA", aliviadaGallery)
+            normalizedState.isNotBlank() || normalizedDetail.isNotBlank() -> AvatarSelection("CALIDA", calidaGallery)
+            else -> null
+        }
+    }
+
+    private fun handleAvatarPlaybackEnded() {
+        when (avatarMode) {
+            AvatarMode.PRESENTATION, AvatarMode.CONTEXTUAL -> fallbackToLoopNeutral(forceReload = true)
+            AvatarMode.LOOP_NEUTRAL -> {
+                val exoPlayer = player ?: return
+                playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipResId))
+            }
+        }
+    }
+
+    private fun fallbackToLoopNeutral(forceReload: Boolean = false, resetStateLabel: Boolean = false) {
+        avatarMode = AvatarMode.LOOP_NEUTRAL
+        currentAvatarGallery = loopNeutralGallery
+        if (resetStateLabel) {
+            binding.avatarStateText.text = "STATE // NEUTRAL"
+        }
+        binding.videoCaption.text = "AVATAR // LOCAL CLIP // LOOP_NEUTRAL"
+        ensureAvatarPlayback(forceReload = forceReload)
+    }
+
+    private fun ensureAvatarPlayback(forceReload: Boolean = false) {
+        val exoPlayer = player ?: return
+        val gallery = currentAvatarGallery
+        val desiredClip = when {
+            forceReload -> pickNextClip(gallery, currentAvatarClipResId)
+            currentAvatarClipResId == null -> pickNextClip(gallery, lastAvatarClipResId)
+            !galleryContainsCurrentClip(gallery) -> pickNextClip(gallery, currentAvatarClipResId)
+            else -> currentAvatarClipResId ?: loopNeutralGallery.first()
+        }
+        if (!forceReload && desiredClip == currentAvatarClipResId) {
+            exoPlayer.playWhenReady = true
+            return
+        }
+        playAvatarClip(exoPlayer, desiredClip)
+    }
+
+    private fun playAvatarClip(exoPlayer: ExoPlayer, clipResId: Int) {
+        if (!isClipAvailable(clipResId)) {
+            if (clipResId != loopNeutralGallery.first()) {
+                fallbackToLoopNeutral(forceReload = true)
+            }
+            return
+        }
+        lastAvatarClipResId = currentAvatarClipResId
+        currentAvatarClipResId = clipResId
+        exoPlayer.setMediaItem(MediaItem.fromUri(Uri.parse("android.resource://$packageName/$clipResId")))
+        exoPlayer.prepare()
+        exoPlayer.playWhenReady = true
+    }
+
+    private fun galleryContainsCurrentClip(gallery: IntArray): Boolean =
+        currentAvatarClipResId?.let { clipResId -> gallery.contains(clipResId) && isClipAvailable(clipResId) } == true
+
+    private fun resolveNextClip(gallery: IntArray, previousClipResId: Int?): Int? {
+        val available = gallery.filter(::isClipAvailable)
+        if (available.isEmpty()) return null
+        if (available.size == 1 || previousClipResId == null) return available.first()
+        val previousIndex = available.indexOf(previousClipResId).takeIf { it >= 0 } ?: return available.first()
+        return available[(previousIndex + 1) % available.size]
+    }
+
+    private fun pickNextClip(gallery: IntArray, previousClipResId: Int?): Int =
+        resolveNextClip(gallery, previousClipResId) ?: loopNeutralGallery.first()
+
+    private fun isClipAvailable(clipResId: Int): Boolean =
+        runCatching {
+            resources.openRawResourceFd(clipResId)?.close()
+            true
+        }.getOrDefault(false)
 
     private fun openInitiative(intent: Intent) {
         val userId = intent.getStringExtra(JoiNotificationCoordinator.EXTRA_USER_ID)
