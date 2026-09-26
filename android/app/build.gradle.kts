@@ -18,13 +18,14 @@ val googleWebClientId = firstNonBlank(
     System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
 )
 
+// Product path: Google Sign-In is the only login. Default ON.
 val enableGoogleAuth =
     firstNonBlank(
         findProperty("ME2_ENABLE_GOOGLE_AUTH") as String?,
         System.getenv("ME2_ANDROID_ENABLE_GOOGLE_AUTH"),
         findProperty("JOI_ENABLE_GOOGLE_AUTH") as String?,
         System.getenv("JOI_ANDROID_ENABLE_GOOGLE_AUTH"),
-        "false"
+        "true"
     ).toBoolean()
 
 plugins {

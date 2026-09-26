@@ -2,13 +2,13 @@
 <resources>
     <string name="app_name">ME2</string>
     <string name="login_title">M E 2</string>
-    <string name="login_subtitle">AUTO-SYNC // READY</string>
+    <string name="login_subtitle">INGRESÁ CON GOOGLE</string>
     <string name="login_google">INGRESAR CON GOOGLE</string>
     <string name="login_email_hint">EMAIL</string>
     <string name="login_password_hint">CLAVE</string>
     <string name="login_local">INGRESAR</string>
     <string name="register_local">CREAR CUENTA</string>
-    <string name="login_mode_beta">BETA // LOGIN LOCAL ACTIVO</string>
+    <string name="login_mode_beta">BETA // GOOGLE SIGN-IN</string>
     <string name="login_backend_required">BACKEND NO DISPONIBLE PARA LOGIN LOCAL.</string>
     <string name="login_local_success">SESIÓN LOCAL/BACKEND INICIADA.</string>
     <string name="bitacora">BITÁCORA</string>
@@ -29,8 +29,8 @@
     <string name="premium_restore_done">MEMORIA PREMIUM RESTAURADA LOCALMENTE.</string>
     <string name="premium_restore_empty">NO HAY RESPALDO PREMIUM DISPONIBLE.</string>
     <string name="premium_restore_failed">NO SE PUDO RESTAURAR EL RESPALDO PREMIUM.</string>
-    <string name="backend_auth_unavailable">GOOGLE SIGN-IN LOCAL ACTIVO. FALTA CONFIGURAR BACKEND O CLIENT ID WEB.</string>
-    <string name="google_auth_disabled">GOOGLE AUTH DESACTIVADA EN BETA.</string>
+    <string name="backend_auth_unavailable">CONFIGURÁ BACKEND Y GOOGLE WEB CLIENT ID PARA CONTINUAR.</string>
+    <string name="google_auth_disabled">GOOGLE AUTH REQUERIDA. CONFIGURÁ ME2_GOOGLE_WEB_CLIENT_ID.</string>
     <string name="bitacora_sync_wait">AUTO-SYNC // WAITING BACKEND</string>
     <string name="premium_backup">RESPALDAR MEMORIA</string>
     <string name="premium_restore">RESTAURAR RESPALDO</string>
@@ -62,4 +62,12 @@
     <string name="premium_checkout_offline">SIN RED. NO SE PUEDE ABRIR EL CHECKOUT.</string>
     <string name="premium_required">FUNCIÓN PREMIUM. ACTIVÁ EL PLAN PARA CONTINUAR.</string>
     <string name="premium_tools">HERRAMIENTAS PREMIUM</string>
+    <string name="login_google_only_hint">ÚNICO MÉTODO DE ACCESO.</string>
+    <string name="login_google_client_id_missing">Falta configurar GOOGLE_WEB_CLIENT_ID (ME2_GOOGLE_WEB_CLIENT_ID / ME2_ANDROID_GOOGLE_WEB_CLIENT_ID). No hay login por contraseña.</string>
+    <string name="login_google_failed">No se pudo iniciar con Google (código %1$d).</string>
+    <string name="login_google_invalid_account">Cuenta de Google inválida.</string>
+    <string name="login_google_token_missing">Google no devolvió idToken. Verificá que GOOGLE_WEB_CLIENT_ID sea el Web Client ID de OAuth.</string>
+    <string name="login_backend_url_missing">Falta BACKEND_BASE_URL. Configurá ME2_BACKEND_BASE_URL.</string>
+    <string name="login_offline">Sin conexión. El inicio de sesión con Google requiere red.</string>
+    <string name="login_google_backend_failed">El backend rechazó el inicio de sesión con Google.</string>
 </resources>
