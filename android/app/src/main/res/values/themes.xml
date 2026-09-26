@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <style name="Theme.JOI" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="colorPrimary">@color/joi_accent</item>
-        <item name="colorSecondary">@color/joi_accent</item>
-        <item name="android:statusBarColor">@color/joi_black</item>
-        <item name="android:navigationBarColor">@color/joi_black</item>
-        <item name="android:windowBackground">@color/joi_black</item>
-        <item name="colorSurface">@color/joi_surface</item>
-        <item name="colorOnSurface">@color/joi_text_primary</item>
+    <style name="Theme.ME2" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="colorPrimary">@color/me2_accent</item>
+        <item name="colorSecondary">@color/me2_accent</item>
+        <item name="android:statusBarColor">@color/me2_black</item>
+        <item name="android:navigationBarColor">@color/me2_black</item>
+        <item name="android:windowBackground">@color/me2_black</item>
+        <item name="colorSurface">@color/me2_surface</item>
+        <item name="colorOnSurface">@color/me2_text_primary</item>
         <item name="android:windowLightStatusBar" tools:targetApi="23">false</item>
     </style>
 </resources>

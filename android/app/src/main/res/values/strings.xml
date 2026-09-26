@@ -19,7 +19,7 @@
     <string name="premium_cta">MODO PREMIUM</string>
     <string name="send">Enviar</string>
     <string name="autosync_active">AUTO-SYNC // ACTIVE</string>
-    <string name="joi_data_stream">ME2 // DATA_STREAM</string>
+    <string name="me2_data_stream">ME2 // DATA_STREAM</string>
     <string name="message_hint">ESCRIBIR MENSAJE...</string>
     <string name="nodo_prefix">NODO_ID //</string>
     <string name="audio_widget">Audio widget</string>
@@ -55,4 +55,11 @@
     <string name="initiative_invalid_sleep">Las horas de dormir y despertar deben ser diferentes.</string>
     <string name="initiative_unavailable">Esta iniciativa no está disponible para la sesión actual.</string>
     <string name="initiative_close">Cerrar</string>
+    <string name="silence_check_in">¿Seguís ahí?</string>
+    <string name="premium_checkout">PAGAR CON MERCADO PAGO</string>
+    <string name="premium_checkout_starting">ABRIENDO CHECKOUT…</string>
+    <string name="premium_checkout_unavailable">CHECKOUT NO DISPONIBLE. EL BACKEND DE MERCADO PAGO NO ESTÁ CONFIGURADO.</string>
+    <string name="premium_checkout_offline">SIN RED. NO SE PUEDE ABRIR EL CHECKOUT.</string>
+    <string name="premium_required">FUNCIÓN PREMIUM. ACTIVÁ EL PLAN PARA CONTINUAR.</string>
+    <string name="premium_tools">HERRAMIENTAS PREMIUM</string>
 </resources>

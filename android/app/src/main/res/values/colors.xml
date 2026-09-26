@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="joi_black">#030506</color>
-    <color name="joi_drawer_scrim">#B0000000</color>
-    <color name="joi_surface">#071011</color>
-    <color name="joi_panel">#091314</color>
-    <color name="joi_panel_alt">#0B1011</color>
-    <color name="joi_panel_deep">#061011</color>
-    <color name="joi_panel_soft">#0E1718</color>
-    <color name="joi_accent">#2AE6D4</color>
-    <color name="joi_accent_dim">#332AE6D4</color>
-    <color name="joi_accent_soft">#162AE6D4</color>
-    <color name="joi_text_primary">#E7F3F2</color>
-    <color name="joi_text_secondary">#8A9A98</color>
-    <color name="joi_text_muted">#5A6768</color>
-    <color name="joi_divider">#1D2C2E</color>
-    <color name="joi_danger">#FF6C74</color>
-    <color name="joi_icon_dark">#021314</color>
+    <color name="me2_black">#030506</color>
+    <color name="me2_drawer_scrim">#B0000000</color>
+    <color name="me2_surface">#071011</color>
+    <color name="me2_panel">#091314</color>
+    <color name="me2_panel_alt">#0B1011</color>
+    <color name="me2_panel_deep">#061011</color>
+    <color name="me2_panel_soft">#0E1718</color>
+    <color name="me2_accent">#2AE6D4</color>
+    <color name="me2_accent_dim">#332AE6D4</color>
+    <color name="me2_accent_soft">#162AE6D4</color>
+    <color name="me2_text_primary">#E7F3F2</color>
+    <color name="me2_text_secondary">#8A9A98</color>
+    <color name="me2_text_muted">#5A6768</color>
+    <color name="me2_divider">#1D2C2E</color>
+    <color name="me2_danger">#FF6C74</color>
+    <color name="me2_icon_dark">#021314</color>
 </resources>

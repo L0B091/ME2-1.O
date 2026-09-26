@@ -29,5 +29,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "joi-android"
+rootProject.name = "me2-android"
 include(":app")

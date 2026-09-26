@@ -1,20 +1,31 @@
 fun String.gradleQuoted(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
-val backendBaseUrl =
-    (findProperty("JOI_BACKEND_BASE_URL") as String?)
-        ?: System.getenv("JOI_ANDROID_BACKEND_BASE_URL")
-        ?: ""
+fun firstNonBlank(vararg values: String?): String =
+    values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
-val googleWebClientId =
-    (findProperty("JOI_GOOGLE_WEB_CLIENT_ID") as String?)
-        ?: System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
-        ?: ""
+val backendBaseUrl = firstNonBlank(
+    findProperty("ME2_BACKEND_BASE_URL") as String?,
+    System.getenv("ME2_ANDROID_BACKEND_BASE_URL"),
+    findProperty("JOI_BACKEND_BASE_URL") as String?,
+    System.getenv("JOI_ANDROID_BACKEND_BASE_URL")
+)
+
+val googleWebClientId = firstNonBlank(
+    findProperty("ME2_GOOGLE_WEB_CLIENT_ID") as String?,
+    System.getenv("ME2_ANDROID_GOOGLE_WEB_CLIENT_ID"),
+    findProperty("JOI_GOOGLE_WEB_CLIENT_ID") as String?,
+    System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
+)
 
 val enableGoogleAuth =
-    ((findProperty("JOI_ENABLE_GOOGLE_AUTH") as String?)
-        ?: System.getenv("JOI_ANDROID_ENABLE_GOOGLE_AUTH")
-        ?: "false").toBoolean()
+    firstNonBlank(
+        findProperty("ME2_ENABLE_GOOGLE_AUTH") as String?,
+        System.getenv("ME2_ANDROID_ENABLE_GOOGLE_AUTH"),
+        findProperty("JOI_ENABLE_GOOGLE_AUTH") as String?,
+        System.getenv("JOI_ANDROID_ENABLE_GOOGLE_AUTH"),
+        "false"
+    ).toBoolean()
 
 plugins {
     id("com.android.application")
@@ -23,11 +34,11 @@ plugins {
 }
 
 android {
-    namespace = "com.joi.android"
+    namespace = "com.me2.android"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.joi.android"
+        applicationId = "com.me2.android"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

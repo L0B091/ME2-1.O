@@ -16,9 +16,9 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginBottom="6dp"
-            android:text="@string/joi_data_stream"
+            android:text="@string/me2_data_stream"
             android:textAllCaps="true"
-            android:textColor="@color/joi_accent"
+            android:textColor="@color/me2_accent"
             android:letterSpacing="0.16"
             android:textSize="10sp" />
 
@@ -29,7 +29,7 @@
             android:maxWidth="300dp"
             android:paddingHorizontal="16dp"
             android:paddingVertical="14dp"
-            android:textColor="@color/joi_text_primary"
+            android:textColor="@color/me2_text_primary"
             android:letterSpacing="0.03"
             android:textSize="13sp"
             android:lineSpacingExtra="6dp" />

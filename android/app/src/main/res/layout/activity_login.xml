@@ -14,7 +14,7 @@
         android:layout_height="wrap_content"
         android:text="@string/login_mode_beta"
         android:textAllCaps="true"
-        android:textColor="@color/joi_text_muted"
+        android:textColor="@color/me2_text_muted"
         android:letterSpacing="0.24"
         android:textSize="11sp"
         app:layout_constraintStart_toStartOf="parent"
@@ -27,7 +27,7 @@
         android:layout_marginBottom="36dp"
         android:text="@string/login_title"
         android:textAllCaps="true"
-        android:textColor="@color/joi_text_primary"
+        android:textColor="@color/me2_text_primary"
         android:letterSpacing="0.42"
         android:textSize="34sp"
         android:textStyle="normal"
@@ -46,8 +46,8 @@
         app:boxCornerRadiusBottomStart="18dp"
         app:boxCornerRadiusTopEnd="18dp"
         app:boxCornerRadiusTopStart="18dp"
-        app:boxStrokeColor="@color/joi_divider"
-        app:hintTextColor="@color/joi_text_muted"
+        app:boxStrokeColor="@color/me2_divider"
+        app:hintTextColor="@color/me2_text_muted"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/titleText">
@@ -59,8 +59,8 @@
             android:hint="@string/login_email_hint"
             android:importantForAutofill="yes"
             android:inputType="textEmailAddress"
-            android:textColor="@color/joi_text_primary"
-            android:textColorHint="@color/joi_text_muted" />
+            android:textColor="@color/me2_text_primary"
+            android:textColorHint="@color/me2_text_muted" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <com.google.android.material.textfield.TextInputLayout
@@ -74,9 +74,9 @@
         app:boxCornerRadiusBottomStart="18dp"
         app:boxCornerRadiusTopEnd="18dp"
         app:boxCornerRadiusTopStart="18dp"
-        app:boxStrokeColor="@color/joi_divider"
+        app:boxStrokeColor="@color/me2_divider"
         app:endIconMode="password_toggle"
-        app:hintTextColor="@color/joi_text_muted"
+        app:hintTextColor="@color/me2_text_muted"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/emailInputLayout">
@@ -88,8 +88,8 @@
             android:hint="@string/login_password_hint"
             android:importantForAutofill="yes"
             android:inputType="textPassword"
-            android:textColor="@color/joi_text_primary"
-            android:textColorHint="@color/joi_text_muted" />
+            android:textColor="@color/me2_text_primary"
+            android:textColorHint="@color/me2_text_muted" />
     </com.google.android.material.textfield.TextInputLayout>
 
     <LinearLayout
@@ -113,7 +113,7 @@
             android:background="@drawable/bg_login_button"
             android:text="@string/login_local"
             android:textAllCaps="true"
-            android:textColor="@color/joi_text_secondary"
+            android:textColor="@color/me2_text_secondary"
             android:letterSpacing="0.18"
             app:backgroundTint="@android:color/transparent"
             app:cornerRadius="28dp"
@@ -128,7 +128,7 @@
             android:background="@drawable/bg_login_button"
             android:text="@string/register_local"
             android:textAllCaps="true"
-            android:textColor="@color/joi_text_secondary"
+            android:textColor="@color/me2_text_secondary"
             android:letterSpacing="0.18"
             app:backgroundTint="@android:color/transparent"
             app:cornerRadius="28dp"
@@ -146,14 +146,14 @@
         android:insetBottom="0dp"
         android:text="@string/login_google"
         android:textAllCaps="true"
-        android:textColor="@color/joi_text_secondary"
+        android:textColor="@color/me2_text_secondary"
         android:letterSpacing="0.18"
         app:backgroundTint="@android:color/transparent"
         app:cornerRadius="28dp"
         app:icon="@android:drawable/ic_menu_search"
         app:iconGravity="textStart"
         app:iconPadding="12dp"
-        app:iconTint="@color/joi_text_muted"
+        app:iconTint="@color/me2_text_muted"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/localButtonsRow"

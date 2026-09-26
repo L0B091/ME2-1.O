@@ -34,7 +34,7 @@
                     android:contentDescription="@string/bitacora"
                     android:padding="8dp"
                     android:src="@android:drawable/ic_menu_sort_by_size"
-                    android:tint="@color/joi_text_secondary" />
+                    android:tint="@color/me2_text_secondary" />
 
                 <View
                     android:layout_width="8dp"
@@ -50,7 +50,7 @@
                     android:layout_weight="1"
                     android:text="@string/autosync_active"
                     android:textAllCaps="true"
-                    android:textColor="@color/joi_text_secondary"
+                    android:textColor="@color/me2_text_secondary"
                     android:letterSpacing="0.17"
                     android:textSize="11sp" />
 
@@ -62,14 +62,14 @@
                     android:contentDescription="@string/limpiar_chat"
                     android:padding="8dp"
                     android:src="@android:drawable/ic_menu_recent_history"
-                    android:tint="@color/joi_text_muted" />
+                    android:tint="@color/me2_text_muted" />
             </LinearLayout>
 
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
                 android:layout_marginTop="10dp"
-                android:background="@color/joi_divider" />
+                android:background="@color/me2_divider" />
 
             <FrameLayout
                 android:layout_width="match_parent"
@@ -100,9 +100,9 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="@string/joi_data_stream"
+                        android:text="@string/me2_data_stream"
                         android:textAllCaps="true"
-                        android:textColor="@color/joi_accent"
+                        android:textColor="@color/me2_accent"
                         android:letterSpacing="0.14"
                         android:textSize="10sp" />
 
@@ -113,7 +113,7 @@
                         android:layout_marginTop="4dp"
                         android:text="STATE // NEUTRAL"
                         android:textAllCaps="true"
-                        android:textColor="@color/joi_text_primary"
+                        android:textColor="@color/me2_text_primary"
                         android:letterSpacing="0.1"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -126,7 +126,7 @@
                     android:layout_margin="14dp"
                     android:text="AVATAR // VISUAL CHANNEL READY"
                     android:textAllCaps="true"
-                    android:textColor="@color/joi_text_secondary"
+                    android:textColor="@color/me2_text_secondary"
                     android:letterSpacing="0.12"
                     android:textSize="10sp" />
             </FrameLayout>
@@ -164,8 +164,8 @@
                     android:maxLines="4"
                     android:minHeight="44dp"
                     android:textAllCaps="true"
-                    android:textColor="@color/joi_text_primary"
-                    android:textColorHint="@color/joi_text_muted"
+                    android:textColor="@color/me2_text_primary"
+                    android:textColorHint="@color/me2_text_muted"
                     android:textSize="13sp" />
 
                 <ImageButton
@@ -177,7 +177,7 @@
                     android:padding="8dp"
                     android:rotation="-45"
                     android:src="@android:drawable/arrow_up_float"
-                    android:tint="@color/joi_accent" />
+                    android:tint="@color/me2_accent" />
             </LinearLayout>
         </LinearLayout>
 
@@ -204,7 +204,7 @@
                     android:layout_height="20dp"
                     android:layout_gravity="center"
                     android:src="@android:drawable/ic_lock_silent_mode_off"
-                    android:tint="@color/joi_icon_dark" />
+                    android:tint="@color/me2_icon_dark" />
             </FrameLayout>
 
             <LinearLayout
@@ -221,7 +221,7 @@
                     android:layout_width="18dp"
                     android:layout_height="18dp"
                     android:src="@android:drawable/ic_media_play"
-                    android:tint="@color/joi_icon_dark" />
+                    android:tint="@color/me2_icon_dark" />
             </LinearLayout>
 
             <LinearLayout
@@ -263,7 +263,7 @@
                 android:layout_height="20dp"
                 android:layout_gravity="center"
                 android:src="@android:drawable/ic_lock_silent_mode"
-                android:tint="@color/joi_text_secondary" />
+                android:tint="@color/me2_text_secondary" />
         </FrameLayout>
 
     </FrameLayout>
@@ -273,7 +273,7 @@
         android:layout_width="300dp"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        android:background="@color/joi_black"
+        android:background="@color/me2_black"
         android:fillViewport="true">
 
         <LinearLayout
@@ -293,7 +293,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:scaleType="centerCrop"
-                    android:src="@drawable/joi_logo" />
+                    android:src="@drawable/me2_logo" />
             </FrameLayout>
 
             <ImageButton
@@ -305,7 +305,7 @@
                 android:contentDescription="@string/editar_foto"
                 android:padding="8dp"
                 android:src="@android:drawable/ic_menu_edit"
-                android:tint="@color/joi_text_secondary" />
+                android:tint="@color/me2_text_secondary" />
 
             <TextView
                 android:id="@+id/nodeIdText"
@@ -314,7 +314,7 @@
                 android:layout_marginTop="16dp"
                 android:text="NODO_ID // 00-44-21-9"
                 android:textAllCaps="true"
-                android:textColor="@color/joi_text_muted"
+                android:textColor="@color/me2_text_muted"
                 android:letterSpacing="0.14"
                 android:textSize="11sp" />
 
@@ -323,7 +323,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:textColor="@color/joi_text_primary"
+                android:textColor="@color/me2_text_primary"
                 android:letterSpacing="0.08"
                 android:textSize="13sp" />
 
@@ -332,7 +332,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:textColor="@color/joi_text_secondary"
+                android:textColor="@color/me2_text_secondary"
                 android:letterSpacing="0.08"
                 android:textSize="12sp" />
 
@@ -341,7 +341,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
-                android:textColor="@color/joi_text_primary"
+                android:textColor="@color/me2_text_primary"
                 android:letterSpacing="0.08"
                 android:textSize="12sp" />
 
@@ -350,7 +350,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:textColor="@color/joi_text_primary"
+                android:textColor="@color/me2_text_primary"
                 android:letterSpacing="0.08"
                 android:textSize="12sp" />
 
@@ -360,7 +360,7 @@
                 android:layout_marginTop="22dp"
                 android:text="BITÁCORA // EVENTOS"
                 android:textAllCaps="true"
-                android:textColor="@color/joi_accent"
+                android:textColor="@color/me2_accent"
                 android:letterSpacing="0.16"
                 android:textSize="11sp" />
 
@@ -371,7 +371,7 @@
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_panel_soft"
                 android:padding="14dp"
-                android:textColor="@color/joi_text_secondary"
+                android:textColor="@color/me2_text_secondary"
                 android:textSize="12sp" />
 
             <TextView
@@ -380,7 +380,7 @@
                 android:layout_marginTop="22dp"
                 android:text="@string/widget_title"
                 android:textAllCaps="true"
-                android:textColor="@color/joi_accent"
+                android:textColor="@color/me2_accent"
                 android:letterSpacing="0.16"
                 android:textSize="11sp" />
 
@@ -424,7 +424,7 @@
                     android:layout_gravity="center"
                     android:gravity="center"
                     android:textAllCaps="true"
-                    android:textColor="@color/joi_text_primary"
+                    android:textColor="@color/me2_text_primary"
                     android:letterSpacing="0.12"
                     android:textSize="16sp" />
 
@@ -433,7 +433,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_gravity="bottom|center_horizontal"
-                    android:textColor="@color/joi_text_secondary"
+                    android:textColor="@color/me2_text_secondary"
                     android:letterSpacing="0.1"
                     android:textSize="11sp" />
             </FrameLayout>
@@ -445,11 +445,11 @@
                 android:layout_marginTop="24dp"
                 android:text="@string/premium_cta"
                 android:textAllCaps="true"
-                android:textColor="@color/joi_text_secondary"
+                android:textColor="@color/me2_text_secondary"
                 android:letterSpacing="0.16"
-                app:backgroundTint="@color/joi_panel"
+                app:backgroundTint="@color/me2_panel"
                 app:cornerRadius="24dp"
-                app:strokeColor="@color/joi_divider"
+                app:strokeColor="@color/me2_divider"
                 app:strokeWidth="1dp" />
 
             <com.google.android.material.button.MaterialButton
@@ -459,7 +459,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="18dp"
                 android:text="@string/initiative_settings"
-                android:textColor="@color/joi_text_secondary" />
+                android:textColor="@color/me2_text_secondary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/signOutButton"
@@ -469,7 +469,7 @@
                 android:layout_marginTop="18dp"
                 android:text="@string/cerrar_sesion"
                 android:textAllCaps="true"
-                android:textColor="@color/joi_danger"
+                android:textColor="@color/me2_danger"
                 android:letterSpacing="0.16" />
         </LinearLayout>
     </ScrollView>
