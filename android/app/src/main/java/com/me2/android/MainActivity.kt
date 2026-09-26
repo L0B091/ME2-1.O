@@ -25,7 +25,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.me2.android.BuildConfig
+import com.me2.android.config.ApiConfig
 import com.me2.android.data.AvatarWidgetScene
 import com.me2.android.data.ChatMessage
 import com.me2.android.data.LocalMemoryStore
@@ -33,6 +33,8 @@ import com.me2.android.data.PremiumBackupCrypto
 import com.me2.android.data.SessionStorage
 import com.me2.android.data.UserSession
 import com.me2.android.databinding.ActivityMainBinding
+import com.me2.android.gallery.ClipCatalog
+import com.me2.android.gallery.GalleryClip
 import com.me2.android.net.Me2BackendClient
 import com.me2.android.notifications.Me2AlarmScheduler
 import com.me2.android.notifications.Me2NotificationChannels
@@ -56,7 +58,7 @@ class MainActivity : AppCompatActivity() {
 
     private data class AvatarSelection(
         val label: String,
-        val gallery: IntArray
+        val gallery: List<GalleryClip>
     )
 
     private lateinit var binding: ActivityMainBinding
@@ -74,10 +76,11 @@ class MainActivity : AppCompatActivity() {
     private val premiumBackupCrypto = PremiumBackupCrypto()
 
     private var player: ExoPlayer? = null
-    private var currentAvatarClipResId: Int? = null
-    private var lastAvatarClipResId: Int? = null
+    private lateinit var clipCatalog: ClipCatalog
+    private var currentAvatarClipId: String? = null
+    private var lastAvatarClipId: String? = null
     private var avatarMode: AvatarMode = AvatarMode.LOOP_NEUTRAL
-    private var currentAvatarGallery: IntArray = intArrayOf(R.raw.me2_texting)
+    private var currentAvatarGallery: List<GalleryClip> = emptyList()
     private var hasPlayedPresentation = false
     private var sessionStartedAt: Long = 0L
     private lateinit var currentSession: UserSession
@@ -91,21 +94,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // LOOP_NEUTRAL rotates several local raw clips so demo/UI preview clearly shows real video.
-    private val loopNeutralGallery = intArrayOf(
-        R.raw.me2_texting,
-        R.raw.avatar_calida_01,
-        R.raw.avatar_atenta_01,
-        R.raw.avatar_alegre_01,
-        R.raw.avatar_aliviada_01,
-        R.raw.avatar_agradecida_01
-    )
-    private val presentationGallery = intArrayOf(R.raw.avatar_presentacion_01)
-    private val calidaGallery = intArrayOf(R.raw.avatar_calida_01, R.raw.me2_texting)
-    private val alegreGallery = intArrayOf(R.raw.avatar_alegre_01, R.raw.avatar_agradecida_01)
-    private val atentaGallery = intArrayOf(R.raw.avatar_atenta_01, R.raw.me2_texting)
-    private val aliviadaGallery = intArrayOf(R.raw.avatar_aliviada_01, R.raw.avatar_calida_01)
-    private val agradecidaGallery = intArrayOf(R.raw.avatar_agradecida_01, R.raw.avatar_alegre_01)
+    // Mood galleries via ClipCatalog: filesDir/gallery → assets/videos → res/raw demos.
+    private val loopNeutralGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_LOOP_NEUTRAL)
+    private val presentationGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_PRESENTACION)
+    private val calidaGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_CALIDA)
+    private val alegreGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ALEGRE)
+    private val atentaGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ATENTA)
+    private val aliviadaGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ALIVIADA)
+    private val agradecidaGallery: List<GalleryClip>
+        get() = clipCatalog.listByMood(ClipCatalog.MOOD_AGRADECIDA)
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -127,6 +130,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        clipCatalog = ClipCatalog(this).also { catalog ->
+            runCatching { catalog.ensureDirs() }
+            Log.i(TAG, "ClipCatalog ready; ApiConfig ${ApiConfig.readinessSummary()}")
+        }
         sessionStorage = runCatching { SessionStorage(this) }.getOrElse {
             Log.e(TAG, "SessionStorage failed", it)
             LoginActivity.markMainLaunchFailed(this)
@@ -213,7 +220,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!::binding.isInitialized) return
         sessionStartedAt = SystemClock.elapsedRealtime()
-        runCatching { restoreAvatarPresence(forceReload = currentAvatarClipResId == null) }
+        runCatching { restoreAvatarPresence(forceReload = currentAvatarClipId == null) }
         player?.playWhenReady = true
         player?.volume = 1f
         if (::currentSession.isInitialized) {
@@ -857,14 +864,14 @@ class MainActivity : AppCompatActivity() {
         }
         fallbackToLoopNeutral(
             forceReload = forceReload || !galleryContainsCurrentClip(loopNeutralGallery),
-            resetStateLabel = currentAvatarClipResId == null
+            resetStateLabel = currentAvatarClipId == null
         )
     }
 
     private fun maybePlayPresentation() {
         if (!startedFromEmptyLocalMemory || hasPlayedPresentation) return
         val exoPlayer = player ?: return
-        val clip = resolveNextClip(presentationGallery, currentAvatarClipResId) ?: return
+        val clip = resolveNextClip(presentationGallery, currentAvatarClipId) ?: return
         hasPlayedPresentation = true
         avatarMode = AvatarMode.PRESENTATION
         currentAvatarGallery = presentationGallery
@@ -879,7 +886,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val exoPlayer = player ?: return
-        val clip = resolveNextClip(selection.gallery, currentAvatarClipResId)
+        val clip = resolveNextClip(selection.gallery, currentAvatarClipId)
         if (clip == null) {
             fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
             return
@@ -920,7 +927,7 @@ class MainActivity : AppCompatActivity() {
             AvatarMode.PRESENTATION, AvatarMode.CONTEXTUAL -> fallbackToLoopNeutral(forceReload = true)
             AvatarMode.LOOP_NEUTRAL -> {
                 val exoPlayer = player ?: return
-                playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipResId))
+                playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipId))
             }
         }
     }
@@ -937,53 +944,41 @@ class MainActivity : AppCompatActivity() {
 
     private fun ensureAvatarPlayback(forceReload: Boolean = false) {
         val exoPlayer = player ?: return
-        val gallery = currentAvatarGallery
+        val gallery = currentAvatarGallery.ifEmpty { loopNeutralGallery }
+        val fallback = gallery.firstOrNull() ?: loopNeutralGallery.firstOrNull() ?: return
         val desiredClip = when {
-            forceReload -> pickNextClip(gallery, currentAvatarClipResId)
-            currentAvatarClipResId == null -> pickNextClip(gallery, lastAvatarClipResId)
-            !galleryContainsCurrentClip(gallery) -> pickNextClip(gallery, currentAvatarClipResId)
-            else -> currentAvatarClipResId ?: loopNeutralGallery.first()
+            forceReload -> pickNextClip(gallery, currentAvatarClipId)
+            currentAvatarClipId == null -> pickNextClip(gallery, lastAvatarClipId)
+            !galleryContainsCurrentClip(gallery) -> pickNextClip(gallery, currentAvatarClipId)
+            else -> gallery.firstOrNull { it.id == currentAvatarClipId } ?: fallback
         }
-        if (!forceReload && desiredClip == currentAvatarClipResId) {
+        if (!forceReload && desiredClip.id == currentAvatarClipId) {
             exoPlayer.playWhenReady = true
             return
         }
         playAvatarClip(exoPlayer, desiredClip)
     }
 
-    private fun playAvatarClip(exoPlayer: ExoPlayer, clipResId: Int) {
-        if (!isClipAvailable(clipResId)) {
-            if (clipResId != loopNeutralGallery.first()) {
-                fallbackToLoopNeutral(forceReload = true)
-            }
-            return
-        }
-        lastAvatarClipResId = currentAvatarClipResId
-        currentAvatarClipResId = clipResId
-        exoPlayer.setMediaItem(MediaItem.fromUri(Uri.parse("android.resource://$packageName/$clipResId")))
+    private fun playAvatarClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
+        lastAvatarClipId = currentAvatarClipId
+        currentAvatarClipId = clip.id
+        // Voice only on welcome/presentacion; mute spoken risk on other moods if tagged.
+        exoPlayer.volume = if (clip.carriesVoice || clip.mood == ClipCatalog.MOOD_PRESENTACION) 1f else 1f
+        exoPlayer.setMediaItem(MediaItem.fromUri(clipCatalog.playbackUri(clip)))
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
     }
 
-    private fun galleryContainsCurrentClip(gallery: IntArray): Boolean =
-        currentAvatarClipResId?.let { clipResId -> gallery.contains(clipResId) && isClipAvailable(clipResId) } == true
+    private fun galleryContainsCurrentClip(gallery: List<GalleryClip>): Boolean =
+        clipCatalog.containsClip(gallery, currentAvatarClipId)
 
-    private fun resolveNextClip(gallery: IntArray, previousClipResId: Int?): Int? {
-        val available = gallery.filter(::isClipAvailable)
-        if (available.isEmpty()) return null
-        if (available.size == 1 || previousClipResId == null) return available.first()
-        val previousIndex = available.indexOf(previousClipResId).takeIf { it >= 0 } ?: return available.first()
-        return available[(previousIndex + 1) % available.size]
-    }
+    private fun resolveNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip? =
+        clipCatalog.nextClip(gallery, previousClipId)
 
-    private fun pickNextClip(gallery: IntArray, previousClipResId: Int?): Int =
-        resolveNextClip(gallery, previousClipResId) ?: loopNeutralGallery.first()
-
-    private fun isClipAvailable(clipResId: Int): Boolean =
-        runCatching {
-            resources.openRawResourceFd(clipResId)?.close()
-            true
-        }.getOrDefault(false)
+    private fun pickNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip =
+        resolveNextClip(gallery, previousClipId)
+            ?: resolveNextClip(loopNeutralGallery, previousClipId)
+            ?: error("ClipCatalog has no demo clips; res/raw fallbacks missing")
 
     private fun openInitiative(intent: Intent) {
         val userId = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_USER_ID)

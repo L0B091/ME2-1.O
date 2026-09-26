@@ -12,6 +12,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.me2.android.config.ApiConfig
 import com.me2.android.data.LocalMemoryStore
 import com.me2.android.data.SessionStorage
 import com.me2.android.data.UserSession
@@ -79,8 +80,9 @@ class LoginActivity : AppCompatActivity() {
         binding.googleButton.visibility = View.VISIBLE
         setupPreviewDemo()
 
-        val clientId = backendClient.googleWebClientId
-        if (clientId.isBlank()) {
+        // TODO(google-oauth): set ME2_GOOGLE_WEB_CLIENT_ID in local.properties / env, then rebuild.
+        val clientId = ApiConfig.googleWebClientId.ifBlank { backendClient.googleWebClientId }
+        if (!ApiConfig.isGoogleAuthReady() || clientId.isBlank()) {
             binding.loginHintText.text = getString(R.string.login_google_client_id_missing)
             binding.googleButton.setOnClickListener {
                 Toast.makeText(

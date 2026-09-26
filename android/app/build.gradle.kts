@@ -31,6 +31,32 @@ val enableGoogleAuth =
         "true"
     ).toBoolean()
 
+// TODO(mercado-pago): public key for future native SDK; empty = safe stub (checkout via backend).
+val mercadoPagoPublicKey = firstNonBlank(
+    findProperty("ME2_MERCADO_PAGO_PUBLIC_KEY") as String?,
+    System.getenv("ME2_ANDROID_MERCADO_PAGO_PUBLIC_KEY"),
+    findProperty("ME2_MP_PUBLIC_KEY") as String?,
+    System.getenv("ME2_ANDROID_MP_PUBLIC_KEY")
+)
+
+val mercadoPagoUrl = firstNonBlank(
+    findProperty("ME2_MERCADO_PAGO_URL") as String?,
+    System.getenv("ME2_ANDROID_MERCADO_PAGO_URL"),
+    "https://www.mercadopago.com.ar/"
+)
+
+// TODO(openrouter): prefer backend proxy; Android field is a future direct-client stub only.
+val openRouterApiKey = firstNonBlank(
+    findProperty("ME2_OPENROUTER_API_KEY") as String?,
+    System.getenv("ME2_ANDROID_OPENROUTER_API_KEY")
+)
+
+val openRouterModel = firstNonBlank(
+    findProperty("ME2_OPENROUTER_MODEL") as String?,
+    System.getenv("ME2_ANDROID_OPENROUTER_MODEL"),
+    "openrouter/auto"
+)
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -49,10 +75,13 @@ android {
         versionName = "1.0.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "MERCADO_PAGO_URL", "\"https://www.mercadopago.com.ar/\"")
+        buildConfigField("String", "MERCADO_PAGO_URL", mercadoPagoUrl.gradleQuoted())
+        buildConfigField("String", "MERCADO_PAGO_PUBLIC_KEY", mercadoPagoPublicKey.gradleQuoted())
         buildConfigField("String", "BACKEND_BASE_URL", backendBaseUrl.gradleQuoted())
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", googleWebClientId.gradleQuoted())
         buildConfigField("boolean", "ENABLE_GOOGLE_AUTH", enableGoogleAuth.toString())
+        buildConfigField("String", "OPENROUTER_API_KEY", openRouterApiKey.gradleQuoted())
+        buildConfigField("String", "OPENROUTER_MODEL", openRouterModel.gradleQuoted())
     }
 
     buildTypes {

@@ -1,0 +1,19 @@
+## Copy to local.properties (gitignored) or set in ~/.gradle/gradle.properties
+## Do not commit real secrets.
+
+sdk.dir=/path/to/Android/Sdk
+
+# Backend (emulator default is http://10.0.2.2:3000 if unset)
+# ME2_BACKEND_BASE_URL=http://10.0.2.2:3000
+
+# Google OAuth (Web client ID for requestIdToken)
+# ME2_GOOGLE_WEB_CLIENT_ID=YOUR_ID.apps.googleusercontent.com
+# ME2_ENABLE_GOOGLE_AUTH=true
+
+# Mercado Pago (public key optional; checkout today goes through backend)
+# ME2_MERCADO_PAGO_PUBLIC_KEY=
+# ME2_MERCADO_PAGO_URL=https://www.mercadopago.com.ar/
+
+# OpenRouter — prefer backend; Android field is a stub hook only
+# ME2_OPENROUTER_API_KEY=
+# ME2_OPENROUTER_MODEL=openrouter/auto

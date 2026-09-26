@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import com.me2.android.BuildConfig
+import com.me2.android.config.ApiConfig
 import com.me2.android.data.LocalMe2Memory
 import com.me2.android.data.UserSession
 import org.json.JSONArray
@@ -86,11 +87,11 @@ data class AlarmEventResult(
 )
 
 class Me2BackendClient {
-    val googleWebClientId: String = BuildConfig.GOOGLE_WEB_CLIENT_ID.trim()
-    private val baseUrl: String = BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/')
+    val googleWebClientId: String = ApiConfig.googleWebClientId.ifBlank { BuildConfig.GOOGLE_WEB_CLIENT_ID.trim() }
+    private val baseUrl: String = ApiConfig.backendBaseUrl.ifBlank { BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/') }
     private val betaPremiumMillis = 4102444800000L
 
-    fun isConfigured(): Boolean = baseUrl.isNotEmpty()
+    fun isConfigured(): Boolean = ApiConfig.isBackendReady() && baseUrl.isNotEmpty()
 
     fun isOnline(context: Context): Boolean {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
