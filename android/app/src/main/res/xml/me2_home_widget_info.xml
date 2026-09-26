@@ -4,7 +4,7 @@
     android:minHeight="110dp"
     android:updatePeriodMillis="1800000"
     android:initialLayout="@layout/widget_me2_home"
-    android:previewImage="@drawable/me2_logo"
+    android:previewImage="@drawable/me2_mark"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_description" />

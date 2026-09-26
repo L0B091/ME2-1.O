@@ -49,7 +49,7 @@ class Me2HomeWidgetProvider : AppWidgetProvider() {
             val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
             views.setTextViewText(R.id.widgetTime, clock)
             views.setTextViewText(R.id.widgetTemp, storage.loadLastTemperature())
-            views.setImageViewResource(R.id.widgetAvatar, R.drawable.me2_logo)
+            views.setImageViewResource(R.id.widgetAvatar, R.drawable.me2_mark)
 
             val openApp = Intent(context, resolveLaunchClass(storage)).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP

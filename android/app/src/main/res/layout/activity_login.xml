@@ -8,21 +8,31 @@
     android:paddingTop="28dp"
     android:paddingBottom="40dp">
 
-    <TextView
-        android:id="@+id/titleText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/login_title"
-        android:textAllCaps="true"
-        android:textColor="@color/me2_text_primary"
-        android:letterSpacing="0.48"
-        android:textSize="36sp"
-        android:textStyle="normal"
+    <ImageView
+        android:id="@+id/logoImage"
+        android:layout_width="0dp"
+        android:layout_height="160dp"
+        android:adjustViewBounds="true"
+        android:contentDescription="@string/app_name"
+        android:scaleType="fitCenter"
+        android:src="@drawable/me2_logo"
         app:layout_constraintBottom_toTopOf="@+id/googleButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.42" />
+        app:layout_constraintVertical_bias="0.38"
+        app:layout_constraintWidth_max="280dp"
+        app:layout_constraintWidth_percent="0.72" />
+
+    <!-- Kept for binding compatibility; replaced visually by logoImage -->
+    <TextView
+        android:id="@+id/titleText"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:visibility="gone"
+        android:text="@string/login_title"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <com.google.android.material.button.MaterialButton
         android:id="@+id/googleButton"
@@ -46,22 +56,25 @@
         app:layout_constraintStart_toStartOf="parent"
         app:strokeWidth="0dp" />
 
-    <!-- TEMPORAL: enlace discreto para vista previa estética sin OAuth -->
-    <TextView
+    <!-- TEMPORAL: MaterialButton = larger touch target for demo preview -->
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/previewDemoButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        style="@style/Widget.MaterialComponents.Button.TextButton"
+        android:layout_width="0dp"
+        android:layout_height="48dp"
         android:layout_marginBottom="10dp"
-        android:paddingHorizontal="12dp"
-        android:paddingVertical="8dp"
         android:gravity="center"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:minHeight="48dp"
         android:text="@string/login_preview_demo"
+        android:textAllCaps="false"
         android:textColor="@color/me2_accent"
-        android:textSize="13sp"
-        android:letterSpacing="0.08"
-        android:clickable="true"
-        android:focusable="true"
-        android:background="?attr/selectableItemBackgroundBorderless"
+        android:textSize="15sp"
+        android:letterSpacing="0.06"
+        android:visibility="visible"
+        app:backgroundTint="@android:color/transparent"
+        app:rippleColor="@color/me2_accent"
         app:layout_constraintBottom_toTopOf="@+id/loginHintText"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />

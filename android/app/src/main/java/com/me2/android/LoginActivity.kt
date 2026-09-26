@@ -51,7 +51,7 @@ class LoginActivity : AppCompatActivity() {
 
         sessionStorage = SessionStorage(this)
         sessionStorage.loadUser()?.let {
-            openMain()
+            openMain(demoPreview = it.isDemo)
             return
         }
 
@@ -94,9 +94,10 @@ class LoginActivity : AppCompatActivity() {
         binding.previewDemoButton.visibility = View.VISIBLE
         binding.previewDemoButton.setOnClickListener {
             val demo = UserSession.demoPreview()
-            sessionStorage.saveUser(demo)
+            // commit() so MainActivity always sees the session (apply() can race).
+            sessionStorage.saveUserCommit(demo)
             Toast.makeText(this, getString(R.string.login_preview_demo_toast), Toast.LENGTH_LONG).show()
-            openMain()
+            openMain(demoPreview = true)
         }
     }
 
@@ -147,10 +148,10 @@ class LoginActivity : AppCompatActivity() {
                     premiumUntilMillis = 0L
                 )
                 runOnUiThread {
-                    sessionStorage.saveUser(session)
+                    sessionStorage.saveUserCommit(session)
                     setAuthBusy(false)
                     LocalMemoryStore(this).migrateUserMemory(fallbackSession.id, session.id)
-                    openMain()
+                    openMain(demoPreview = false)
                 }
             }.onFailure { error ->
                 runOnUiThread {
@@ -165,8 +166,13 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun openMain() {
-        startActivity(Intent(this, MainActivity::class.java))
+    private fun openMain(demoPreview: Boolean) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            if (demoPreview) {
+                putExtra(EXTRA_DEMO_PREVIEW, true)
+            }
+        }
+        startActivity(intent)
         finish()
     }
 
@@ -175,5 +181,9 @@ class LoginActivity : AppCompatActivity() {
         binding.googleButton.alpha = if (isBusy) 0.6f else 1f
         binding.previewDemoButton.isEnabled = !isBusy
         binding.previewDemoButton.alpha = if (isBusy) 0.5f else 1f
+    }
+
+    companion object {
+        const val EXTRA_DEMO_PREVIEW = "demo_preview"
     }
 }

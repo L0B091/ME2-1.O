@@ -59,6 +59,23 @@ class SessionStorage(context: Context) {
             .apply()
     }
 
+    /**
+     * Persist session synchronously so the next Activity always sees it
+     * (avoids race where MainActivity.loadUser() runs before .apply() flushes).
+     */
+    fun saveUserCommit(session: UserSession): Boolean {
+        return preferences.edit()
+            .putString(KEY_NAME, session.displayName)
+            .putString(KEY_EMAIL, session.email)
+            .putString(KEY_ID, session.id)
+            .putString(KEY_AUTH_TOKEN, session.authToken)
+            .putString(KEY_PHOTO_URL, session.photoUrl)
+            .putBoolean(KEY_EMAIL_VERIFIED, session.emailVerified)
+            .putLong(KEY_PREMIUM_UNTIL, session.premiumUntilMillis)
+            .putLong(KEY_USAGE_MINUTES, session.usageMinutes)
+            .commit()
+    }
+
     fun loadUser(): UserSession? {
         val id = preferences.getString(KEY_ID, null) ?: return null
         return UserSession(

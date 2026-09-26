@@ -18,4 +18,5 @@
     <color name="me2_icon_dark">#021314</color>
     <color name="me2_aura_green">#30E8C0</color>
     <color name="me2_widget_ring">#2AE6D4</color>
+    <color name="me2_icon_bg">#FF050608</color>
 </resources>

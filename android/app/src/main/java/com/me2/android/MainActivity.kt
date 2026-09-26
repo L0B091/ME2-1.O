@@ -88,13 +88,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val loopNeutralGallery = intArrayOf(R.raw.me2_texting)
+    // LOOP_NEUTRAL rotates several local raw clips so demo/UI preview clearly shows real video.
+    private val loopNeutralGallery = intArrayOf(
+        R.raw.me2_texting,
+        R.raw.avatar_calida_01,
+        R.raw.avatar_atenta_01,
+        R.raw.avatar_alegre_01,
+        R.raw.avatar_aliviada_01,
+        R.raw.avatar_agradecida_01
+    )
     private val presentationGallery = intArrayOf(R.raw.avatar_presentacion_01)
-    private val calidaGallery = intArrayOf(R.raw.avatar_calida_01)
-    private val alegreGallery = intArrayOf(R.raw.avatar_alegre_01)
-    private val atentaGallery = intArrayOf(R.raw.avatar_atenta_01)
-    private val aliviadaGallery = intArrayOf(R.raw.avatar_aliviada_01)
-    private val agradecidaGallery = intArrayOf(R.raw.avatar_agradecida_01)
+    private val calidaGallery = intArrayOf(R.raw.avatar_calida_01, R.raw.me2_texting)
+    private val alegreGallery = intArrayOf(R.raw.avatar_alegre_01, R.raw.avatar_agradecida_01)
+    private val atentaGallery = intArrayOf(R.raw.avatar_atenta_01, R.raw.me2_texting)
+    private val aliviadaGallery = intArrayOf(R.raw.avatar_aliviada_01, R.raw.avatar_calida_01)
+    private val agradecidaGallery = intArrayOf(R.raw.avatar_agradecida_01, R.raw.avatar_alegre_01)
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -109,7 +117,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         sessionStorage = SessionStorage(this)
-        val session = sessionStorage.loadUser()
+        var session = sessionStorage.loadUser()
+        // Harden demo path: if prefs raced/missed but Intent carries demo_preview, recreate session.
+        if (session == null && intent.getBooleanExtra(LoginActivity.EXTRA_DEMO_PREVIEW, false)) {
+            val demo = UserSession.demoPreview()
+            sessionStorage.saveUserCommit(demo)
+            session = demo
+        }
         if (session == null) {
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
@@ -520,7 +534,7 @@ class MainActivity : AppCompatActivity() {
             appendAssistantReply(
                 notice,
                 if (currentSession.isDemo) "DEMO" else "OFFLINE",
-                "LOCAL",
+                if (currentSession.isDemo) "DEMO_LOOP" else "LOCAL",
                 typewriter = currentSession.isDemo
             )
             return
@@ -816,6 +830,7 @@ class MainActivity : AppCompatActivity() {
                 return AvatarSelection("TEASER_SOFT", calidaGallery)
         }
         return when {
+            normalizedState == "DEMO" -> AvatarSelection("DEMO_LOOP", loopNeutralGallery)
             normalizedState == "OFFLINE" || normalizedState == "NOTICE" -> null
             normalizedDetail == "LOCAL" || normalizedDetail == "SYNC" || normalizedDetail == "MESSAGE" || normalizedDetail.startsWith("STAGE_") -> null
             tokens.contains("AGRADEC") -> AvatarSelection("AGRADECIDA", agradecidaGallery)
