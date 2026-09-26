@@ -28,7 +28,7 @@
         android:id="@+id/googleButton"
         android:layout_width="0dp"
         android:layout_height="56dp"
-        android:layout_marginBottom="48dp"
+        android:layout_marginBottom="12dp"
         android:background="@drawable/bg_login_button"
         android:gravity="center"
         android:insetTop="0dp"
@@ -41,10 +41,30 @@
         app:backgroundTint="@android:color/transparent"
         app:cornerRadius="28dp"
         app:iconPadding="0dp"
-        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintBottom_toTopOf="@+id/previewDemoButton"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:strokeWidth="0dp" />
+
+    <!-- TEMPORAL: enlace discreto para vista previa estética sin OAuth -->
+    <TextView
+        android:id="@+id/previewDemoButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="10dp"
+        android:paddingHorizontal="12dp"
+        android:paddingVertical="8dp"
+        android:gravity="center"
+        android:text="@string/login_preview_demo"
+        android:textColor="@color/me2_accent"
+        android:textSize="13sp"
+        android:letterSpacing="0.08"
+        android:clickable="true"
+        android:focusable="true"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        app:layout_constraintBottom_toTopOf="@+id/loginHintText"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
 
     <!-- Kept for binding compatibility; hidden in minimal login -->
     <TextView
@@ -67,14 +87,14 @@
         android:id="@+id/loginHintText"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="14dp"
+        android:layout_marginBottom="8dp"
         android:gravity="center"
         android:text="@string/login_google_only_hint"
         android:textColor="@color/me2_text_muted"
         android:textSize="11sp"
         android:letterSpacing="0.12"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/googleButton" />
+        app:layout_constraintStart_toStartOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

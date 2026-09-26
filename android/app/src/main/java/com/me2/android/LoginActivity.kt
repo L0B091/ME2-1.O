@@ -20,6 +20,7 @@ import kotlin.concurrent.thread
 
 /**
  * Product login is Google Sign-In only. No email/password UI.
+ * Temporary "Ver UI (demo)" link opens MainActivity with a local demo session.
  */
 class LoginActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLoginBinding
@@ -57,6 +58,9 @@ class LoginActivity : AppCompatActivity() {
         // Product path: Google auth is always on. Button must stay visible.
         binding.googleButton.visibility = View.VISIBLE
 
+        // TEMPORAL: aesthetic preview without OAuth (works even if client id missing).
+        setupPreviewDemo()
+
         val clientId = backendClient.googleWebClientId
         if (clientId.isBlank()) {
             binding.loginHintText.text = getString(R.string.login_google_client_id_missing)
@@ -79,6 +83,20 @@ class LoginActivity : AppCompatActivity() {
         binding.googleButton.setOnClickListener {
             setAuthBusy(true)
             googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        }
+    }
+
+    /**
+     * Creates a local UserSession (no token / no backend) and opens MainActivity
+     * so the UI (chat typewriter, aura, bitácora, avatar clips, home widget) can be reviewed.
+     */
+    private fun setupPreviewDemo() {
+        binding.previewDemoButton.visibility = View.VISIBLE
+        binding.previewDemoButton.setOnClickListener {
+            val demo = UserSession.demoPreview()
+            sessionStorage.saveUser(demo)
+            Toast.makeText(this, getString(R.string.login_preview_demo_toast), Toast.LENGTH_LONG).show()
+            openMain()
         }
     }
 
@@ -155,5 +173,7 @@ class LoginActivity : AppCompatActivity() {
     private fun setAuthBusy(isBusy: Boolean) {
         binding.googleButton.isEnabled = !isBusy
         binding.googleButton.alpha = if (isBusy) 0.6f else 1f
+        binding.previewDemoButton.isEnabled = !isBusy
+        binding.previewDemoButton.alpha = if (isBusy) 0.5f else 1f
     }
 }

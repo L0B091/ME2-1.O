@@ -82,4 +82,11 @@
     <string name="widget_description">Reloj ME2 con avatar, hora y temperatura (BA).</string>
     <string name="widget_loading_temp">—°C</string>
 
+    <!-- TEMPORAL: acceso demo sin Google OAuth (remover antes de release) -->
+    <string name="login_preview_demo">Ver UI (demo)</string>
+    <string name="login_preview_demo_hint">Temporal — sin Google, solo para mirar la interfaz.</string>
+    <string name="login_preview_demo_toast">Entraste en vista previa. Chat real y sync piden Google + backend.</string>
+    <string name="demo_chat_notice">Estoy en modo demo: la UI se ve bien, pero el chat de verdad necesita Google y backend. Tranqui, es temporal.</string>
+    <string name="demo_session_plan">DEMO (TEMPORAL)</string>
+
 </resources>

@@ -12,4 +12,24 @@ data class UserSession(
 ) {
     val isPremium: Boolean
         get() = premiumUntilMillis > System.currentTimeMillis()
+
+    /** Temporary aesthetic-preview session (no Google / backend token). */
+    val isDemo: Boolean
+        get() = id == DEMO_USER_ID
+
+    companion object {
+        const val DEMO_USER_ID = "demo-preview-local"
+
+        /** Local-only session so MainActivity can open without OAuth. */
+        fun demoPreview(): UserSession = UserSession(
+            displayName = "Vista previa",
+            email = "vista.previa@me2.demo",
+            id = DEMO_USER_ID,
+            authToken = null,
+            photoUrl = null,
+            emailVerified = false,
+            premiumUntilMillis = 0L,
+            usageMinutes = 0L
+        )
+    }
 }

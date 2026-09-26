@@ -222,9 +222,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupBitacora(session: UserSession) {
         binding.userNameText.text = "MAIL // ${session.email.uppercase(Locale.getDefault())}"
-        binding.userIdText.text = "PLAN // ${if (session.isPremium) "PREMIUM" else "FREE"}"
+        val planTag = when {
+            session.isDemo -> getString(R.string.demo_session_plan)
+            session.isPremium -> "PREMIUM"
+            else -> "FREE"
+        }
+        binding.userIdText.text = "PLAN // $planTag"
         binding.linkText.text = "ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%"
-        val planLabel = if (session.isPremium) "ESTABLE (PREMIUM)" else "ESTABLE (FREE)"
+        val planLabel = when {
+            session.isDemo -> getString(R.string.demo_session_plan)
+            session.isPremium -> "ESTABLE (PREMIUM)"
+            else -> "ESTABLE (FREE)"
+        }
         binding.statusText.text = "ESTADO // $planLabel"
         binding.legendText.text = buildString {
             append(getString(R.string.bitacora_leyenda_line))
@@ -501,6 +510,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dispatchChat(content: String, initiative: JSONObject? = null) {
+        // Demo / no-token path: keep UI alive without hitting backend.
+        if (currentSession.isDemo || currentSession.authToken.isNullOrBlank()) {
+            val notice = if (currentSession.isDemo) {
+                getString(R.string.demo_chat_notice)
+            } else {
+                getString(R.string.offline_memory_notice)
+            }
+            appendAssistantReply(
+                notice,
+                if (currentSession.isDemo) "DEMO" else "OFFLINE",
+                "LOCAL",
+                typewriter = currentSession.isDemo
+            )
+            return
+        }
         if (!backendClient.isConfigured() || !backendClient.isOnline(this)) {
             appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
             return
