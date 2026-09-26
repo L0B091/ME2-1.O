@@ -442,18 +442,24 @@
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipLectura"
                     style="@style/Widget.Material3.Chip.Assist"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
                     android:checked="true"
                     android:text="LECTURA" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipMusica"
                     style="@style/Widget.Material3.Chip.Assist"
-                    android:text="MÚSICA" />
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="MUSICA" />
 
                 <com.google.android.material.chip.Chip
                     android:id="@+id/chipAtenta"
                     style="@style/Widget.Material3.Chip.Assist"
-                    android:text="ATENCIÓN" />
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="ATENCION" />
             </com.google.android.material.chip.ChipGroup>
 
             <FrameLayout

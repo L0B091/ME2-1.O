@@ -2,6 +2,7 @@ package com.me2.android
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -46,19 +47,36 @@ class LoginActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityLoginBinding.inflate(layoutInflater)
-        setContentView(binding.root)
-
-        sessionStorage = SessionStorage(this)
-        sessionStorage.loadUser()?.let {
-            openMain(demoPreview = it.isDemo)
+        try {
+            binding = ActivityLoginBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Login inflate failed", error)
+            Toast.makeText(this, "ME2 no pudo abrir la pantalla de login.", Toast.LENGTH_LONG).show()
+            finish()
             return
         }
 
-        // Product path: Google auth is always on. Button must stay visible.
-        binding.googleButton.visibility = View.VISIBLE
+        sessionStorage = runCatching { SessionStorage(this) }.getOrElse { firstError ->
+            Log.e(TAG, "SessionStorage init failed", firstError)
+            runCatching {
+                deleteSharedPreferences("me2_session_secure")
+                deleteSharedPreferences("joi_session_secure")
+            }
+            SessionStorage(this)
+        }
 
-        // TEMPORAL: aesthetic preview without OAuth (works even if client id missing).
+        val existing = runCatching { sessionStorage.loadUser() }.getOrNull()
+        if (existing != null) {
+            if (!wasMainLaunchUnstable()) {
+                openMain(demoPreview = existing.isDemo)
+                return
+            }
+            Log.w(TAG, "Skipping auto-route after unstable Main launch; staying on login")
+            runCatching { sessionStorage.clear() }
+        }
+
+        binding.googleButton.visibility = View.VISIBLE
         setupPreviewDemo()
 
         val clientId = backendClient.googleWebClientId
@@ -74,27 +92,40 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-            .requestEmail()
-            .requestIdToken(clientId)
-            .build()
-        googleSignInClient = GoogleSignIn.getClient(this, gso)
-
-        binding.googleButton.setOnClickListener {
-            setAuthBusy(true)
-            googleSignInLauncher.launch(googleSignInClient.signInIntent)
+        runCatching {
+            val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                .requestEmail()
+                .requestIdToken(clientId)
+                .build()
+            googleSignInClient = GoogleSignIn.getClient(this, gso)
+            binding.googleButton.setOnClickListener {
+                setAuthBusy(true)
+                googleSignInLauncher.launch(googleSignInClient.signInIntent)
+            }
+        }.onFailure { error ->
+            Log.e(TAG, "GoogleSignIn setup failed", error)
+            binding.loginHintText.text = getString(R.string.login_google_client_id_missing)
+            binding.googleButton.setOnClickListener {
+                Toast.makeText(
+                    this,
+                    getString(R.string.login_google_client_id_missing),
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
-    /**
-     * Creates a local UserSession (no token / no backend) and opens MainActivity
-     * so the UI (chat typewriter, aura, bitácora, avatar clips, home widget) can be reviewed.
-     */
+    private fun wasMainLaunchUnstable(): Boolean {
+        val prefs = getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
+        val pending = prefs.getBoolean(KEY_MAIN_PENDING, false)
+        val crashes = prefs.getInt(KEY_MAIN_CRASHES, 0)
+        return pending || crashes >= 1
+    }
+
     private fun setupPreviewDemo() {
         binding.previewDemoButton.visibility = View.VISIBLE
         binding.previewDemoButton.setOnClickListener {
             val demo = UserSession.demoPreview()
-            // commit() so MainActivity always sees the session (apply() can race).
             sessionStorage.saveUserCommit(demo)
             Toast.makeText(this, getString(R.string.login_preview_demo_toast), Toast.LENGTH_LONG).show()
             openMain(demoPreview = true)
@@ -167,6 +198,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun openMain(demoPreview: Boolean) {
+        markMainLaunchStart(this)
         val intent = Intent(this, MainActivity::class.java).apply {
             if (demoPreview) {
                 putExtra(EXTRA_DEMO_PREVIEW, true)
@@ -177,6 +209,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun setAuthBusy(isBusy: Boolean) {
+        if (!::binding.isInitialized) return
         binding.googleButton.isEnabled = !isBusy
         binding.googleButton.alpha = if (isBusy) 0.6f else 1f
         binding.previewDemoButton.isEnabled = !isBusy
@@ -184,6 +217,34 @@ class LoginActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "Me2Login"
         const val EXTRA_DEMO_PREVIEW = "demo_preview"
+        const val PREFS_LAUNCH_GUARD = "me2_launch_guard"
+        const val KEY_MAIN_PENDING = "main_pending"
+        const val KEY_MAIN_CRASHES = "main_crashes"
+
+        fun markMainLaunchStart(context: android.content.Context) {
+            context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_MAIN_PENDING, true)
+                .apply()
+        }
+
+        fun markMainLaunchStable(context: android.content.Context) {
+            context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_MAIN_PENDING, false)
+                .putInt(KEY_MAIN_CRASHES, 0)
+                .apply()
+        }
+
+        fun markMainLaunchFailed(context: android.content.Context) {
+            val prefs = context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
+            val crashes = prefs.getInt(KEY_MAIN_CRASHES, 0) + 1
+            prefs.edit()
+                .putBoolean(KEY_MAIN_PENDING, false)
+                .putInt(KEY_MAIN_CRASHES, crashes)
+                .apply()
+        }
     }
 }

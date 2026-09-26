@@ -21,17 +21,21 @@ class Me2InitiativeStore internal constructor(
 
     fun snapshot(userId: String): JSONObject = synchronized(lock) {
         val record = dao.findByUserId(userId) ?: return@synchronized JSONObject()
-        val plaintext = checkNotNull(decrypt(record.ivBase64, record.payloadBase64)) {
-            "No se pudo leer el registro local de iniciativas"
+        val plaintext = runCatching { decrypt(record.ivBase64, record.payloadBase64) }.getOrNull()
+        if (plaintext.isNullOrBlank()) {
+            // Corrupt / unreadable vault payload must not crash MainActivity on launch.
+            return@synchronized JSONObject()
         }
-        JSONObject(plaintext)
+        runCatching { JSONObject(plaintext) }.getOrElse { JSONObject() }
     }
 
     private fun update(userId: String, operation: (JSONObject) -> Unit) = synchronized(lock) {
         val state = snapshot(userId)
         operation(state)
-        val encrypted = encrypt(state.toString())
-        dao.upsert(Me2InitiativeRecordEntity(userId, encrypted.payloadBase64, encrypted.ivBase64))
+        runCatching {
+            val encrypted = encrypt(state.toString())
+            dao.upsert(Me2InitiativeRecordEntity(userId, encrypted.payloadBase64, encrypted.ivBase64))
+        }
     }
 
     fun isEnabled(userId: String): Boolean = snapshot(userId).optBoolean("enabled", true)

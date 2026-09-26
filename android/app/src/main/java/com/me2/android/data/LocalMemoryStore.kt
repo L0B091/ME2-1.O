@@ -197,16 +197,18 @@ class LocalMemoryStore(context: Context) {
 
     fun save(memory: LocalMe2Memory) {
         val updated = memory.withUpdatedTimestamp()
-        val encrypted = localVault.encrypt(updated.toJson().toString())
-        dao.upsert(
-            Me2MemoryRecordEntity(
-                userId = updated.userId,
-                payloadBase64 = encrypted.payloadBase64,
-                ivBase64 = encrypted.ivBase64,
-                schemaVersion = updated.version,
-                updatedAt = updated.updatedAt
+        runCatching {
+            val encrypted = localVault.encrypt(updated.toJson().toString())
+            dao.upsert(
+                Me2MemoryRecordEntity(
+                    userId = updated.userId,
+                    payloadBase64 = encrypted.payloadBase64,
+                    ivBase64 = encrypted.ivBase64,
+                    schemaVersion = updated.version,
+                    updatedAt = updated.updatedAt
+                )
             )
-        )
+        }
     }
 
     fun replace(memory: LocalMe2Memory) = save(memory)

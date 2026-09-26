@@ -49,6 +49,9 @@ import kotlin.concurrent.thread
 import org.json.JSONObject
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        private const val TAG = "Me2Main"
+    }
     private enum class AvatarMode { LOOP_NEUTRAL, CONTEXTUAL, PRESENTATION }
 
     private data class AvatarSelection(
@@ -113,11 +116,25 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        try {
+            binding = ActivityMainBinding.inflate(layoutInflater)
+            setContentView(binding.root)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Main inflate failed", error)
+            LoginActivity.markMainLaunchFailed(this)
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
 
-        sessionStorage = SessionStorage(this)
-        var session = sessionStorage.loadUser()
+        sessionStorage = runCatching { SessionStorage(this) }.getOrElse {
+            Log.e(TAG, "SessionStorage failed", it)
+            LoginActivity.markMainLaunchFailed(this)
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
+            return
+        }
+        var session = runCatching { sessionStorage.loadUser() }.getOrNull()
         // Harden demo path: if prefs raced/missed but Intent carries demo_preview, recreate session.
         if (session == null && intent.getBooleanExtra(LoginActivity.EXTRA_DEMO_PREVIEW, false)) {
             val demo = UserSession.demoPreview()
@@ -125,44 +142,65 @@ class MainActivity : AppCompatActivity() {
             session = demo
         }
         if (session == null) {
+            LoginActivity.markMainLaunchFailed(this)
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
             return
         }
         currentSession = session
 
-        localMemoryStore = LocalMemoryStore(this)
-        alarmScheduler = Me2AlarmScheduler(this)
-        notificationCoordinator = Me2NotificationCoordinator(this)
-        initiativeStore = Me2InitiativeStore(this)
-        initiativeScheduler = Me2InitiativeScheduler(this)
+        try {
+            localMemoryStore = LocalMemoryStore(this)
+            alarmScheduler = Me2AlarmScheduler(this)
+            notificationCoordinator = Me2NotificationCoordinator(this)
+            initiativeStore = Me2InitiativeStore(this)
+            initiativeScheduler = Me2InitiativeScheduler(this)
 
-        Me2NotificationChannels.ensure(this)
-        ensureNotificationPermission()
+            runCatching { Me2NotificationChannels.ensure(this) }
+            ensureNotificationPermission()
 
-        setupToolbar()
-        setupChat()
-        setupBitacora(currentSession)
-        setupWidget()
-        setupVideo()
+            setupToolbar()
+            setupChat()
+            setupBitacora(currentSession)
+            setupWidget()
+            runCatching { setupVideo() }.onFailure { Log.e(TAG, "setupVideo failed", it) }
 
-        startedFromEmptyLocalMemory = localMemoryStore.isEffectivelyEmpty(currentSession.id)
-        val launchedWithEvent = intent?.getStringExtra(Me2NotificationCoordinator.EXTRA_EVENT_TYPE) != null
-        hydrateConversation()
-        if (!launchedWithEvent) maybePlayPresentation()
-        localMemoryStore.observe(currentSession.id).observe(this) { record ->
-            if (record != null) hydrateConversation()
-        }
-        syncPremiumState()
-        handleIncomingIntent(intent)
-        syncBackendAlarms()
-        if (initiativeStore.isEnabled(currentSession.id)) {
-            initiativeScheduler.ensureScheduled()
-            if (initiativeStore.snapshot(currentSession.id).optLong("ultimaInteraccion", 0L) <= 0L) {
-                initiativeStore.observeInteraction(currentSession.id)
+            startedFromEmptyLocalMemory = runCatching {
+                localMemoryStore.isEffectivelyEmpty(currentSession.id)
+            }.getOrDefault(true)
+            val launchedWithEvent = intent?.getStringExtra(Me2NotificationCoordinator.EXTRA_EVENT_TYPE) != null
+            runCatching { hydrateConversation() }.onFailure { Log.e(TAG, "hydrateConversation failed", it) }
+            if (!launchedWithEvent) runCatching { maybePlayPresentation() }
+            runCatching {
+                localMemoryStore.observe(currentSession.id).observe(this) { record ->
+                    if (record != null) runCatching { hydrateConversation() }
+                }
             }
+            syncPremiumState()
+            runCatching { handleIncomingIntent(intent) }
+            syncBackendAlarms()
+            runCatching {
+                if (initiativeStore.isEnabled(currentSession.id)) {
+                    initiativeScheduler.ensureScheduled()
+                    if (initiativeStore.snapshot(currentSession.id).optLong("ultimaInteraccion", 0L) <= 0L) {
+                        initiativeStore.observeInteraction(currentSession.id)
+                    }
+                }
+            }.onFailure { Log.e(TAG, "initiative bootstrap failed", it) }
+            checkInHandler.postDelayed(checkInTick, 30_000L)
+            // Mark launch stable after UI is up so a later crash does not immediately loop forever,
+            // but a crash during onCreate leaves pending=true and Login stays put.
+            checkInHandler.postDelayed({
+                LoginActivity.markMainLaunchStable(this@MainActivity)
+            }, 2_500L)
+        } catch (error: Throwable) {
+            Log.e(TAG, "Main onCreate failed", error)
+            LoginActivity.markMainLaunchFailed(this)
+            runCatching { sessionStorage.clear() }
+            Toast.makeText(this, "ME2 no pudo abrir la UI. Volvé a intentar desde login.", Toast.LENGTH_LONG).show()
+            startActivity(Intent(this, LoginActivity::class.java))
+            finish()
         }
-        checkInHandler.postDelayed(checkInTick, 30_000L)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -173,8 +211,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!::binding.isInitialized) return
         sessionStartedAt = SystemClock.elapsedRealtime()
-        restoreAvatarPresence(forceReload = currentAvatarClipResId == null)
+        runCatching { restoreAvatarPresence(forceReload = currentAvatarClipResId == null) }
         player?.playWhenReady = true
         player?.volume = 1f
         if (::currentSession.isInitialized) {
@@ -186,6 +225,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (!::sessionStorage.isInitialized) return
         if (sessionStartedAt > 0L) {
             val elapsedMinutes = ((SystemClock.elapsedRealtime() - sessionStartedAt) / 60000L).coerceAtLeast(0L)
             if (elapsedMinutes > 0L) {
@@ -193,19 +233,26 @@ class MainActivity : AppCompatActivity() {
             }
         }
         player?.playWhenReady = false
-        if (::currentSession.isInitialized && sessionStorage.loadUser()?.id == currentSession.id &&
-            initiativeStore.isEnabled(currentSession.id)
+        if (::currentSession.isInitialized &&
+            ::initiativeStore.isInitialized &&
+            ::initiativeScheduler.isInitialized &&
+            sessionStorage.loadUser()?.id == currentSession.id &&
+            runCatching { initiativeStore.isEnabled(currentSession.id) }.getOrDefault(false)
         ) {
             // Leaving the app starts the 1-hour countdown toward server eval (server may ESPERAR).
-            initiativeStore.markPostSilenceEvalArmed(currentSession.id)
-            initiativeScheduler.schedulePostSilenceEval()
+            runCatching {
+                initiativeStore.markPostSilenceEvalArmed(currentSession.id)
+                initiativeScheduler.schedulePostSilenceEval()
+            }
         }
     }
 
     override fun onDestroy() {
         checkInHandler.removeCallbacks(checkInTick)
-        binding.playerView.player = null
-        player?.release()
+        if (::binding.isInitialized) {
+            runCatching { binding.playerView.player = null }
+        }
+        runCatching { player?.release() }
         player = null
         super.onDestroy()
     }
@@ -341,25 +388,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupVideo() {
-        player = ExoPlayer.Builder(this).build().also { exoPlayer ->
-            binding.playerView.player = exoPlayer
-            binding.playerView.setKeepContentOnPlayerReset(true)
-            binding.playerView.setShutterBackgroundColor(Color.TRANSPARENT)
-            exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
-            exoPlayer.volume = 1f
-            exoPlayer.addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_ENDED) {
-                        handleAvatarPlaybackEnded()
+        if (!::binding.isInitialized) return
+        runCatching {
+            val builder = ExoPlayer.Builder(this)
+            runCatching {
+                builder.javaClass.methods
+                    .firstOrNull { it.name == "setUsePlatformDiagnostics" && it.parameterCount == 1 }
+                    ?.invoke(builder, false)
+            }
+            player = builder.build().also { exoPlayer ->
+                binding.playerView.player = exoPlayer
+                binding.playerView.setKeepContentOnPlayerReset(true)
+                binding.playerView.setShutterBackgroundColor(Color.TRANSPARENT)
+                exoPlayer.repeatMode = Player.REPEAT_MODE_OFF
+                exoPlayer.volume = 1f
+                exoPlayer.addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        if (playbackState == Player.STATE_ENDED) {
+                            handleAvatarPlaybackEnded()
+                        }
                     }
-                }
 
-                override fun onPlayerError(error: PlaybackException) {
-                    Log.e("Me2Avatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
-                    fallbackToLoopNeutral(forceReload = true)
-                }
-            })
-            fallbackToLoopNeutral(forceReload = true, resetStateLabel = true)
+                    override fun onPlayerError(error: PlaybackException) {
+                        Log.e("Me2Avatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
+                        runCatching { fallbackToLoopNeutral(forceReload = true) }
+                    }
+                })
+                fallbackToLoopNeutral(forceReload = true, resetStateLabel = true)
+            }
+        }.onFailure {
+            Log.e(TAG, "ExoPlayer init failed", it)
+            player = null
+            runCatching {
+                binding.videoCaption.text = "AVATAR // VIDEO NO DISPONIBLE"
+                binding.avatarStateText.text = "STATE // STANDBY"
+            }
         }
     }
 
