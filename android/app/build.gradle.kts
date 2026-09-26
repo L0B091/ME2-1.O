@@ -5,10 +5,13 @@ fun firstNonBlank(vararg values: String?): String =
     values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
 val backendBaseUrl = firstNonBlank(
+    System.getenv("ME2_BACKEND_URL"),
     findProperty("ME2_BACKEND_BASE_URL") as String?,
     System.getenv("ME2_ANDROID_BACKEND_BASE_URL"),
     findProperty("JOI_BACKEND_BASE_URL") as String?,
-    System.getenv("JOI_ANDROID_BACKEND_BASE_URL")
+    System.getenv("JOI_ANDROID_BACKEND_BASE_URL"),
+    // Emulator loopback to host machine; override with ME2_BACKEND_URL for physical device LAN IP.
+    "http://10.0.2.2:3000"
 )
 
 val googleWebClientId = firstNonBlank(

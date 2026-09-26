@@ -9,7 +9,7 @@ const DEFAULT_API_URL =
   "https://openrouter.ai/api/v1/chat/completions";
 
 const DEFAULT_MODEL =
-  "cognitivecomputations/dolphin-mistral-24b-venice-edition:free";
+  "google/gemma-4-26b-a4b-it:free";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 

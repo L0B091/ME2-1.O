@@ -524,22 +524,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun dispatchChat(content: String, initiative: JSONObject? = null) {
-        // Demo / no-token path: keep UI alive without hitting backend.
-        if (currentSession.isDemo || currentSession.authToken.isNullOrBlank()) {
-            val notice = if (currentSession.isDemo) {
-                getString(R.string.demo_chat_notice)
-            } else {
-                getString(R.string.offline_memory_notice)
-            }
+        val backendReady = backendClient.isConfigured() && backendClient.isOnline(this)
+        // Demo opens without Google. If backend is up, still hit /chat so LLM can be tested.
+        // If backend is down, keep a local demo reply (no crash).
+        if (currentSession.isDemo && !backendReady) {
             appendAssistantReply(
-                notice,
-                if (currentSession.isDemo) "DEMO" else "OFFLINE",
-                if (currentSession.isDemo) "DEMO_LOOP" else "LOCAL",
-                typewriter = currentSession.isDemo
+                getString(R.string.demo_chat_notice),
+                "DEMO",
+                "DEMO_LOOP",
+                typewriter = true
             )
             return
         }
-        if (!backendClient.isConfigured() || !backendClient.isOnline(this)) {
+        if (!currentSession.isDemo && currentSession.authToken.isNullOrBlank()) {
+            appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+            return
+        }
+        if (!backendReady) {
             appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
             return
         }
@@ -580,7 +581,16 @@ class MainActivity : AppCompatActivity() {
             }.onFailure {
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
-                    appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+                    if (currentSession.isDemo) {
+                        appendAssistantReply(
+                            getString(R.string.demo_chat_notice),
+                            "DEMO",
+                            "DEMO_LOOP",
+                            typewriter = true
+                        )
+                    } else {
+                        appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+                    }
                 }
             }
         }
