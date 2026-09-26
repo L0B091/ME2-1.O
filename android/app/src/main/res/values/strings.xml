@@ -15,7 +15,6 @@
     <string name="limpiar_chat">Limpiar chat</string>
     <string name="cerrar_sesion">TERMINAR SESIÓN</string>
     <string name="editar_foto">Editar foto</string>
-    <string name="widget_title">WIDGETS // AVATAR</string>
     <string name="premium_cta">MODO PREMIUM</string>
     <string name="send">Enviar</string>
     <string name="autosync_active">AUTO-SYNC // ACTIVE</string>
@@ -77,6 +76,7 @@
     <string name="home_widget_switch_label">MOSTRAR EN INICIO</string>
     <string name="home_widget_on">WIDGET HOME ACTIVADO. AGREGALO DESDE LA PANTALLA DE INICIO SI AÚN NO ESTÁ.</string>
     <string name="home_widget_off">WIDGET HOME DESACTIVADO.</string>
+    <string name="home_widget_hint">Se ancla en la pantalla de inicio del celular.</string>
     <string name="adult_mode_premium_copy">Premium incluye memoria de código, fiscal, respaldo en la nube y Modo Adulto (chat + avatar, con palabra clave e intensidad gradual).</string>
     <string name="adult_mode_active_copy">Premium activo. Modo Adulto disponible: pedí la extensión en chat íntimo; tu palabra clave es el candado. Sin biblioteca Blender completa — teasers locales honestos por intensidad.</string>
     <string name="widget_description">Reloj ME2 con avatar, hora y temperatura (BA).</string>

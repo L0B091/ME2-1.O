@@ -26,7 +26,6 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.me2.android.config.ApiConfig
-import com.me2.android.data.AvatarWidgetScene
 import com.me2.android.data.ChatMessage
 import com.me2.android.data.LocalMemoryStore
 import com.me2.android.data.PremiumBackupCrypto
@@ -45,7 +44,6 @@ import com.me2.android.ui.ChatAdapter
 import com.me2.android.widget.Me2HomeWidgetProvider
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Date
 import java.util.Locale
 import kotlin.concurrent.thread
 import org.json.JSONObject
@@ -346,21 +344,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupWidget() {
-        updateWidgetScene(AvatarWidgetScene("CLIP LECTURA", "VENTANA AL MUNDO DEL AVATAR", "21°C"))
-
-        binding.chipLectura.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("CLIP LECTURA", "CALMA Y FOCO", "21°C"))
-            binding.avatarStateText.text = "STATE // THINKING"
-        }
-        binding.chipMusica.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("CLIP MÚSICA", "AUDIO Y PRESENCIA", "23°C"))
-            binding.avatarStateText.text = "STATE // HAPPY"
-        }
-        binding.chipAtenta.setOnClickListener {
-            updateWidgetScene(AvatarWidgetScene("CLIP ATENCIÓN", "ESCUCHA ACTIVA", "20°C"))
-            binding.avatarStateText.text = "STATE // LISTENING"
-        }
-
         binding.audioPrimaryButton.setOnClickListener {
             ensureNotificationPermission()
             notificationCoordinator.showMessageNotification(
@@ -381,16 +364,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.audioMuteButton.setOnClickListener {
             cancelNextAlarm()
-        }
-    }
-
-    private fun updateWidgetScene(scene: AvatarWidgetScene) {
-        val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-        binding.widgetSceneText.text = scene.title
-        binding.widgetFooterText.text = "$clock // ${scene.temperature}"
-        sessionStorage.saveLastTemperature(scene.temperature)
-        if (sessionStorage.isHomeWidgetEnabled()) {
-            Me2HomeWidgetProvider.refreshAll(this)
         }
     }
 

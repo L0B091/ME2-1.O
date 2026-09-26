@@ -38,6 +38,7 @@ class LaunchSmokeTest {
         assertFalse("MainActivity finished unexpectedly", activity.isFinishing)
         assertNotNull(activity.findViewById(R.id.playerView))
         assertNotNull(activity.findViewById(R.id.chatRecyclerView))
-        assertNotNull(activity.findViewById(R.id.chipLectura))
+        assertNotNull(activity.findViewById(R.id.homeWidgetSwitch))
+        assertNotNull(activity.findViewById(R.id.bitacoraPanel))
     }
 }
