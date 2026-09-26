@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import premiumManager from "../modulos/premium/premiumManager.js";
+import adultMode from "../modulos/premium/adultMode.js";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
 import HttpError from "../utils/httpError.js";
 
@@ -155,11 +156,21 @@ async function verificarPago(paymentId, expectedUserId = null) {
     };
   }
 
-  return premiumManager.activarPremium(userId, paymentId, {
+  const activated = premiumManager.activarPremium(userId, paymentId, {
     status: payment.status,
     feature: payment?.metadata?.feature || "M/A",
     preferenceId: payment?.order?.id || null
   });
+  let adultBootstrap = null;
+  try {
+    adultBootstrap = adultMode.habilitarExtension(userId);
+  } catch (error) {
+    adultBootstrap = { ok: false, error: error?.message || String(error) };
+  }
+  return {
+    ...activated,
+    adultMode: adultBootstrap
+  };
 }
 
 async function procesarWebhook(body = {}, query = {}) {

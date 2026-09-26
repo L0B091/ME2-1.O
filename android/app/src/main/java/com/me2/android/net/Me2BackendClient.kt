@@ -26,18 +26,33 @@ data class BackendAuthResult(
     val emailVerified: Boolean
 )
 
+data class AdultModeSnapshot(
+    val phase: String?,
+    val unlocked: Boolean,
+    val intensity: String?,
+    val extensionEnabled: Boolean,
+    val clipCategoria: String?,
+    val clipEtiqueta: String?,
+    val allowAdultTone: Boolean
+)
+
 data class BackendChatResult(
     val reply: String,
     val tone: String?,
     val rhythm: String?,
     val microExpression: String?,
-    val premiumUntilMillis: Long?
+    val premiumUntilMillis: Long?,
+    val adultMode: AdultModeSnapshot? = null,
+    val checkoutInitPoint: String? = null,
+    val videoCategoria: String? = null,
+    val videoEtiqueta: String? = null
 )
 
 data class PremiumStatusResult(
     val active: Boolean,
     val premiumUntilMillis: Long,
-    val backupMaterial: String?
+    val backupMaterial: String?,
+    val adultMode: AdultModeSnapshot? = null
 )
 
 data class AlarmDispatchStage(
@@ -148,12 +163,32 @@ class Me2BackendClient {
             }
         )
 
+        val adultJson = json.optJSONObject("adultMode")
+        val videoJson = json.optJSONObject("video")
+        val checkoutJson = json.optJSONObject("checkout")
+        val clipHint = adultJson?.optJSONObject("clipHint")
         return BackendChatResult(
             reply = json.optString("respuesta", "ME2 recibió el mensaje, pero no devolvió texto."),
             tone = json.optJSONObject("expresion")?.optString("tono"),
             rhythm = json.optJSONObject("expresion")?.optString("ritmo"),
             microExpression = json.optJSONObject("expresion")?.optString("microexpresion"),
-            premiumUntilMillis = parsePremiumMillis(json.optJSONObject("premium"))
+            premiumUntilMillis = parsePremiumMillis(json.optJSONObject("premium")),
+            adultMode = adultJson?.let {
+                AdultModeSnapshot(
+                    phase = it.optString("phase").ifBlank { null },
+                    unlocked = it.optBoolean("unlocked", false),
+                    intensity = it.optString("intensity").ifBlank { null },
+                    extensionEnabled = it.optBoolean("extensionEnabled", false),
+                    clipCategoria = (clipHint?.optString("categoria") ?: videoJson?.optString("categoria"))
+                        ?.ifBlank { null },
+                    clipEtiqueta = (clipHint?.optString("etiqueta") ?: videoJson?.optString("etiqueta"))
+                        ?.ifBlank { null },
+                    allowAdultTone = it.optBoolean("allowAdultTone", false)
+                )
+            },
+            checkoutInitPoint = checkoutJson?.optString("initPoint")?.ifBlank { null },
+            videoCategoria = videoJson?.optString("categoria")?.ifBlank { null },
+            videoEtiqueta = videoJson?.optString("etiqueta")?.ifBlank { null }
         )
     }
 
@@ -238,10 +273,23 @@ class Me2BackendClient {
             authToken = session.authToken
         )
         val data = json.optJSONObject("data") ?: json
+        val adultJson = data.optJSONObject("adultMode")
+        val clipHint = adultJson?.optJSONObject("clipHint")
         return PremiumStatusResult(
             active = data.optBoolean("premiumActivo", false),
             premiumUntilMillis = parsePremiumMillis(data) ?: 0L,
-            backupMaterial = data.optString("backupMaterial").ifBlank { null }
+            backupMaterial = data.optString("backupMaterial").ifBlank { null },
+            adultMode = adultJson?.let {
+                AdultModeSnapshot(
+                    phase = it.optString("phase").ifBlank { null },
+                    unlocked = it.optBoolean("unlocked", false),
+                    intensity = it.optString("intensity").ifBlank { null },
+                    extensionEnabled = it.optBoolean("extensionEnabled", false),
+                    clipCategoria = clipHint?.optString("categoria")?.ifBlank { null },
+                    clipEtiqueta = clipHint?.optString("etiqueta")?.ifBlank { null },
+                    allowAdultTone = it.optBoolean("allowAdultTone", false)
+                )
+            }
         )
     }
 

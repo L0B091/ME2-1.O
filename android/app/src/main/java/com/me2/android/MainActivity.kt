@@ -40,6 +40,7 @@ import com.me2.android.notifications.Me2NotificationCoordinator
 import com.me2.android.notifications.Me2InitiativeScheduler
 import com.me2.android.notifications.Me2InitiativeStore
 import com.me2.android.ui.ChatAdapter
+import com.me2.android.widget.Me2HomeWidgetProvider
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -220,16 +221,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBitacora(session: UserSession) {
-        binding.userNameText.text = "USERNAME // ${session.displayName.uppercase(Locale.getDefault())}"
-        binding.userIdText.text = "ID // ${session.id.uppercase(Locale.getDefault())}"
+        binding.userNameText.text = "MAIL // ${session.email.uppercase(Locale.getDefault())}"
+        binding.userIdText.text = "PLAN // ${if (session.isPremium) "PREMIUM" else "FREE"}"
         binding.linkText.text = "ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%"
         val planLabel = if (session.isPremium) "ESTABLE (PREMIUM)" else "ESTABLE (FREE)"
         binding.statusText.text = "ESTADO // $planLabel"
         binding.legendText.text = buildString {
-            append(if (backendClient.isConfigured()) "[ME2] ${getString(R.string.bitacora_sync_wait)}\n" else "[ME2] MODO LOCAL PRIMARIO\n")
-            append("[MEMORIA] MEMORIA LOCAL MULTICAPA ACTIVA\n")
-            append("[USUARIO] SESIÓN VINCULADA A ${session.email.uppercase(Locale.getDefault())}\n")
-            append("[SISTEMA] VIDEO LOCAL, CHAT, NOTIFICACIONES Y BITÁCORA DISPONIBLES")
+            append(getString(R.string.bitacora_leyenda_line))
+            append("\n")
+            append("ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%")
+        }
+
+        binding.homeWidgetSwitch.setOnCheckedChangeListener(null)
+        binding.homeWidgetSwitch.isChecked = sessionStorage.isHomeWidgetEnabled()
+        binding.homeWidgetSwitch.setOnCheckedChangeListener { _, checked ->
+            sessionStorage.setHomeWidgetEnabled(checked)
+            Me2HomeWidgetProvider.refreshAll(this)
+            Toast.makeText(
+                this,
+                if (checked) getString(R.string.home_widget_on) else getString(R.string.home_widget_off),
+                Toast.LENGTH_SHORT
+            ).show()
         }
 
         binding.editProfileButton.setOnClickListener {
@@ -299,6 +311,10 @@ class MainActivity : AppCompatActivity() {
         val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
         binding.widgetSceneText.text = scene.title
         binding.widgetFooterText.text = "$clock // ${scene.temperature}"
+        sessionStorage.saveLastTemperature(scene.temperature)
+        if (sessionStorage.isHomeWidgetEnabled()) {
+            Me2HomeWidgetProvider.refreshAll(this)
+        }
     }
 
     private fun setupVideo() {
@@ -392,11 +408,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun showPremiumDialog() {
         val premiumCopy = if (currentSession.isPremium) {
-            "PREMIUM ACTIVO. RESPALDO, MEMORIA EXTENDIDA, CÓDIGO Y FISCAL DISPONIBLES. " +
-                "EL MODO ADULTO SE MENCIONA EN EL PLAN; NO HAY BIBLIOTECA ADULTA EN ESTA BUILD."
+            getString(R.string.adult_mode_active_copy)
         } else {
-            "MODO PREMIUM HABILITA M/A, MEMORIA EXTENDIDA, CÓDIGO/FISCAL, GESTIÓN DE ARCHIVOS Y RESPALDO " +
-                "DURANTE 30 DÍAS. EL PLAN PUEDE MENCIONAR MODO ADULTO; ESTA BUILD NO INCLUYE CONTENIDO ADULTO."
+            getString(R.string.adult_mode_premium_copy)
         }
         val builder = AlertDialog.Builder(this)
             .setTitle("PREMIUM ME2")
@@ -500,12 +514,29 @@ class MainActivity : AppCompatActivity() {
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
-                    val state = result.tone?.uppercase(Locale.getDefault()) ?: "ONLINE"
-                    val detail = result.microExpression?.uppercase(Locale.getDefault()) ?: "SYNC"
-                    appendAssistantReply(result.reply, state, detail)
+                    applyAdultModeFromChat(result)
+                    val intensity = result.adultMode?.intensity
+                    val state = when {
+                        !intensity.isNullOrBlank() && intensity != "none" && result.adultMode?.unlocked == true ->
+                            "ADULT_${intensity.uppercase(Locale.getDefault())}"
+                        else -> result.tone?.uppercase(Locale.getDefault()) ?: "ONLINE"
+                    }
+                    val detail = result.videoEtiqueta?.uppercase(Locale.getDefault())
+                        ?: result.microExpression?.uppercase(Locale.getDefault())
+                        ?: "SYNC"
+                    appendAssistantReply(result.reply, state, detail, typewriter = true)
                     startedFromEmptyLocalMemory = false
                     result.premiumUntilMillis?.let { premiumUntil ->
                         updateCurrentSession(currentSession.copy(premiumUntilMillis = premiumUntil))
+                    }
+                    result.checkoutInitPoint?.takeIf { it.isNotBlank() }?.let { initPoint ->
+                        runCatching {
+                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(initPoint)))
+                        }
+                    }
+                    // Persist keyword if ME2 just assigned one in the reply.
+                    extractAdultKeyword(result.reply)?.let { keyword ->
+                        sessionStorage.saveAdultKeyword(keyword)
                     }
                 }
             }.onFailure {
@@ -517,14 +548,44 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun appendAssistantReply(reply: String, state: String, detail: String) {
-        val me2Reply = ChatMessage(reply, true)
+    private fun appendAssistantReply(
+        reply: String,
+        state: String,
+        detail: String,
+        typewriter: Boolean = false
+    ) {
+        // Clear previous typewriter flags so only the newest ME2 bubble animates.
+        for (i in visibleConversation.indices) {
+            val msg = visibleConversation[i]
+            if (msg.fromMe2 && msg.animateTypewriter) {
+                visibleConversation[i] = msg.copy(animateTypewriter = false)
+            }
+        }
+        val me2Reply = ChatMessage(reply, true, animateTypewriter = typewriter)
         fullConversation += me2Reply
         visibleConversation += me2Reply
         localMemoryStore.appendAssistantMessage(currentSession.id, reply)
         binding.avatarStateText.text = "STATE // $state"
         applyAssistantAvatarState(state, detail)
         renderConversation()
+    }
+
+    private fun applyAdultModeFromChat(result: com.me2.android.net.BackendChatResult) {
+        val adult = result.adultMode ?: return
+        sessionStorage.saveAdultUnlocked(adult.unlocked)
+        adult.intensity?.let { sessionStorage.saveAdultIntensity(it) }
+    }
+
+    private fun extractAdultKeyword(reply: String): String? {
+        val patterns = listOf(
+            Regex("""palabra clave para modo adulto será:\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)""", RegexOption.IGNORE_CASE),
+            Regex("""palabra clave para modo adulto sera:\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)""", RegexOption.IGNORE_CASE)
+        )
+        for (re in patterns) {
+            val m = re.find(reply) ?: continue
+            return m.groupValues.getOrNull(1)?.lowercase(Locale.getDefault())
+        }
+        return null
     }
 
     private fun syncPremiumState() {
@@ -542,6 +603,10 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     updateCurrentSession(updatedSession)
                     backupMaterial = premium.backupMaterial
+                    premium.adultMode?.let { adult ->
+                        sessionStorage.saveAdultUnlocked(adult.unlocked)
+                        adult.intensity?.let { sessionStorage.saveAdultIntensity(it) }
+                    }
                     if (updatedSession.isPremium && startedFromEmptyLocalMemory) {
                         restorePremiumBackup(silent = true)
                     }
@@ -718,6 +783,14 @@ class MainActivity : AppCompatActivity() {
         val normalizedState = state.uppercase(Locale.getDefault())
         val normalizedDetail = detail.uppercase(Locale.getDefault())
         val tokens = "$normalizedState $normalizedDetail"
+        // Adult intensity → teasers locales existentes (sin biblioteca adulta Blender).
+        when {
+            tokens.contains("ADULT_EXPLICIT") -> return AvatarSelection("TEASER_EXPLICIT", loopNeutralGallery)
+            tokens.contains("ADULT_INTIMATE") -> return AvatarSelection("TEASER_INTIMATE", calidaGallery)
+            tokens.contains("ADULT_SUGGESTIVE") -> return AvatarSelection("TEASER_SUGGESTIVE", alegreGallery)
+            tokens.contains("ADULT_SOFT_FLIRT") || tokens.contains("ADULT_SOFT") ->
+                return AvatarSelection("TEASER_SOFT", calidaGallery)
+        }
         return when {
             normalizedState == "OFFLINE" || normalizedState == "NOTICE" -> null
             normalizedDetail == "LOCAL" || normalizedDetail == "SYNC" || normalizedDetail == "MESSAGE" || normalizedDetail.startsWith("STAGE_") -> null

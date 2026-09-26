@@ -16,4 +16,6 @@
     <color name="me2_divider">#1D2C2E</color>
     <color name="me2_danger">#FF6C74</color>
     <color name="me2_icon_dark">#021314</color>
+    <color name="me2_aura_green">#30E8C0</color>
+    <color name="me2_widget_ring">#2AE6D4</color>
 </resources>

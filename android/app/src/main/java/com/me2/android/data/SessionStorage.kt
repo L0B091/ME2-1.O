@@ -87,6 +87,39 @@ class SessionStorage(context: Context) {
         return min(99, (44 + hours * 2).toInt())
     }
 
+    fun saveAdultKeyword(keyword: String?) {
+        preferences.edit().putString(KEY_ADULT_KEYWORD, keyword).apply()
+    }
+
+    fun loadAdultKeyword(): String? =
+        preferences.getString(KEY_ADULT_KEYWORD, null)?.takeIf { it.isNotBlank() }
+
+    fun saveAdultUnlocked(unlocked: Boolean) {
+        preferences.edit().putBoolean(KEY_ADULT_UNLOCKED, unlocked).apply()
+    }
+
+    fun isAdultUnlocked(): Boolean = preferences.getBoolean(KEY_ADULT_UNLOCKED, false)
+
+    fun saveAdultIntensity(intensity: String) {
+        preferences.edit().putString(KEY_ADULT_INTENSITY, intensity).apply()
+    }
+
+    fun loadAdultIntensity(): String =
+        preferences.getString(KEY_ADULT_INTENSITY, "none") ?: "none"
+
+    fun setHomeWidgetEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_HOME_WIDGET, enabled).apply()
+    }
+
+    fun isHomeWidgetEnabled(): Boolean = preferences.getBoolean(KEY_HOME_WIDGET, false)
+
+    fun saveLastTemperature(tempLabel: String) {
+        preferences.edit().putString(KEY_LAST_TEMP, tempLabel).apply()
+    }
+
+    fun loadLastTemperature(): String =
+        preferences.getString(KEY_LAST_TEMP, "—°C") ?: "—°C"
+
     private fun migrateLegacyIfNeeded() {
         if (preferences.contains(KEY_ID)) return
         val source = when {
@@ -117,5 +150,10 @@ class SessionStorage(context: Context) {
         private const val KEY_EMAIL_VERIFIED = "email_verified"
         private const val KEY_PREMIUM_UNTIL = "premium_until"
         private const val KEY_USAGE_MINUTES = "usage_minutes"
+        private const val KEY_ADULT_KEYWORD = "adult_keyword"
+        private const val KEY_ADULT_UNLOCKED = "adult_unlocked"
+        private const val KEY_ADULT_INTENSITY = "adult_intensity"
+        private const val KEY_HOME_WIDGET = "home_widget_enabled"
+        private const val KEY_LAST_TEMP = "last_known_temp"
     }
 }

@@ -70,4 +70,16 @@
     <string name="login_backend_url_missing">Falta BACKEND_BASE_URL. Configurá ME2_BACKEND_BASE_URL.</string>
     <string name="login_offline">Sin conexión. El inicio de sesión con Google requiere red.</string>
     <string name="login_google_backend_failed">El backend rechazó el inicio de sesión con Google.</string>
+
+    <string name="bitacora_leyenda_title">LEYENDA // SYNC</string>
+    <string name="bitacora_leyenda_line">CANAL ABIERTO // PRESENCIA EN VIVO</string>
+    <string name="home_widget_section">WIDGET HOME</string>
+    <string name="home_widget_switch_label">MOSTRAR EN INICIO</string>
+    <string name="home_widget_on">WIDGET HOME ACTIVADO. AGREGALO DESDE LA PANTALLA DE INICIO SI AÚN NO ESTÁ.</string>
+    <string name="home_widget_off">WIDGET HOME DESACTIVADO.</string>
+    <string name="adult_mode_premium_copy">Premium incluye memoria de código, fiscal, respaldo en la nube y Modo Adulto (chat + avatar, con palabra clave e intensidad gradual).</string>
+    <string name="adult_mode_active_copy">Premium activo. Modo Adulto disponible: pedí la extensión en chat íntimo; tu palabra clave es el candado. Sin biblioteca Blender completa — teasers locales honestos por intensidad.</string>
+    <string name="widget_description">Reloj ME2 con avatar, hora y temperatura (BA).</string>
+    <string name="widget_loading_temp">—°C</string>
+
 </resources>

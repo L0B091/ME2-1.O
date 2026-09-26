@@ -7,7 +7,6 @@
 import crypto from "crypto";
 import storage from "../../utils/jsonStorage.js";
 import premiumManager from "./premiumManager.js";
-import mercadoPagoApi from "../../api/mercadoPago.js";
 
 const NAMESPACE = "adult_mode";
 
@@ -272,21 +271,8 @@ async function procesarEnChat(userId, mensaje, opciones = {}) {
   const cruza = mensajeCruzaLimiteIntimo(mensaje);
   const adultPublicBase = () => (userId ? obtenerEstadoPublico(userId) : obtenerEstadoPublico("anonimo"));
 
-  // 1) Sin premium + límite íntimo → pitch + checkout
+  // 1) Sin premium + límite íntimo → pitch + checkout (checkout lo arma el orquestador/API)
   if (cruza && !premium.premiumActivo) {
-    let checkout = null;
-    if (userId && opciones.intentarCheckout !== false) {
-      try {
-        checkout = await mercadoPagoApi.generarLinkPago(userId, "Modo Adulto");
-        premiumManager.registrarCheckout(userId, {
-          preferenceId: checkout?.id || checkout?.preferenceId,
-          feature: "Modo Adulto",
-          initPoint: checkout?.init_point || checkout?.sandbox_init_point
-        });
-      } catch {
-        checkout = null;
-      }
-    }
     if (userId) {
       guardarRegistro(userId, {
         ...reg,
@@ -297,12 +283,8 @@ async function procesarEnChat(userId, mensaje, opciones = {}) {
       intercept: true,
       respuesta: mensajePremiumRequerido(),
       adult: { ...adultPublicBase(), checkoutOffered: true },
-      checkout: checkout
-        ? {
-            initPoint: checkout.init_point || checkout.sandbox_init_point || null,
-            preferenceId: checkout.id || checkout.preferenceId || null
-          }
-        : null,
+      needsCheckout: true,
+      checkout: null,
       video: {
         categoria: "atenta",
         etiqueta: "premium_gate",

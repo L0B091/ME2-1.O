@@ -31,6 +31,7 @@ import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
 import veniceClient from "../llm/veniceClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
+import mercadoPagoApi from "../api/mercadoPago.js";
 import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import personalityEngine from "../modulos/personalidad/personalityEngine.js";
@@ -241,6 +242,24 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       adultResult.video ||
       selectorVideo.seleccionarVideo(contextoCompleto, expresionMeta);
 
+    let checkout = adultResult.checkout || null;
+    if (adultResult.needsCheckout && contexto.userId) {
+      try {
+        const link = await mercadoPagoApi.generarLinkPago(contexto.userId, "Modo Adulto");
+        premiumManager.registrarCheckout(contexto.userId, {
+          preferenceId: link?.id || link?.preferenceId,
+          feature: "Modo Adulto",
+          initPoint: link?.init_point || link?.sandbox_init_point
+        });
+        checkout = {
+          initPoint: link?.init_point || link?.sandbox_init_point || null,
+          preferenceId: link?.id || link?.preferenceId || null
+        };
+      } catch (error) {
+        checkout = null;
+      }
+    }
+
     if (contexto.userId && adultResult.respuesta && persistirEnServidor) {
       historialConversacion.registrarMensaje(
         contexto.userId,
@@ -255,7 +274,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       video,
       premium: contextoCompleto.memoriaEspecializada.premium,
       adultMode: adultResult.adult,
-      checkout: adultResult.checkout || null,
+      checkout,
       debug: {
         adultMode: adultResult,
         memoriaLocal,

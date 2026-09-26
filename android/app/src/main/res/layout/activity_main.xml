@@ -140,9 +140,22 @@
                 android:clipToPadding="false"
                 android:paddingBottom="8dp" />
 
+            <FrameLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp">
+
+                <View
+                    android:id="@+id/footerAura"
+                    android:layout_width="match_parent"
+                    android:layout_height="72dp"
+                    android:layout_gravity="bottom"
+                    android:background="@drawable/bg_footer_aura_glow" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
+                android:layout_gravity="bottom"
                 android:layout_marginTop="10dp"
                 android:background="@drawable/bg_input"
                 android:gravity="center_vertical"
@@ -179,6 +192,7 @@
                     android:src="@android:drawable/arrow_up_float"
                     android:tint="@color/me2_accent" />
             </LinearLayout>
+            </FrameLayout>
         </LinearLayout>
 
         <LinearLayout
@@ -358,7 +372,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="22dp"
-                android:text="BITÁCORA // EVENTOS"
+                android:text="@string/bitacora_leyenda_title"
                 android:textAllCaps="true"
                 android:textColor="@color/me2_accent"
                 android:letterSpacing="0.16"
@@ -372,7 +386,41 @@
                 android:background="@drawable/bg_panel_soft"
                 android:padding="14dp"
                 android:textColor="@color/me2_text_secondary"
+                android:letterSpacing="0.08"
                 android:textSize="12sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="22dp"
+                android:text="@string/home_widget_section"
+                android:textAllCaps="true"
+                android:textColor="@color/me2_accent"
+                android:letterSpacing="0.16"
+                android:textSize="11sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_widget_switch_label"
+                    android:textAllCaps="true"
+                    android:textColor="@color/me2_text_secondary"
+                    android:letterSpacing="0.1"
+                    android:textSize="12sp" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/homeWidgetSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
 
             <TextView
                 android:layout_width="wrap_content"
