@@ -33,7 +33,7 @@ export const PLAN = {
     "Almacenamiento de comprobantes",
     "Copia cifrada del respaldo local de memoria Android",
     "Restauración del respaldo local en otro teléfono",
-    "Modo Adulto (listado Premium / gate placeholder — sin producto de contenido adulto)"
+    "Modo Adulto (chat + avatar en cámara, con palabra clave y intensidad gradual)"
   ]
 };
 

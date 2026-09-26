@@ -30,6 +30,7 @@ import documentosFiscales from "../memoria/documentosFiscales.js";
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
 import veniceClient from "../llm/veniceClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
+import adultMode from "../modulos/premium/adultMode.js";
 import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import personalityEngine from "../modulos/personalidad/personalityEngine.js";
@@ -203,6 +204,63 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       source: "android_local_primary",
       totalDocumentos: memoriaLocal.fiscalMemories.length,
       items: memoriaLocal.fiscalMemories
+    };
+  }
+
+  // =========================================================
+  // [ADULT] Modo Adulto — gate Premium → keyword → intensidad
+  // =========================================================
+  let adultResult = {
+    intercept: false,
+    adult: contexto.userId ? adultMode.obtenerEstado(contexto.userId) : null,
+    checkout: null,
+    video: null
+  };
+  try {
+    adultResult = await adultMode.procesarEnChat(
+      contexto.userId,
+      mensajeUsuario,
+      {
+        premium: contextoCompleto.memoriaEspecializada.premium,
+        intentarCheckout: true
+      }
+    );
+  } catch (error) {
+    console.error("Error en adultMode:", error);
+  }
+  contextoCompleto.adultMode = adultResult?.adult || null;
+
+  if (adultResult?.intercept) {
+    const expresionMeta = adultResult.toneOverride || {
+      tono: "calido",
+      ritmo: "suave",
+      microexpresion: "mirada_atenta",
+      intensidad: "suave"
+    };
+    const video =
+      adultResult.video ||
+      selectorVideo.seleccionarVideo(contextoCompleto, expresionMeta);
+
+    if (contexto.userId && adultResult.respuesta && persistirEnServidor) {
+      historialConversacion.registrarMensaje(
+        contexto.userId,
+        adultResult.respuesta,
+        "joi"
+      );
+    }
+
+    return {
+      respuesta: adultResult.respuesta,
+      expresion: expresionMeta,
+      video,
+      premium: contextoCompleto.memoriaEspecializada.premium,
+      adultMode: adultResult.adult,
+      checkout: adultResult.checkout || null,
+      debug: {
+        adultMode: adultResult,
+        memoriaLocal,
+        memoriaUsuario
+      }
     };
   }
 
@@ -389,11 +447,27 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     );
   respuesta = expresion.mensaje;
 
-  const video =
+  let video =
     selectorVideo.seleccionarVideo(
       contextoCompleto,
       expresion.metadata
     );
+
+  if (adultResult?.video?.categoria && adultResult?.adult?.unlocked) {
+    video = {
+      ...video,
+      ...adultResult.video,
+      categoria: adultResult.video.categoria || video.categoria,
+      etiqueta: adultResult.video.etiqueta || video.etiqueta
+    };
+  }
+
+  if (adultResult?.toneOverride?.intensidad && adultResult?.adult?.allowAdultTone) {
+    expresion.metadata = {
+      ...expresion.metadata,
+      ...adultResult.toneOverride
+    };
+  }
 
   if (contexto.userId && respuesta && persistirEnServidor) {
     historialConversacion.registrarMensaje(
@@ -412,6 +486,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     expresion: expresion.metadata,
     video,
     premium: contextoCompleto.memoriaEspecializada.premium,
+    adultMode: adultResult?.adult || null,
+    checkout: adultResult?.checkout || null,
     debug: {
       entradaProcesada,
       cognicion: resultadoCognicion,

@@ -14,6 +14,7 @@ import notificacionesApi from "./api/notificaciones.js";
 import mercadoPagoApi from "./api/mercadoPago.js";
 import premiumManager from "./modulos/premium/premiumManager.js";
 import backupManager from "./modulos/premium/backupManager.js";
+import adultMode from "./modulos/premium/adultMode.js";
 import gestorDeAlarmas from "./modulos/gestorDeAlarmas.js";
 import protocoloDespertador from "./modulos/protocoloDespertador.js";
 import orquestadorNotificaciones from "./orquestador/orquestadorNotificaciones.js";
@@ -348,8 +349,27 @@ app.post("/api/mercadopago/webhook", handleAsync(async (req, res) => {
 
 app.get("/api/premium/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
-  res.json({ ok: true, data: premiumManager.obtenerEstado(userId) });
+  const estado = premiumManager.obtenerEstado(userId);
+  res.json({
+    ok: true,
+    data: {
+      ...estado,
+      adultMode: adultMode.obtenerEstado(userId)
+    }
+  });
 });
+
+app.get("/api/premium/:userId/adult", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  res.json({ ok: true, data: adultMode.obtenerEstado(userId) });
+});
+
+app.post("/api/premium/:userId/adult/enable", requireAuth, handleAsync(async (req, res) => {
+  const userId = ensureOwnUser(req);
+  ensurePremium(userId, "Modo Adulto");
+  const result = adultMode.habilitarExtension(userId);
+  res.json({ ok: true, data: result });
+}));
 
 app.get("/api/premium/:userId/backup/materials", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
@@ -470,6 +490,8 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
     video: resultado?.video || null,
     expresion: resultado?.expresion || null,
     premium: resultado?.premium || null,
+    adultMode: resultado?.adultMode || null,
+    checkout: resultado?.checkout || null,
     debug: process.env.NODE_ENV === "development" ? resultado?.debug || null : undefined
   });
 }));
