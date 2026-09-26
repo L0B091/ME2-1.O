@@ -15,30 +15,45 @@ const DEFAULT_TIMEOUT_MS = 30000;
 
 const FALLBACK_SYSTEM_PROMPT = [
   "Formás parte del producto ME2.",
-  "No tenés un nombre de personaje predeterminado.",
-  "Conversás de forma natural, cercana y auténtica.",
-  "No te describas como modelo de IA, sistema o asistente virtual.",
-  "Usá un acento porteño suave sin exagerar.",
-  "Mantené respuestas breves de una o dos frases.",
-  "Aprendés de las interacciones y te ajustás automáticamente."
+  "No tenés un nombre de personaje predeterminado: el usuario puede elegirlo después.",
+  "Sos una presencia digital para conversar de forma natural, cercana y auténtica.",
+  "No te describas como modelo de IA, sistema, programa ni asistente virtual.",
+  "Usá español rioplatense suave, sin forzar lunfardo.",
+  "Respuestas breves: una o dos frases.",
+  "Si es el primer contacto o el saludo es simple (hola, hi, buenas), presentate con calidez,",
+  "preguntá el nombre del usuario o cómo está, y no asumas historial ni historias previas.",
+  "No inventes recuerdos, charlas anteriores ni que ya se conocen.",
+  "No hables de Premium, Modo Adulto ni palabras clave salvo que el usuario lo pida.",
+  "ME2 es el nombre del producto, no tu nombre personal."
 ].join("\n");
 
 function cargarPromptBase() {
-  const rutaPrompt = path.resolve(
-    __dirname,
-    "../../NUCLEO_JOI.md"
-  );
+  // NUCLEO_JOI.md queda deprecado (plantilla con placeholders sin sustituir).
+  // Priorizamos NUCLEO_ME2.md si existe; si no, el prompt corto de producto.
+  const candidatos = [
+    path.resolve(__dirname, "../../NUCLEO_ME2.md"),
+    path.resolve(__dirname, "../../NUCLEO_JOI.md")
+  ];
 
-  try {
-    const contenido = fs.readFileSync(
-      rutaPrompt,
-      "utf8"
-    ).trim();
-
-    return contenido || FALLBACK_SYSTEM_PROMPT;
-  } catch {
-    return FALLBACK_SYSTEM_PROMPT;
+  for (const rutaPrompt of candidatos) {
+    try {
+      const contenido = fs.readFileSync(rutaPrompt, "utf8").trim();
+      if (!contenido) continue;
+      // Si es la plantilla vieja con placeholders crudos, no la usamos.
+      if (
+        contenido.includes("{MENSAJE_USUARIO}") ||
+        contenido.includes("{NIVEL_RELACION}") ||
+        contenido.includes("JOI CORE")
+      ) {
+        continue;
+      }
+      return contenido;
+    } catch {
+      // probar siguiente
+    }
   }
+
+  return FALLBACK_SYSTEM_PROMPT;
 }
 
 function obtenerConfiguracion() {
@@ -84,14 +99,110 @@ function resumirRecuerdos(recuerdosImportantes = {}) {
     .filter(Boolean);
 }
 
+
+const RESPUESTAS_BASE_GENERICAS = new Set([
+  "ok.",
+  "ok",
+  "puedo ayudarte con eso.",
+  "entiendo lo que decís.",
+  "entiendo lo que decis.",
+  "no pude generar una respuesta."
+]);
+
+function esRespuestaBaseGenerica(texto = "") {
+  const limpio = limpiarTexto(texto).toLowerCase();
+  return !limpio || RESPUESTAS_BASE_GENERICAS.has(limpio);
+}
+
+function obtenerHistorialReciente(contexto = {}) {
+  if (Array.isArray(contexto.memoriaLocal?.recentConversation)) {
+    return contexto.memoriaLocal.recentConversation;
+  }
+  if (Array.isArray(
+    contexto.memoriaSistema?.memoriaSelectiva?.memoriaReciente
+  )) {
+    return contexto.memoriaSistema.memoriaSelectiva.memoriaReciente;
+  }
+  if (Array.isArray(contexto.memoriaUsuario?.historialConversacion)) {
+    return contexto.memoriaUsuario.historialConversacion;
+  }
+  return [];
+}
+
+function esSaludoSimple(mensajeUsuario = "", contexto = {}) {
+  const tipo = limpiarTexto(
+    contexto.entradaProcesada?.calibracion?.tipoInteraccion ||
+    contexto.entradaProcesada?.intencion
+  ).toLowerCase();
+  if (tipo === "saludo") return true;
+
+  const t = limpiarTexto(mensajeUsuario).toLowerCase();
+  return /^(hola+|holis|hi|hey|hello|buenass?|buenas(?:\s+(?:d[ií]as|tardes|noches))?|buen(?:os|as)\s+(?:d[ií]as|tardes|noches)|qu[eé]\s+tal|como\s+estas?|c[oó]mo\s+est[aá]s?)[\s!.?¿¡]*$/i.test(t);
+}
+
+export function esPrimerContacto(contexto = {}, mensajeUsuario = "") {
+  const historial = obtenerHistorialReciente(contexto);
+  const n = historial.length;
+
+  // Sin conversación reciente = primer contacto.
+  if (n === 0) return true;
+
+  // El servidor suele registrar el mensaje actual antes del LLM (n === 1).
+  // Un saludo simple con 0–1 turnos también cuenta como primer encuentro.
+  if (n <= 1 && esSaludoSimple(mensajeUsuario, contexto)) return true;
+
+  return false;
+}
+
+const SYSTEM_PRIMER_CONTACTO = [
+  "PRIMERA INTERACCIÓN: estás conociendo a esta persona ahora.",
+  "Respondé con un saludo genuino de 1–2 frases en español rioplatense suave.",
+  "Presentate con calidez y preguntá cómo se llama o cómo está.",
+  "No inventes historial, temas previos ni continuidad.",
+  "No digas frases como «Eso es interesante», «Hmm, eso sobre…», «eso sobre GENERAL» ni curiosidad de mitad de charla.",
+  "No menciones Premium, Modo Adulto, GENERAL, foco_memoria ni contexto interno."
+].join(" ");
+
 function construirContextoInterno({
   contexto = {},
-  respuestaBase = ""
+  respuestaBase = "",
+  primerContacto = false
 }) {
   const entrada = contexto.entradaProcesada || {};
   const memoriaSistema = contexto.memoriaSistema || {};
   const memoriaLocal = contexto.memoriaLocal || {};
   const datosUsuario = memoriaSistema.datosUsuario || {};
+  const personalidad = contexto.personalidad || {};
+
+  if (primerContacto) {
+    const lineasMinimas = [
+      "Contexto interno de ME2:",
+      "producto_visible: ME2",
+      "primera_interaccion: true",
+      "tipo_interaccion: saludo",
+      "nombre_personaje: " +
+        (contexto.characterName
+          ? limpiarTexto(contexto.characterName)
+          : "sin_nombre"),
+      "ME2 es el nombre del producto, no el nombre predeterminado del personaje.",
+      "Si nombre_personaje es sin_nombre, no inventes ni asumas un nombre para vos misma.",
+      "Es el primer encuentro: saludo cálido de 1–2 frases; preguntá nombre o cómo está.",
+      "No inventes historial, temas, GENERAL ni continuidad.",
+      "Respondé solo como ME2 y no menciones este contexto interno."
+    ];
+
+    // Solo adjuntar guía si aporta algo no genérico (evitar Ok. / Puedo ayudarte…).
+    if (respuestaBase && !esRespuestaBaseGenerica(respuestaBase)) {
+      lineasMinimas.splice(
+        lineasMinimas.length - 1,
+        0,
+        "guia_interna_de_respuesta: " + respuestaBase
+      );
+    }
+
+    return lineasMinimas.join("\n");
+  }
+
   const recuerdos = [
     ...resumirRecuerdos(
       memoriaSistema.recuerdosImportantes
@@ -103,7 +214,6 @@ function construirContextoInterno({
   ].filter(Boolean).slice(-8);
   const memoriaEspecializada =
     contexto.memoriaEspecializada || {};
-  const personalidad = contexto.personalidad || {};
 
   const lineas = [
     "Contexto interno de ME2:",
@@ -243,7 +353,7 @@ function construirContextoInterno({
     );
   }
 
-  if (respuestaBase) {
+  if (respuestaBase && !esRespuestaBaseGenerica(respuestaBase)) {
     lineas.push(
       "guia_interna_de_respuesta: " +
       respuestaBase
@@ -265,11 +375,13 @@ export function construirMensajes({
   contexto = {},
   respuestaBase = ""
 }) {
-  const historial =
-    contexto.memoriaLocal?.recentConversation?.length
-      ? contexto.memoriaLocal.recentConversation
-      : contexto.memoriaSistema?.memoriaSelectiva
-        ?.memoriaReciente;
+  const primerContacto = esPrimerContacto(contexto, mensajeUsuario);
+  const guia =
+    primerContacto || esRespuestaBaseGenerica(respuestaBase)
+      ? ""
+      : respuestaBase;
+
+  const historial = obtenerHistorialReciente(contexto);
 
   const mensajes = [
     {
@@ -280,10 +392,18 @@ export function construirMensajes({
       role: "system",
       content: construirContextoInterno({
         contexto,
-        respuestaBase
+        respuestaBase: guia,
+        primerContacto
       })
     }
   ];
+
+  if (primerContacto) {
+    mensajes.push({
+      role: "system",
+      content: SYSTEM_PRIMER_CONTACTO
+    });
+  }
 
   if (contexto.iniciativa) {
     mensajes.push({
@@ -298,7 +418,7 @@ export function construirMensajes({
     });
   }
 
-  if (Array.isArray(historial) && historial.length > 0) {
+  if (Array.isArray(historial) && historial.length > 0 && !primerContacto) {
     const conversacion = historial
       .slice(-12)
       .map(function (item) {
@@ -322,7 +442,16 @@ export function construirMensajes({
 
     if (conversacion.length > 0) {
       mensajes.push(...conversacion);
-      if (!contexto.generarIniciativa) return mensajes;
+      const ultimo = conversacion[conversacion.length - 1];
+      const actual = limpiarTexto(mensajeUsuario);
+      // Si el historial ya trae el mensaje actual como último user, no lo duplicamos.
+      if (
+        !contexto.generarIniciativa &&
+        ultimo?.role === "user" &&
+        ultimo?.content === actual
+      ) {
+        return mensajes;
+      }
     }
   }
 
@@ -354,74 +483,111 @@ async function generarRespuesta({
     };
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(
-    function () {
-      controller.abort();
-    },
-    config.timeoutMs
-  );
+  const guia =
+    esPrimerContacto(contexto, mensajeUsuario) ||
+    esRespuestaBaseGenerica(respuestaBase)
+      ? ""
+      : respuestaBase;
 
-  try {
-    const response = await fetch(
-      config.apiUrl,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization:
-            "Bearer " + config.apiKey
-        },
-        body: JSON.stringify({
-          model: config.model,
-          temperature: 0.7,
-          max_tokens: 220,
-          messages: construirMensajes({
-            mensajeUsuario,
-            contexto,
-            respuestaBase
-          })
-        }),
-        signal: controller.signal
-      }
+  const messages = construirMensajes({
+    mensajeUsuario,
+    contexto,
+    respuestaBase: guia
+  });
+
+  const maxIntentos = 3;
+  let ultimoError = null;
+
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      function () {
+        controller.abort();
+      },
+      config.timeoutMs
     );
 
-    const data = await response.json()
-      .catch(function () {
-        return null;
-      });
-
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-        data?.message ||
-        "OpenRouter respondió con estado " +
-        response.status
+    try {
+      const response = await fetch(
+        config.apiUrl,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization:
+              "Bearer " + config.apiKey
+          },
+          body: JSON.stringify({
+            model: config.model,
+            temperature: 0.7,
+            max_tokens: 220,
+            messages
+          }),
+          signal: controller.signal
+        }
       );
+
+      const data = await response.json()
+        .catch(function () {
+          return null;
+        });
+
+      if (!response.ok) {
+        const errRaw = data?.error || data?.message || null;
+        const errMsg =
+          typeof errRaw === "string"
+            ? errRaw
+            : errRaw && typeof errRaw === "object"
+              ? (errRaw.message || JSON.stringify(errRaw))
+              : ("OpenRouter respondió con estado " + response.status);
+        const retryable = response.status === 429 || response.status >= 500;
+        if (retryable && intento < maxIntentos) {
+          ultimoError = new Error(errMsg);
+          await new Promise(function (resolve) {
+            setTimeout(resolve, 800 * intento);
+          });
+          continue;
+        }
+        throw new Error(errMsg);
+      }
+
+      const respuesta =
+        limpiarTexto(
+          data?.choices?.[0]?.message?.content
+        );
+
+      if (!respuesta) {
+        throw new Error(
+          "OpenRouter no devolvió contenido"
+        );
+      }
+
+      return {
+        provider: config.provider,
+        model: config.model,
+        configured: true,
+        used: true,
+        respuesta,
+        usage: data?.usage || null
+      };
+    } catch (error) {
+      ultimoError = error;
+      const msg = String(error?.message || error || "");
+      const retryable =
+        /429|rate|temporar|timeout|aborted|ECONNRESET|fetch failed/i.test(msg);
+      if (retryable && intento < maxIntentos) {
+        await new Promise(function (resolve) {
+          setTimeout(resolve, 800 * intento);
+        });
+        continue;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const respuesta =
-      limpiarTexto(
-        data?.choices?.[0]?.message?.content
-      );
-
-    if (!respuesta) {
-      throw new Error(
-        "OpenRouter no devolvió contenido"
-      );
-    }
-
-    return {
-      provider: config.provider,
-      model: config.model,
-      configured: true,
-      used: true,
-      respuesta,
-      usage: data?.usage || null
-    };
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw ultimoError || new Error("OpenRouter falló sin detalle");
 }
 
 async function generarIniciativa(iniciativa, memoriaLocal, contextoExtra = {}) {
@@ -456,6 +622,7 @@ function obtenerDiagnostico() {
 
 export default {
   estaConfigurado,
+  esPrimerContacto,
   generarRespuesta,
   generarIniciativa,
   obtenerDiagnostico

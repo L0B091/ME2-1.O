@@ -6,10 +6,9 @@ const NAMESPACE = "premium";
 const PREMIUM_DIAS = 30;
 
 function premiumBetaHabilitado() {
+  // Pausado para pruebas: solo free, salvo BETA_PREMIUM_DEFAULT=true explícito.
   const env = String(process.env.BETA_PREMIUM_DEFAULT || "").trim().toLowerCase();
-  if (env === "true") return true;
-  if (env === "false") return false;
-  return String(process.env.NODE_ENV || "development").trim().toLowerCase() !== "production";
+  return env === "true";
 }
 
 function obtenerPrecioPremium() {

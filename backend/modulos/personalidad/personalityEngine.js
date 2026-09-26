@@ -243,6 +243,23 @@ function describirFoco(contexto = {}) {
   return foco;
 }
 
+function esSaludoOPrimerContacto(contexto = {}) {
+  const tipo = String(
+    contexto.entradaProcesada?.calibracion?.tipoInteraccion ||
+    contexto.entradaProcesada?.intencion ||
+    ""
+  ).toLowerCase();
+  const historial =
+    contexto.memoriaLocal?.recentConversation ||
+    contexto.memoriaSistema?.memoriaSelectiva?.memoriaReciente ||
+    contexto.memoriaUsuario?.historialConversacion ||
+    [];
+  const n = Array.isArray(historial) ? historial.length : 0;
+  if (n === 0) return true;
+  if (tipo === "saludo" && n <= 1) return true;
+  return false;
+}
+
 function enriquecerBase(respuesta = "", perfil, contexto = {}) {
   const original = String(respuesta || "").trim();
   const limpia = normalizarTextoBase(original);
@@ -253,6 +270,11 @@ function enriquecerBase(respuesta = "", perfil, contexto = {}) {
   ]);
 
   if (!genericas.has(limpia)) {
+    return original;
+  }
+
+  // Saludo / historial vacío: no expandir "Ok." a fluff de mitad de charla ni foco GENERAL.
+  if (esSaludoOPrimerContacto(contexto)) {
     return original;
   }
 
@@ -525,46 +547,51 @@ function aplicar(respuesta = "", perfil, contexto = {}) {
     contexto
   );
 
-  resultado = adaptacion(resultado, {
-    estadoEmocional: perfil.estadoGlobal?.estadoEmocional,
-    estadoEjeB: perfil.ritmo?.tipoRespuesta === "rapido" ? "alto" : perfil.ritmo?.tipoRespuesta === "lento" ? "lento" : "medio",
-    estadoEjeC: perfil.ejes?.C?.estado?.nombre === "energia_alta" ? "alta" : perfil.ejes?.C?.estado?.nombre === "energia_baja" ? "baja" : "media",
-    memoriaReciente: {
-      ultimoTema:
-        contexto.memoriaSistema?.memoriaCorta?.foco &&
-        String(contexto.memoriaSistema.memoriaCorta.foco).toLowerCase() !== "general"
-          ? String(contexto.memoriaSistema.memoriaCorta.foco).toLowerCase()
-          : null
+  const primerContactoLocal = esSaludoOPrimerContacto(contexto);
+
+  // En primer contacto no inyectar adaptaciones de "charla en curso".
+  if (!primerContactoLocal) {
+    resultado = adaptacion(resultado, {
+      estadoEmocional: perfil.estadoGlobal?.estadoEmocional,
+      estadoEjeB: perfil.ritmo?.tipoRespuesta === "rapido" ? "alto" : perfil.ritmo?.tipoRespuesta === "lento" ? "lento" : "medio",
+      estadoEjeC: perfil.ejes?.C?.estado?.nombre === "energia_alta" ? "alta" : perfil.ejes?.C?.estado?.nombre === "energia_baja" ? "baja" : "media",
+      memoriaReciente: {
+        ultimoTema:
+          contexto.memoriaSistema?.memoriaCorta?.foco &&
+          String(contexto.memoriaSistema.memoriaCorta.foco).toLowerCase() !== "general"
+            ? String(contexto.memoriaSistema.memoriaCorta.foco).toLowerCase()
+            : null
+      }
+    });
+
+    resultado = presenciaEmocional(resultado, {
+      estadoEmocionalUsuario:
+        perfil.estadoGlobal?.estadoEmocional === "cercano"
+          ? "alegria"
+          : mapEmotion(contexto.entradaProcesada?.emocion || "neutral")
+    });
+
+    if (
+      perfil.iniciativa?.iniciar &&
+      perfil.ejes?.C?.progresionEncuentro?.puedeProponer &&
+      !/\?/.test(resultado)
+    ) {
+      resultado += ` ${perfil.iniciativa.mensaje}`;
+    } else if (
+      perfil.rutina?.pregunta &&
+      perfil.ejes?.C?.estado?.iniciativa !== "baja" &&
+      !/\?/.test(resultado)
+    ) {
+      resultado += ` ${perfil.rutina.pregunta}`;
     }
-  });
 
-  resultado = presenciaEmocional(resultado, {
-    estadoEmocionalUsuario:
-      perfil.estadoGlobal?.estadoEmocional === "cercano"
-        ? "alegria"
-        : mapEmotion(contexto.entradaProcesada?.emocion || "neutral")
-  });
-
-  if (
-    perfil.iniciativa?.iniciar &&
-    perfil.ejes?.C?.progresionEncuentro?.puedeProponer &&
-    !/\?/.test(resultado)
-  ) {
-    resultado += ` ${perfil.iniciativa.mensaje}`;
-  } else if (
-    perfil.rutina?.pregunta &&
-    perfil.ejes?.C?.estado?.iniciativa !== "baja" &&
-    !/\?/.test(resultado)
-  ) {
-    resultado += ` ${perfil.rutina.pregunta}`;
-  }
-
-  if (
-    perfil.vidaCotidiana?.comentario &&
-    perfil.ejes?.A?.nivel >= 2 &&
-    resultado.length < 220
-  ) {
-    resultado += ` ${perfil.vidaCotidiana.comentario}`;
+    if (
+      perfil.vidaCotidiana?.comentario &&
+      perfil.ejes?.A?.nivel >= 2 &&
+      resultado.length < 220
+    ) {
+      resultado += ` ${perfil.vidaCotidiana.comentario}`;
+    }
   }
 
   if (perfil.cierre?.mensaje) {

@@ -390,12 +390,19 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     fallback: "motor_local"
   };
 
+  // Primer contacto / saludo sin historial: no pasar basura de cognición ("Ok.") como guía.
+  const primerContactoLLM = veniceClient.esPrimerContacto(
+    contextoCompleto,
+    mensajeUsuario
+  );
+  const respuestaBaseLLM = primerContactoLLM ? "" : respuesta;
+
   try {
     const resultadoLLM =
       await veniceClient.generarRespuesta({
         mensajeUsuario,
         contexto: contextoCompleto,
-        respuestaBase: respuesta
+        respuestaBase: respuestaBaseLLM
       });
 
     if (resultadoLLM?.respuesta) {
@@ -420,6 +427,30 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       ...debugLLM,
       error: error.message
     };
+  }
+
+  if (primerContactoLLM) {
+    const genericasPrimer = new Set([
+      "ok.",
+      "ok",
+      "puedo ayudarte con eso.",
+      "entiendo lo que decís.",
+      "entiendo lo que decis.",
+      "no pude generar una respuesta."
+    ]);
+    const limpia = String(respuesta || "").trim().toLowerCase();
+    if (!debugLLM?.used || genericasPrimer.has(limpia) || !limpia) {
+      const saludos = [
+        "Hola, qué bueno que estés acá. ¿Cómo te llamás?",
+        "Hola, un gusto. ¿Cómo andás?",
+        "Hola, recién empezamos… ¿cómo estás?"
+      ];
+      respuesta = saludos[Math.floor(Math.random() * saludos.length)];
+      debugLLM = {
+        ...debugLLM,
+        firstContactFallback: true
+      };
+    }
   }
 
   // =========================================================
@@ -449,7 +480,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [STYLE] 6. ESTILO EXPRESIVO (CÓMO LO DICE)
   // =========================================================
 
-  if (typeof estiloExpresivo === "function") {
+  // En primer contacto no aplicar estiloExpresivo (evita "che, Ok. 😉" y mid-chat fluff).
+  if (!primerContactoLLM && typeof estiloExpresivo === "function") {
     respuesta = estiloExpresivo(respuesta, contextoCompleto);
   }
 
