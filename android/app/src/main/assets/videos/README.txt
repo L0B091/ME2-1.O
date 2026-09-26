@@ -33,3 +33,8 @@ Audio product rule
 ------------------
 Voice only on welcome/presentacion. Elsewhere: ambient / onomatopoeia.
 App must keep working offline with local fallbacks; only the LLM needs network.
+
+Bundled presentacion (first interaction)
+----------------------------------------
+HOLA_01.mp4 → HOLA_02.mp4 → HOLA_03.mp4 (spoken voice, volume on).
+Played once per session until presentation_intro_completed prefs flag is set.

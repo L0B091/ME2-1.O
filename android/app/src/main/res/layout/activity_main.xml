@@ -50,7 +50,7 @@
                     android:layout_weight="1"
                     android:text="@string/autosync_active"
                     android:textAllCaps="true"
-                    android:textColor="@color/me2_text_secondary"
+                    android:textColor="@color/me2_accent"
                     android:letterSpacing="0.17"
                     android:textSize="11sp" />
 
@@ -72,12 +72,15 @@
                 android:background="@color/me2_divider" />
 
             <FrameLayout
+                android:id="@+id/videoContainer"
                 android:layout_width="match_parent"
                 android:layout_height="280dp"
                 android:layout_marginStart="6dp"
                 android:layout_marginTop="18dp"
                 android:layout_marginEnd="6dp"
-                android:background="@drawable/bg_panel">
+                android:background="@drawable/bg_panel"
+                android:clipChildren="true"
+                android:clipToOutline="true">
 
                 <androidx.media3.ui.PlayerView
                     android:id="@+id/playerView"
@@ -85,50 +88,9 @@
                     android:layout_height="match_parent"
                     app:resize_mode="zoom"
                     app:show_buffering="never"
+                    app:show_subtitle_button="false"
+                    app:show_vr_button="false"
                     app:use_controller="false" />
-
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="top|start"
-                    android:layout_margin="14dp"
-                    android:background="@drawable/bg_avatar_overlay"
-                    android:orientation="vertical"
-                    android:paddingHorizontal="12dp"
-                    android:paddingVertical="8dp">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="@string/me2_data_stream"
-                        android:textAllCaps="true"
-                        android:textColor="@color/me2_accent"
-                        android:letterSpacing="0.14"
-                        android:textSize="10sp" />
-
-                    <TextView
-                        android:id="@+id/avatarStateText"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="4dp"
-                        android:text="STATE // NEUTRAL"
-                        android:textAllCaps="true"
-                        android:textColor="@color/me2_text_primary"
-                        android:letterSpacing="0.1"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/videoCaption"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_gravity="bottom|start"
-                    android:layout_margin="14dp"
-                    android:text="AVATAR // VISUAL CHANNEL READY"
-                    android:textAllCaps="true"
-                    android:textColor="@color/me2_text_secondary"
-                    android:letterSpacing="0.12"
-                    android:textSize="10sp" />
             </FrameLayout>
 
             <androidx.recyclerview.widget.RecyclerView
@@ -176,7 +138,6 @@
                     android:inputType="textCapSentences|textMultiLine"
                     android:maxLines="4"
                     android:minHeight="44dp"
-                    android:textAllCaps="true"
                     android:textColor="@color/me2_text_primary"
                     android:textColorHint="@color/me2_text_muted"
                     android:textSize="13sp" />
@@ -195,90 +156,7 @@
             </FrameLayout>
         </LinearLayout>
 
-        <LinearLayout
-            android:id="@+id/audioWidget"
-            android:layout_width="56dp"
-            android:layout_height="206dp"
-            android:layout_gravity="end|center_vertical"
-            android:layout_marginEnd="10dp"
-            android:background="@drawable/bg_widget_capsule"
-            android:gravity="center_horizontal"
-            android:orientation="vertical"
-            android:paddingTop="8dp"
-            android:paddingBottom="8dp">
 
-            <FrameLayout
-                android:id="@+id/audioPrimaryButton"
-                android:layout_width="40dp"
-                android:layout_height="40dp"
-                android:background="@drawable/bg_widget_accent_pill">
-
-                <ImageView
-                    android:layout_width="20dp"
-                    android:layout_height="20dp"
-                    android:layout_gravity="center"
-                    android:src="@android:drawable/ic_lock_silent_mode_off"
-                    android:tint="@color/me2_icon_dark" />
-            </FrameLayout>
-
-            <LinearLayout
-                android:layout_width="30dp"
-                android:layout_height="0dp"
-                android:layout_marginTop="10dp"
-                android:layout_marginBottom="10dp"
-                android:layout_weight="1"
-                android:background="@drawable/bg_widget_accent_pill"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <ImageView
-                    android:layout_width="18dp"
-                    android:layout_height="18dp"
-                    android:src="@android:drawable/ic_media_play"
-                    android:tint="@color/me2_icon_dark" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/audioMoreButton"
-                android:layout_width="40dp"
-                android:layout_height="28dp"
-                android:gravity="center"
-                android:orientation="horizontal">
-
-                <View
-                    android:layout_width="4dp"
-                    android:layout_height="4dp"
-                    android:layout_marginHorizontal="2dp"
-                    android:background="@drawable/bg_status_dot" />
-                <View
-                    android:layout_width="4dp"
-                    android:layout_height="4dp"
-                    android:layout_marginHorizontal="2dp"
-                    android:background="@drawable/bg_status_dot" />
-                <View
-                    android:layout_width="4dp"
-                    android:layout_height="4dp"
-                    android:layout_marginHorizontal="2dp"
-                    android:background="@drawable/bg_status_dot" />
-            </LinearLayout>
-        </LinearLayout>
-
-        <FrameLayout
-            android:id="@+id/audioMuteButton"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:layout_gravity="end|center_vertical"
-            android:layout_marginTop="234dp"
-            android:layout_marginEnd="14dp"
-            android:background="@drawable/bg_avatar_circle">
-
-            <ImageView
-                android:layout_width="20dp"
-                android:layout_height="20dp"
-                android:layout_gravity="center"
-                android:src="@android:drawable/ic_lock_silent_mode"
-                android:tint="@color/me2_text_secondary" />
-        </FrameLayout>
 
     </FrameLayout>
 
@@ -295,9 +173,13 @@
         android:paddingBottom="12dp">
 
             <FrameLayout
+                android:id="@+id/profilePhotoFrame"
                 android:layout_width="64dp"
                 android:layout_height="64dp"
                 android:background="@drawable/bg_avatar_circle"
+                android:clickable="true"
+                android:focusable="true"
+                android:contentDescription="@string/editar_foto"
                 android:padding="3dp">
 
                 <ImageView
@@ -305,19 +187,17 @@
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
                     android:scaleType="centerCrop"
-                    android:src="@drawable/me2_mark" />
-            </FrameLayout>
+                    android:visibility="gone" />
 
-            <ImageButton
-                android:id="@+id/editProfileButton"
-                android:layout_width="32dp"
-                android:layout_height="32dp"
-                android:layout_marginTop="6dp"
-                android:background="@drawable/bg_avatar_circle"
-                android:contentDescription="@string/editar_foto"
-                android:padding="6dp"
-                android:src="@android:drawable/ic_menu_edit"
-                android:tint="@color/me2_text_secondary" />
+                <ImageView
+                    android:id="@+id/editProfileButton"
+                    android:layout_width="28dp"
+                    android:layout_height="28dp"
+                    android:layout_gravity="center"
+                    android:contentDescription="@string/editar_foto"
+                    android:src="@android:drawable/ic_menu_edit"
+                    android:tint="@color/me2_text_secondary" />
+            </FrameLayout>
 
             <TextView
                 android:id="@+id/nodeIdText"
@@ -344,7 +224,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:textColor="@color/me2_text_secondary"
+                android:textColor="@color/me2_text_primary"
                 android:letterSpacing="0.08"
                 android:textSize="11sp" />
 
@@ -366,26 +246,6 @@
                 android:letterSpacing="0.08"
                 android:textSize="11sp" />
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="@string/bitacora_leyenda_title"
-                android:textAllCaps="true"
-                android:textColor="@color/me2_accent"
-                android:letterSpacing="0.16"
-                android:textSize="10sp" />
-
-            <TextView
-                android:id="@+id/legendText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:background="@drawable/bg_panel_soft"
-                android:padding="10dp"
-                android:textColor="@color/me2_text_secondary"
-                android:letterSpacing="0.08"
-                android:textSize="11sp" />
 
             <TextView
                 android:layout_width="wrap_content"
@@ -448,15 +308,6 @@
                 app:strokeColor="@color/me2_divider"
                 app:strokeWidth="1dp" />
 
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/initiativeSettingsButton"
-                style="@style/Widget.Material3.Button.TextButton"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:minHeight="40dp"
-                android:text="@string/initiative_settings"
-                android:textColor="@color/me2_text_secondary" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/signOutButton"

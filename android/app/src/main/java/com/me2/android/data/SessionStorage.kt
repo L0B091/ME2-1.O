@@ -130,6 +130,14 @@ class SessionStorage(context: Context) {
 
     fun isHomeWidgetEnabled(): Boolean = preferences.getBoolean(KEY_HOME_WIDGET, false)
 
+
+    fun setPresentationIntroCompleted(completed: Boolean) {
+        preferences.edit().putBoolean(KEY_PRESENTATION_INTRO, completed).apply()
+    }
+
+    fun isPresentationIntroCompleted(): Boolean =
+        preferences.getBoolean(KEY_PRESENTATION_INTRO, false)
+
     fun saveLastTemperature(tempLabel: String) {
         preferences.edit().putString(KEY_LAST_TEMP, tempLabel).apply()
     }
@@ -172,5 +180,6 @@ class SessionStorage(context: Context) {
         private const val KEY_ADULT_INTENSITY = "adult_intensity"
         private const val KEY_HOME_WIDGET = "home_widget_enabled"
         private const val KEY_LAST_TEMP = "last_known_temp"
+        private const val KEY_PRESENTATION_INTRO = "presentation_intro_completed"
     }
 }

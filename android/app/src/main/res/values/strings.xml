@@ -54,7 +54,7 @@
     <string name="initiative_invalid_sleep">Las horas de dormir y despertar deben ser diferentes.</string>
     <string name="initiative_unavailable">Esta iniciativa no está disponible para la sesión actual.</string>
     <string name="initiative_close">Cerrar</string>
-    <string name="silence_check_in">¿Seguís ahí?</string>
+    <string name="silence_check_in">¿Estás ahí?</string>
     <string name="premium_checkout">PAGAR CON MERCADO PAGO</string>
     <string name="premium_checkout_starting">ABRIENDO CHECKOUT…</string>
     <string name="premium_checkout_unavailable">CHECKOUT NO DISPONIBLE. EL BACKEND DE MERCADO PAGO NO ESTÁ CONFIGURADO.</string>
@@ -70,8 +70,8 @@
     <string name="login_offline">Sin conexión. El inicio de sesión con Google requiere red.</string>
     <string name="login_google_backend_failed">El backend rechazó el inicio de sesión con Google.</string>
 
-    <string name="bitacora_leyenda_title">LEYENDA // SYNC</string>
-    <string name="bitacora_leyenda_line">CANAL ABIERTO // PRESENCIA EN VIVO</string>
+    <string name="bitacora_leyenda_title">LEYENDA</string>
+    <string name="bitacora_leyenda_line">A TU DISPOSICIÓN // LISTA PARA MONITOREAR TU DÍA</string>
     <string name="home_widget_section">WIDGET HOME</string>
     <string name="home_widget_switch_label">MOSTRAR EN INICIO</string>
     <string name="home_widget_on">WIDGET HOME ACTIVADO. AGREGALO DESDE LA PANTALLA DE INICIO SI AÚN NO ESTÁ.</string>

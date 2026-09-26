@@ -10,8 +10,8 @@
     <color name="me2_accent">#2AE6D4</color>
     <color name="me2_accent_dim">#332AE6D4</color>
     <color name="me2_accent_soft">#162AE6D4</color>
-    <color name="me2_text_primary">#E7F3F2</color>
-    <color name="me2_text_secondary">#8A9A98</color>
+    <color name="me2_text_primary">#F4FFFE</color>
+    <color name="me2_text_secondary">#9AAEAC</color>
     <color name="me2_text_muted">#5A6768</color>
     <color name="me2_divider">#1D2C2E</color>
     <color name="me2_danger">#FF6C74</color>

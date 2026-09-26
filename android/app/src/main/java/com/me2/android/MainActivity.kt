@@ -1,10 +1,13 @@
 package com.me2.android
 
 import android.Manifest
-import android.app.TimePickerDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import java.io.FileOutputStream
+import java.io.File
+import android.view.View
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -51,6 +54,8 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "Me2Main"
+        /** Post-presentation wait before silence check-in (product: ~45–60s). */
+        private const val POST_PRESENTATION_SILENCE_MS = 50_000L
     }
     private enum class AvatarMode { LOOP_NEUTRAL, CONTEXTUAL, PRESENTATION }
 
@@ -80,6 +85,8 @@ class MainActivity : AppCompatActivity() {
     private var avatarMode: AvatarMode = AvatarMode.LOOP_NEUTRAL
     private var currentAvatarGallery: List<GalleryClip> = emptyList()
     private var hasPlayedPresentation = false
+    private var presentationClipIndex: Int = 0
+    private var presentationSequenceActive: Boolean = false
     private var sessionStartedAt: Long = 0L
     private lateinit var currentSession: UserSession
     private var startedFromEmptyLocalMemory: Boolean = false
@@ -90,6 +97,9 @@ class MainActivity : AppCompatActivity() {
             maybeAskSilenceCheckIn()
             checkInHandler.postDelayed(this, 30_000L)
         }
+    }
+    private val postPresentationSilenceRunnable = Runnable {
+        askPostPresentationSilenceCheckIn()
     }
 
     // Mood galleries via ClipCatalog: filesDir/gallery → assets/videos → res/raw demos.
@@ -107,6 +117,18 @@ class MainActivity : AppCompatActivity() {
         get() = clipCatalog.listByMood(ClipCatalog.MOOD_ALIVIADA)
     private val agradecidaGallery: List<GalleryClip>
         get() = clipCatalog.listByMood(ClipCatalog.MOOD_AGRADECIDA)
+
+
+    private val profilePhotoPicker =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            if (uri == null) return@registerForActivityResult
+            runCatching { persistProfilePhoto(uri) }
+                .onSuccess { refreshProfilePhoto() }
+                .onFailure {
+                    Log.e(TAG, "profile photo pick failed", it)
+                    Toast.makeText(this, getString(R.string.editar_foto), Toast.LENGTH_SHORT).show()
+                }
+        }
 
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -167,7 +189,7 @@ class MainActivity : AppCompatActivity() {
             setupToolbar()
             setupChat()
             setupBitacora(currentSession)
-            setupWidget()
+            binding.videoContainer.clipToOutline = true
             runCatching { setupVideo() }.onFailure { Log.e(TAG, "setupVideo failed", it) }
 
             startedFromEmptyLocalMemory = runCatching {
@@ -218,7 +240,9 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!::binding.isInitialized) return
         sessionStartedAt = SystemClock.elapsedRealtime()
-        runCatching { restoreAvatarPresence(forceReload = currentAvatarClipId == null) }
+        if (!presentationSequenceActive) {
+            runCatching { restoreAvatarPresence(forceReload = currentAvatarClipId == null) }
+        }
         player?.playWhenReady = true
         player?.volume = 1f
         if (::currentSession.isInitialized) {
@@ -254,6 +278,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         checkInHandler.removeCallbacks(checkInTick)
+        checkInHandler.removeCallbacks(postPresentationSilenceRunnable)
         if (::binding.isInitialized) {
             runCatching { binding.playerView.player = null }
         }
@@ -272,7 +297,6 @@ class MainActivity : AppCompatActivity() {
             initiativeStore.clearActiveContext(currentSession.id)
             visibleConversation.clear()
             chatAdapter.submitList(visibleConversation.toList())
-            binding.avatarStateText.text = "STATE // STANDBY"
             Toast.makeText(this, "PANTALLA LIMPIA", Toast.LENGTH_SHORT).show()
         }
     }
@@ -301,12 +325,6 @@ class MainActivity : AppCompatActivity() {
             else -> "ESTABLE (FREE)"
         }
         binding.statusText.text = "ESTADO // $planLabel"
-        binding.legendText.text = buildString {
-            append(getString(R.string.bitacora_leyenda_line))
-            append("\n")
-            append("ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%")
-        }
-
         binding.homeWidgetSwitch.setOnCheckedChangeListener(null)
         binding.homeWidgetSwitch.isChecked = sessionStorage.isHomeWidgetEnabled()
         binding.homeWidgetSwitch.setOnCheckedChangeListener { _, checked ->
@@ -319,9 +337,9 @@ class MainActivity : AppCompatActivity() {
             ).show()
         }
 
-        binding.editProfileButton.setOnClickListener {
-            Toast.makeText(this, "EDICIÓN DE PERFIL RESERVADA", Toast.LENGTH_SHORT).show()
-        }
+        binding.profilePhotoFrame.setOnClickListener { profilePhotoPicker.launch("image/*") }
+        binding.editProfileButton.setOnClickListener { profilePhotoPicker.launch("image/*") }
+        refreshProfilePhoto()
 
         binding.signOutButton.setOnClickListener {
             val shouldBackup =
@@ -340,32 +358,8 @@ class MainActivity : AppCompatActivity() {
         binding.premiumButton.setOnClickListener {
             showPremiumDialog()
         }
-        binding.initiativeSettingsButton.setOnClickListener { showInitiativeSettings() }
     }
 
-    private fun setupWidget() {
-        binding.audioPrimaryButton.setOnClickListener {
-            ensureNotificationPermission()
-            notificationCoordinator.showMessageNotification(
-                userId = currentSession.id,
-                title = "ME2",
-                message = "Canal de mensajes listo para prueba."
-            )
-            Toast.makeText(this, getString(R.string.message_notification_sent), Toast.LENGTH_SHORT).show()
-        }
-
-        binding.audioMoreButton.setOnClickListener {
-            scheduleTestAlarm()
-        }
-        binding.audioMoreButton.setOnLongClickListener {
-            binding.drawerLayout.openDrawer(GravityCompat.START)
-            true
-        }
-
-        binding.audioMuteButton.setOnClickListener {
-            cancelNextAlarm()
-        }
-    }
 
     private fun setupVideo() {
         if (!::binding.isInitialized) return
@@ -391,7 +385,12 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         Log.e("Me2Avatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
-                        runCatching { fallbackToLoopNeutral(forceReload = true) }
+                        if (presentationSequenceActive && avatarMode == AvatarMode.PRESENTATION) {
+                            // Skip failed clip; continue sequence or finish so input is not stuck.
+                            runCatching { handleAvatarPlaybackEnded() }
+                        } else {
+                            runCatching { fallbackToLoopNeutral(forceReload = true) }
+                        }
                     }
                 })
                 fallbackToLoopNeutral(forceReload = true, resetStateLabel = true)
@@ -400,8 +399,6 @@ class MainActivity : AppCompatActivity() {
             Log.e(TAG, "ExoPlayer init failed", it)
             player = null
             runCatching {
-                binding.videoCaption.text = "AVATAR // VIDEO NO DISPONIBLE"
-                binding.avatarStateText.text = "STATE // STANDBY"
             }
         }
     }
@@ -420,7 +417,14 @@ class MainActivity : AppCompatActivity() {
     private fun hydrateConversation() {
         val memory = localMemoryStore.load(currentSession.id)
         if (memory.conversation.isEmpty()) {
-            seedConversation()
+            // Google first-interaction: leave chat empty (videos + silence). Demo keeps seed for UI preview.
+            if (currentSession.isDemo) {
+                seedConversation()
+            } else {
+                fullConversation.clear()
+                visibleConversation.clear()
+                renderConversation()
+            }
             return
         }
 
@@ -438,14 +442,15 @@ class MainActivity : AppCompatActivity() {
             if (entry.timestamp > memory.hiddenConversationThrough) visibleConversation += message
         }
         if (avatarMode == AvatarMode.LOOP_NEUTRAL) {
-            binding.avatarStateText.text = "STATE // ${memory.shortTermFocus.uppercase(Locale.getDefault())}"
         }
         renderConversation()
     }
 
     private fun sendMessage() {
+        if (!binding.messageInput.isEnabled) return
         val content = binding.messageInput.text?.toString()?.trim().orEmpty()
         if (content.isEmpty()) return
+        cancelPostPresentationSilence()
         val initiative = initiativeStore.activeContext(currentSession.id)
 
         val visibleUserText = content.uppercase(Locale.getDefault())
@@ -457,7 +462,6 @@ class MainActivity : AppCompatActivity() {
         initiativeScheduler.cancelPostSilenceEval()
         initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
-        binding.avatarStateText.text = "STATE // SYNCING"
         fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
         renderConversation()
         dispatchChat(content, initiative)
@@ -645,18 +649,11 @@ class MainActivity : AppCompatActivity() {
         detail: String,
         typewriter: Boolean = false
     ) {
-        // Clear previous typewriter flags so only the newest ME2 bubble animates.
-        for (i in visibleConversation.indices) {
-            val msg = visibleConversation[i]
-            if (msg.fromMe2 && msg.animateTypewriter) {
-                visibleConversation[i] = msg.copy(animateTypewriter = false)
-            }
-        }
-        val me2Reply = ChatMessage(reply, true, animateTypewriter = typewriter)
+        // Typewriter lo re-dispara el adapter en bind/tap para cualquier burbuja ME2.
+        val me2Reply = ChatMessage(reply, true, animateTypewriter = true)
         fullConversation += me2Reply
         visibleConversation += me2Reply
         localMemoryStore.appendAssistantMessage(currentSession.id, reply)
-        binding.avatarStateText.text = "STATE // $state"
         applyAssistantAvatarState(state, detail)
         renderConversation()
     }
@@ -831,6 +828,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun restoreAvatarPresence(forceReload: Boolean = false) {
+        if (presentationSequenceActive) return
         if (player == null) {
             setupVideo()
             return
@@ -842,14 +840,84 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun maybePlayPresentation() {
-        if (!startedFromEmptyLocalMemory || hasPlayedPresentation) return
-        val exoPlayer = player ?: return
-        val clip = resolveNextClip(presentationGallery, currentAvatarClipId) ?: return
+        // First-interaction sequence: Google path only (demo keeps chat usable for UI preview).
+        if (currentSession.isDemo) return
+        if (hasPlayedPresentation || sessionStorage.isPresentationIntroCompleted()) {
+            setChatInputEnabled(true)
+            return
+        }
+        val conversationEmpty = runCatching {
+            localMemoryStore.load(currentSession.id).conversation.isEmpty()
+        }.getOrDefault(true)
+        if (!conversationEmpty) {
+            sessionStorage.setPresentationIntroCompleted(true)
+            setChatInputEnabled(true)
+            return
+        }
+        val gallery = presentationGallery
+        val exoPlayer = player
+        if (gallery.isEmpty() || exoPlayer == null) {
+            // No clips: do not hard-lock input forever.
+            setChatInputEnabled(true)
+            return
+        }
         hasPlayedPresentation = true
+        presentationSequenceActive = true
+        presentationClipIndex = 0
+        setChatInputEnabled(false)
         avatarMode = AvatarMode.PRESENTATION
-        currentAvatarGallery = presentationGallery
-        binding.videoCaption.text = "AVATAR // LOCAL CLIP // PRESENTACION"
-        playAvatarClip(exoPlayer, clip)
+        currentAvatarGallery = gallery
+        playAvatarClip(exoPlayer, gallery.first())
+    }
+
+    private fun setChatInputEnabled(enabled: Boolean) {
+        if (!::binding.isInitialized) return
+        binding.messageInput.isEnabled = enabled
+        binding.messageInput.isFocusable = enabled
+        binding.messageInput.isFocusableInTouchMode = enabled
+        binding.sendButton.isEnabled = enabled
+        if (!enabled) {
+            binding.messageInput.clearFocus()
+        }
+    }
+
+    private fun onPresentationSequenceCompleted() {
+        presentationSequenceActive = false
+        sessionStorage.setPresentationIntroCompleted(true)
+        setChatInputEnabled(true)
+        runCatching { initiativeStore.observeInteraction(currentSession.id) }
+        schedulePostPresentationSilence()
+        fallbackToLoopNeutral(forceReload = true)
+    }
+
+    private fun schedulePostPresentationSilence() {
+        cancelPostPresentationSilence()
+        checkInHandler.postDelayed(postPresentationSilenceRunnable, POST_PRESENTATION_SILENCE_MS)
+    }
+
+    private fun cancelPostPresentationSilence() {
+        checkInHandler.removeCallbacks(postPresentationSilenceRunnable)
+    }
+
+    private fun askPostPresentationSilenceCheckIn() {
+        if (!::currentSession.isInitialized || !::localMemoryStore.isInitialized) return
+        if (presentationSequenceActive) return
+        // Skip if user already wrote (or silence already stored).
+        val memory = runCatching { localMemoryStore.load(currentSession.id) }.getOrNull() ?: return
+        val hasUserMessage = memory.conversation.any { it.role == "user" }
+        if (hasUserMessage) return
+        if (::initiativeStore.isInitialized) {
+            runCatching { initiativeStore.markCheckInAsked(currentSession.id) }
+        }
+        val prompt = getString(R.string.silence_check_in)
+        localMemoryStore.appendAssistantMessage(currentSession.id, prompt)
+        hydrateConversation()
+        if (::initiativeStore.isInitialized && ::initiativeScheduler.isInitialized) {
+            runCatching {
+                initiativeStore.markPostSilenceEvalArmed(currentSession.id)
+                initiativeScheduler.schedulePostSilenceEval()
+            }
+        }
     }
 
     private fun applyAssistantAvatarState(state: String, detail: String) {
@@ -866,7 +934,6 @@ class MainActivity : AppCompatActivity() {
         }
         avatarMode = AvatarMode.CONTEXTUAL
         currentAvatarGallery = selection.gallery
-        binding.videoCaption.text = "AVATAR // LOCAL CLIP // ${selection.label}"
         playAvatarClip(exoPlayer, clip)
     }
 
@@ -897,7 +964,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun handleAvatarPlaybackEnded() {
         when (avatarMode) {
-            AvatarMode.PRESENTATION, AvatarMode.CONTEXTUAL -> fallbackToLoopNeutral(forceReload = true)
+            AvatarMode.PRESENTATION -> {
+                val exoPlayer = player ?: run {
+                    onPresentationSequenceCompleted()
+                    return
+                }
+                val gallery = currentAvatarGallery.ifEmpty { presentationGallery }
+                val nextIndex = presentationClipIndex + 1
+                if (nextIndex < gallery.size) {
+                    presentationClipIndex = nextIndex
+                    playAvatarClip(exoPlayer, gallery[nextIndex])
+                } else {
+                    onPresentationSequenceCompleted()
+                }
+            }
+            AvatarMode.CONTEXTUAL -> fallbackToLoopNeutral(forceReload = true)
             AvatarMode.LOOP_NEUTRAL -> {
                 val exoPlayer = player ?: return
                 playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipId))
@@ -909,9 +990,7 @@ class MainActivity : AppCompatActivity() {
         avatarMode = AvatarMode.LOOP_NEUTRAL
         currentAvatarGallery = loopNeutralGallery
         if (resetStateLabel) {
-            binding.avatarStateText.text = "STATE // NEUTRAL"
         }
-        binding.videoCaption.text = "AVATAR // LOCAL CLIP // LOOP_NEUTRAL"
         ensureAvatarPlayback(forceReload = forceReload)
     }
 
@@ -979,64 +1058,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showInitiativeSettings() {
-        val enabled = initiativeStore.isEnabled(currentSession.id)
-        val choices = arrayOf(
-            getString(if (enabled) R.string.initiative_disable else R.string.initiative_enable),
-            getString(R.string.initiative_sleep_schedule),
-            getString(R.string.initiative_learn_schedule)
-        )
-        AlertDialog.Builder(this)
-            .setTitle(R.string.initiative_settings)
-            .setItems(choices) { _, which ->
-                when (which) {
-                    0 -> {
-                        initiativeStore.setEnabled(currentSession.id, !enabled)
-                        if (enabled) {
-                            initiativeScheduler.cancel()
-                            initiativeStore.clearActiveContext(currentSession.id)
-                            initiativeStore.records(currentSession.id).forEach {
-                                val id = it.getString("id")
-                                notificationCoordinator.cancelInitiative(currentSession.id, id)
-                                initiativeStore.cancelled(currentSession.id, id)
-                            }
-                        } else {
-                            ensureNotificationPermission()
-                            initiativeScheduler.ensureScheduled()
-                        }
-                    }
-                    1 -> configureInitiativeSleep()
-                    2 -> initiativeStore.configureSleep(currentSession.id, null, null)
-                }
-            }
-            .setNegativeButton(R.string.initiative_close, null)
-            .show()
-    }
 
-    private fun configureInitiativeSleep() {
-        val configured = initiativeStore.snapshot(currentSession.id)
-            .optJSONObject("perfilRitmo")?.optJSONObject("configurado")
-        val sleep = configured?.optString("dormir")?.split(":")
-        val wake = configured?.optString("despertar")?.split(":")
-        val clock = Calendar.getInstance()
-        val picker = TimePickerDialog(this, { _, sleepHour, sleepMinute ->
-            val wakePicker = TimePickerDialog(this, { _, wakeHour, wakeMinute ->
-                val sleepTime = String.format(Locale.US, "%02d:%02d", sleepHour, sleepMinute)
-                val wakeTime = String.format(Locale.US, "%02d:%02d", wakeHour, wakeMinute)
-                if (sleepTime == wakeTime) {
-                    Toast.makeText(this, R.string.initiative_invalid_sleep, Toast.LENGTH_SHORT).show()
-                } else {
-                    initiativeStore.configureSleep(currentSession.id, sleepTime, wakeTime)
-                }
-            }, wake?.getOrNull(0)?.toIntOrNull() ?: clock.get(Calendar.HOUR_OF_DAY),
-                wake?.getOrNull(1)?.toIntOrNull() ?: clock.get(Calendar.MINUTE), true)
-            wakePicker.setTitle(R.string.initiative_wake_time)
-            wakePicker.show()
-        }, sleep?.getOrNull(0)?.toIntOrNull() ?: clock.get(Calendar.HOUR_OF_DAY),
-            sleep?.getOrNull(1)?.toIntOrNull() ?: clock.get(Calendar.MINUTE), true)
-        picker.setTitle(R.string.initiative_sleep_time)
-        picker.show()
-    }
 
     private fun resolveAlarmEvent(alarmId: String, stage: Int) {
         if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
@@ -1148,4 +1170,36 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
+    private fun refreshProfilePhoto() {
+        if (!::binding.isInitialized || !::currentSession.isInitialized) return
+        val path = currentSession.photoUrl
+        val local = path?.takeIf { it.startsWith("/") || it.startsWith("file:") }?.let { raw ->
+            val file = if (raw.startsWith("file:")) File(Uri.parse(raw).path ?: return@let null) else File(raw)
+            file.takeIf { it.isFile }
+        }
+        if (local != null) {
+            val bitmap = BitmapFactory.decodeFile(local.absolutePath)
+            if (bitmap != null) {
+                binding.profileImage.setImageBitmap(bitmap)
+                binding.profileImage.visibility = View.VISIBLE
+                binding.editProfileButton.visibility = View.GONE
+                return
+            }
+        }
+        // Sin foto del usuario: solo marco + lápiz (nunca logo ME2).
+        binding.profileImage.setImageDrawable(null)
+        binding.profileImage.visibility = View.GONE
+        binding.editProfileButton.visibility = View.VISIBLE
+    }
+
+    private fun persistProfilePhoto(uri: Uri) {
+        val dest = File(filesDir, "profile_photo.jpg")
+        contentResolver.openInputStream(uri)?.use { input ->
+            FileOutputStream(dest).use { output -> input.copyTo(output) }
+        } ?: error("no input stream")
+        currentSession = currentSession.copy(photoUrl = dest.absolutePath)
+        sessionStorage.saveUser(currentSession)
+    }
+
 }
