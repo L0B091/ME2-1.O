@@ -11,8 +11,10 @@ import iniciativaConversacional from "../../comportamiento/iniciativaConversacio
 import ritmoConversacional from "../../comportamiento/ritmoConversacional.js";
 import joiInteraccionCompleta from "../../comportamiento/joi_interaccion_completa.js";
 import ejeA from "../../ejes_dinamicos/ejeA.js";
+import ejeB from "../../ejes_dinamicos/ejeB.js";
 import ejeC from "../../ejes_dinamicos/ejeC.js";
 import ejeD from "../../ejes_dinamicos/ejeD.js";
+import ejeE from "../../ejes_dinamicos/ejeE.js";
 import ejeF from "../../ejes_dinamicos/ejeF.js";
 import ejeG from "../../ejes_dinamicos/ejeG.js";
 import ejeH from "../../ejes_dinamicos/ejeH.js";
@@ -108,6 +110,18 @@ function construirContextoEjes(mensajeUsuario, contexto = {}, memoriaUsuario = {
         enAftercare: Boolean(memoriaUsuario.enAftercare)
       }
     }),
+    ejeB: ejeB({
+      ritmoActual: estadoGlobal.energia === "alta" ? "alto" : estadoGlobal.energia === "baja" ? "lento" : "medio",
+      energiaUsuario: energiaNumero,
+      horaLocal: new Date().getHours(),
+      nivelVinculo: Math.min(1, 0.35 + frecuenciaInteraccion),
+      nivelIntensidad: memoriaUsuario.nivelIntimidad || 1,
+      aftercareActivo: Boolean(memoriaUsuario.enAftercare),
+      historialReciente: {
+        finalizacion: Boolean(memoriaUsuario.enAftercare),
+        intensidadAlta: (memoriaUsuario.nivelIntimidad || 1) >= 5
+      }
+    }),
     ritmo: ritmoConversacional({
       longitudMensajeUsuario: mensajeUsuario.length,
       energiaUsuario: estadoGlobal.energia,
@@ -130,6 +144,12 @@ function construirContextoEjes(mensajeUsuario, contexto = {}, memoriaUsuario = {
       intensidadActual: memoriaUsuario.nivelIntimidad || 1,
       energiaUsuario: energiaNumero,
       nivelVinculo: Math.min(1, 0.35 + frecuenciaInteraccion)
+    }),
+    ejeE: ejeE({
+      vulnerabilidad,
+      tristeza: entrada.emocion === "triste" || /triste|deprim/i.test(mensajeUsuario),
+      ansiedad: /ansiedad|ansioso|nervios/i.test(mensajeUsuario),
+      dependencia: /no puedo sin vos|no puedo sin ti|dependo/i.test(mensajeUsuario)
     }),
     ejeF: ejeF({
       mencionaTerceros: detectarTerceros(mensajeUsuario)
@@ -370,9 +390,14 @@ function analizar(mensajeUsuario, contexto = {}) {
     tiempoSilencio: contexto.tiempoSilencio || 0,
     estadoConversacion: contextoEjes.estadoGlobal.modo,
     intensidadEmocional: contextoEjes.ejeA.nivel,
-    ritmo: contextoEjes.ritmo.tipoRespuesta === "rapido" ? "alto" : contextoEjes.ritmo.tipoRespuesta === "lento" ? "lento" : "medio",
+    ritmo: contextoEjes.ejeB?.estado?.nombre === "ritmo_alto" ? "alto"
+      : contextoEjes.ejeB?.estado?.nombre === "ritmo_lento" ? "lento"
+      : (contextoEjes.ritmo.tipoRespuesta === "rapido" ? "alto" : contextoEjes.ritmo.tipoRespuesta === "lento" ? "lento" : "medio"),
     energiaSocial: contextoEjes.ejeC.estado.iniciativa === "alta" ? "alta" : contextoEjes.ejeC.estado.iniciativa === "baja" ? "baja" : "media",
-    contextoEspecial: contextoEjes.ejeA.nivel >= 6 ? "aftercare" : null
+    regulacion: contextoEjes.ejeE?.ajustes || {},
+    contextoEspecial: contextoEjes.ejeA.nivel >= 6 ? "aftercare" : null,
+    // Android owns the 5-min check-in; disable short in-chat silence reactivar
+    desactivarReactivarCorto: true
   });
 
   const rutina = preguntasDeRutina({
@@ -412,13 +437,17 @@ function analizar(mensajeUsuario, contexto = {}) {
 
   const ejes = {
     A: contextoEjes.ejeA,
+    B: contextoEjes.ejeB,
     C: contextoEjes.ejeC,
     D: contextoEjes.ejeD,
+    E: contextoEjes.ejeE,
     F: contextoEjes.ejeF,
     G: contextoEjes.ejeG,
     H: ejeH({
       intensidad: contextoEjes.ejeA.nivel,
-      ritmo: contextoEjes.ritmo.tipoRespuesta === "rapido" ? "alto" : contextoEjes.ritmo.tipoRespuesta === "lento" ? "lento" : "medio",
+      ritmo: contextoEjes.ejeB?.estado?.nombre === "ritmo_alto" || contextoEjes.ritmo.tipoRespuesta === "rapido" ? "alto"
+        : contextoEjes.ejeB?.estado?.nombre === "ritmo_lento" || contextoEjes.ritmo.tipoRespuesta === "lento" ? "lento"
+        : "medio",
       energia: contextoEjes.ejeC.estado.nombre === "energia_alta" ? "alta" : contextoEjes.ejeC.estado.nombre === "energia_baja" ? "baja" : "media"
     })
   };

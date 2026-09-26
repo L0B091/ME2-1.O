@@ -12,7 +12,9 @@ function getGoogleAudiences() {
 }
 
 function googleAuthEnabled() {
-  return String(process.env.GOOGLE_AUTH_ENABLED || "false").trim().toLowerCase() === "true";
+  // Product path: Google is the only login. Default ON unless explicitly disabled.
+  const raw = String(process.env.GOOGLE_AUTH_ENABLED ?? "true").trim().toLowerCase();
+  return raw !== "false" && raw !== "0" && raw !== "off";
 }
 
 async function verificarIdToken(idToken) {

@@ -1,5 +1,5 @@
 // iniciativaConversacional.js
-// Motor que regula cuando Joi toma la iniciativa en la conversacion
+// Motor que regula cuando ME2 toma la iniciativa en la conversacion
 // Integrado con ejes dinámicos A-H y comportamiento
 
 import crypto from "node:crypto";
@@ -160,8 +160,11 @@ function iniciativaConversacional(contexto = {}) {
       tensionLudicaMaxima: null
     },
     contextoEspecial = null,       // intimidad, aftercare, etc.
-    microComportamiento = {},      // microacciones de Joi
-    estiloExpresivo = {}           // gestos, tono, pausas
+    microComportamiento = {},      // microacciones de ME2
+    estiloExpresivo = {},          // gestos, tono, pausas
+    // Android owns 5-min check-in + 60-min eval; default disables short in-chat ping
+    desactivarReactivarCorto = true,
+    umbralSilencioReactivarSegundos = 60 * 60  // 60 minutos si se reactivara
   } = contexto;
 
   const decision = {
@@ -171,13 +174,19 @@ function iniciativaConversacional(contexto = {}) {
   };
 
   // --- SILENCIO PROLONGADO ---
-  if (tiempoSilencio > 20 && contextoEspecial !== "aftercare") {
+  // Product: do NOT fight Android's 5-min "¿Seguís ahí?" with a 20s canned ping.
+  // Short silence reactivar is off by default (desactivarReactivarCorto).
+  if (
+    !desactivarReactivarCorto &&
+    tiempoSilencio > umbralSilencioReactivarSegundos &&
+    contextoEspecial !== "aftercare"
+  ) {
     decision.iniciar = true;
     decision.tipoIniciativa = "reactivar";
 
     const frases = [
-      "¿Sigues ahí?",
-      "Podemos seguir charlando si quieres.",
+      "¿Seguís ahí?",
+      "Podemos seguir cuando quieras.",
       "Me quedé pensando en lo que dijiste."
     ];
 

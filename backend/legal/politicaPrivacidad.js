@@ -7,7 +7,7 @@ POLÍTICA DE PRIVACIDAD
 
 1. INTRODUCCIÓN
 
-La presente Política de Privacidad describe cómo se recopila, utiliza y protege la información de los usuarios que utilizan la aplicación Joi.
+La presente Política de Privacidad describe cómo se recopila, utiliza y protege la información de los usuarios que utilizan la aplicación ME2.
 
 El uso del servicio implica la aceptación de esta política.
 

@@ -1,13 +1,17 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 
 /**
-* GESTOR DE ALARMAS JOI
+* GESTOR DE ALARMAS ME2
 * Backend liviano: administra datos y sincronización
 * La ejecución real ocurre en el cliente móvil oficial
 */
 
-const DB_PATH = path.resolve("./backend/data/alarmas.json");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+// Resolve relative to backend/, not cwd (avoids backend/backend/data when started from repo root)
+const DB_PATH = path.resolve(__dirname, "../data/alarmas.json");
 
 function normalizarHora(hora) {
   const value = String(hora || "").trim();

@@ -31,9 +31,17 @@ async function push(userID, mensaje) {
   notificacionesApi.notificarAlarma(userID, mensaje);
 }
 
-async function obtenerMensajeClimaSeguro() {
+const BA_DEFAULT = { lat: -34.6037, lon: -58.3816 };
+
+/**
+ * Prefer stored user coords when available; otherwise Buenos Aires default.
+ * Never call OpenWeather with (0,0).
+ */
+async function obtenerMensajeClimaSeguro(coords = null) {
   try {
-    const clima = await obtenerClima(0, 0);
+    const lat = Number.isFinite(Number(coords?.lat)) ? Number(coords.lat) : BA_DEFAULT.lat;
+    const lon = Number.isFinite(Number(coords?.lon)) ? Number(coords.lon) : BA_DEFAULT.lon;
+    const clima = await obtenerClima(lat, lon);
     return clima?.mensajeCorto || "Buen día. Ya registré tu despertar.";
   } catch (error) {
     return "Buen día. Ya registré tu despertar.";
@@ -70,7 +78,7 @@ function obtenerDefinicionStages() {
     const mensajes = obtenerMensajesStage(stage);
     return {
       stage,
-      channelId: stage >= 3 ? "JOI_ALARMS" : "JOI_MESSAGES",
+      channelId: stage >= 3 ? "ME2_ALARMS" : "ME2_MESSAGES",
       notificationType: stage >= 3 ? "alarm" : "message",
       vibration: stage >= 3 ? "alarm" : "double",
       sound: stage >= 3 ? "alarm" : "bubble",

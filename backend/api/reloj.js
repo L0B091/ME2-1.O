@@ -1,39 +1,50 @@
-// backend/apis/reloj.js
-// Módulo de reloj y seguimiento de inactividad de usuarios para Joi
-// Incluye hora actual, registro de última interacción y cálculo de tiempo inactivo
+// Módulo de reloj y seguimiento de inactividad de usuarios para ME2
+import horaAPI from './hora.js';
+import storage from '../utils/jsonStorage.js';
 
-import horaAPI from './hora.js'; // opcional, para usar la función de hora y fecha
+const NAMESPACE = "reloj_actividad";
+const KEY = "ultima_interaccion";
 
-// Memoria interna para almacenar la última interacción de cada usuario
+/** @type {Map<string, {ultimaInteraccion: Date}>} */
 const memoriaUsuarios = new Map();
 
-/**
-* Obtiene la hora y fecha actual usando horaAPI o directamente
-* @param {string} zonaHoraria - opcional, ej: "America/Argentina/Buenos_Aires"
-* @returns {object} { fecha, hora, fechaCompleta }
-*/
+function cargar() {
+  const data = storage.readGlobalData(NAMESPACE, KEY, { usuarios: {} });
+  const usuarios = data?.usuarios && typeof data.usuarios === "object" ? data.usuarios : {};
+  memoriaUsuarios.clear();
+  for (const [id, raw] of Object.entries(usuarios)) {
+    const ts = raw?.ultimaInteraccion ? new Date(raw.ultimaInteraccion) : null;
+    if (ts && !Number.isNaN(ts.getTime())) {
+      memoriaUsuarios.set(String(id), { ultimaInteraccion: ts });
+    }
+  }
+}
+
+function persistir() {
+  const usuarios = {};
+  for (const [id, value] of memoriaUsuarios.entries()) {
+    usuarios[id] = {
+      ultimaInteraccion: value.ultimaInteraccion?.toISOString?.() || value.ultimaInteraccion
+    };
+  }
+  storage.writeGlobalData(NAMESPACE, KEY, { usuarios });
+}
+
+cargar();
+
 function obtenerHoraActual(zonaHoraria = Intl.DateTimeFormat().resolvedOptions().timeZone) {
-  // Se puede usar horaAPI para consistencia
   return horaAPI.obtenerHoraActual(zonaHoraria);
 }
 
-/**
-* Guarda la última interacción del usuario
-* @param {string} usuarioID
-*/
 function guardarUltimaInteraccion(usuarioID) {
   const ahora = new Date();
   const userKey = String(usuarioID || "anonimo");
   memoriaUsuarios.set(userKey, {
     ultimaInteraccion: ahora
   });
+  persistir();
 }
 
-/**
-* Devuelve el tiempo transcurrido en minutos desde la última interacción
-* @param {string} usuarioID
-* @returns {number|null} minutos desde última interacción, o null si no hay registro
-*/
 function tiempoDesdeUltimaInteraccion(usuarioID) {
   const usuario = memoriaUsuarios.get(
     String(usuarioID || "anonimo")
@@ -41,22 +52,16 @@ function tiempoDesdeUltimaInteraccion(usuarioID) {
   if (!usuario || !usuario.ultimaInteraccion) return null;
   const ahora = new Date();
   const diferenciaMs = ahora - new Date(usuario.ultimaInteraccion);
-  return Math.floor(diferenciaMs / 60000); // minutos
+  return Math.floor(diferenciaMs / 60000);
 }
 
-/**
-* Formatea un objeto Date a "DD/MM/YYYY HH:MM"
-* @param {Date} fechaObj
-* @returns {string}
-*/
 function formatearFecha(fechaObj) {
   return horaAPI.formatearFecha(fechaObj);
 }
 
-// Exportación ESM
 export default {
   obtenerHoraActual,
   formatearFecha,
   guardarUltimaInteraccion,
   tiempoDesdeUltimaInteraccion
-}; 
+};

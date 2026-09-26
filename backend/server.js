@@ -102,6 +102,16 @@ function ensureOwnUser(req) {
   return requested;
 }
 
+function ensurePremium(userId, feature = "Premium") {
+  const premium = premiumManager.obtenerEstado(userId);
+  if (!premium.premiumActivo) {
+    const error = new Error(`Premium requerido para ${feature}`);
+    error.status = 403;
+    throw error;
+  }
+  return premium;
+}
+
 function serializarAlarma(alarma) {
   if (!alarma) return null;
   return {
@@ -371,6 +381,7 @@ app.put("/api/premium/:userId/backup", requireAuth, (req, res) => {
 
 app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "memoria de código");
   const q = String(req.query.q || "");
   const data = q ? codigoMemoria.buscarArchivos(userId, q) : codigoMemoria.listarArchivos(userId);
   res.json({ ok: true, data });
@@ -378,22 +389,26 @@ app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
 
 app.post("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "memoria de código");
   res.json({ ok: true, data: codigoMemoria.guardarArchivo(userId, req.body) });
 });
 
 app.get("/api/memoria/codigo/:userId/:archivoId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "memoria de código");
   const data = codigoMemoria.obtenerArchivo(userId, req.params.archivoId);
   res.json({ ok: Boolean(data), data });
 });
 
 app.delete("/api/memoria/codigo/:userId/:archivoId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "memoria de código");
   res.json({ ok: codigoMemoria.eliminarArchivo(userId, req.params.archivoId) });
 });
 
 app.get("/api/memoria/fiscal/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "gestor fiscal");
   res.json({
     ok: true,
     data: {
@@ -405,14 +420,23 @@ app.get("/api/memoria/fiscal/:userId", requireAuth, (req, res) => {
 
 app.post("/api/memoria/fiscal/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "gestor fiscal");
   res.json({ ok: true, data: documentosFiscales.guardarDocumento(userId, req.body) });
 });
 
 app.post("/api/memoria/fiscal/:userId/:documentoId/estado", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
+  ensurePremium(userId, "gestor fiscal");
   const data = documentosFiscales.actualizarEstado(userId, req.params.documentoId, req.body?.estado);
   res.json({ ok: Boolean(data), data });
 });
+
+app.post("/api/memoria/fiscal/:userId/:documentoId/programar-envio", requireAuth, handleAsync(async (req, res) => {
+  const userId = ensureOwnUser(req);
+  ensurePremium(userId, "gestor fiscal");
+  const data = await documentosFiscales.programarEnvioContador(userId, req.params.documentoId, req.body || {});
+  res.json({ ok: Boolean(data), data });
+}));
 
 app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAsync(async (req, res) => {
   if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesion vencida" });
@@ -468,4 +492,11 @@ app.use((err, _req, res, _next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`🚀 ME2 corriendo en http://localhost:${server.address().port}`);
+  // Server-side alarm tick (Android remains primary executor for notifications)
+  try {
+    orquestadorNotificaciones.iniciar(60_000);
+    console.log("⏰ orquestadorNotificaciones tick iniciado (60s)");
+  } catch (error) {
+    console.error("No se pudo iniciar orquestadorNotificaciones:", error?.message || error);
+  }
 });

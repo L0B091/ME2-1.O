@@ -1,9 +1,45 @@
 // memoria/usuarioMemoria.js
+// Estado de personalidad por usuario — durable under backend/data/
+import storage from "../utils/jsonStorage.js";
 
+const NAMESPACE = "usuario_memoria_runtime";
 const usuariosMemoria = new Map();
 
 function normalizarUsuarioId(usuarioId) {
   return String(usuarioId || "anonimo");
+}
+
+function estadoBase() {
+  return {
+    memoriaCorta: {},
+    memoriaPersistente: {},
+    recuerdosImportantes: {},
+    historialConversacion: [],
+    ultimaInteraccion: null,
+    ultimoMicro: null,
+    ultimoMicroReaccion: null,
+    estadoEmocionalActual: "neutral",
+    historialEmocional: [],
+    preferenciasComunicacion: {
+      longitudMensajes: "media",
+      estilo: "neutral",
+      usaPreguntas: false
+    }
+  };
+}
+
+function persistir(id) {
+  const data = usuariosMemoria.get(id);
+  if (!data) return;
+  storage.writeUserData(NAMESPACE, id, data);
+}
+
+function cargar(id) {
+  if (usuariosMemoria.has(id)) return;
+  const data = storage.readUserData(NAMESPACE, id, null);
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    usuariosMemoria.set(id, { ...estadoBase(), ...data });
+  }
 }
 
 // =========================
@@ -11,23 +47,10 @@ function normalizarUsuarioId(usuarioId) {
 // =========================
 export function registrarUsuario(usuarioId) {
   const id = normalizarUsuarioId(usuarioId);
+  cargar(id);
   if (!usuariosMemoria.has(id)) {
-    usuariosMemoria.set(id, {
-      memoriaCorta: {},
-      memoriaPersistente: {},
-      recuerdosImportantes: {},
-      historialConversacion: [],
-      ultimaInteraccion: null,
-      ultimoMicro: null,
-      ultimoMicroReaccion: null,
-      estadoEmocionalActual: "neutral",
-      historialEmocional: [],
-      preferenciasComunicacion: {
-        longitudMensajes: "media",
-        estilo: "neutral",
-        usaPreguntas: false
-      }
-    });
+    usuariosMemoria.set(id, estadoBase());
+    persistir(id);
   }
 }
 
@@ -35,7 +58,9 @@ export function registrarUsuario(usuarioId) {
 // OBTENER USUARIO
 // =========================
 export function obtenerUsuario(usuarioId) {
-  return usuariosMemoria.get(normalizarUsuarioId(usuarioId)) ?? null;
+  const id = normalizarUsuarioId(usuarioId);
+  cargar(id);
+  return usuariosMemoria.get(id) ?? null;
 }
 
 // =========================
@@ -50,37 +75,25 @@ export function agregarMensaje(usuarioId, mensaje) {
     timestamp: Date.now()
   });
 
-  // limitar historial (evita crecimiento infinito)
   if (usuariosMemoria.get(id).historialConversacion.length > 50) {
     usuariosMemoria.get(id).historialConversacion.shift();
   }
 
   usuariosMemoria.get(id).ultimaInteraccion = Date.now();
+  persistir(id);
 }
 
-// =========================
-// LISTAR USUARIOS
-// =========================
 export function listarUsuarios() {
   return Array.from(usuariosMemoria.keys());
 }
 
-// =========================
-// LIMPIAR USUARIO
-// =========================
 export function limpiarUsuario(usuarioId) {
   const id = normalizarUsuarioId(usuarioId);
+  cargar(id);
   const usuario = usuariosMemoria.get(id);
   if (usuario) {
-    usuario.memoriaCorta = {};
-    usuario.memoriaPersistente = {};
-    usuario.recuerdosImportantes = {};
-    usuario.historialConversacion = [];
-    usuario.ultimaInteraccion = null;
-    usuario.ultimoMicro = null;
-    usuario.ultimoMicroReaccion = null;
-    usuario.estadoEmocionalActual = "neutral";
-    usuario.historialEmocional = [];
+    Object.assign(usuario, estadoBase());
+    persistir(id);
   }
 }
 
@@ -88,6 +101,7 @@ export function guardarUltimoMicro(usuarioId, valor) {
   const id = normalizarUsuarioId(usuarioId);
   registrarUsuario(id);
   usuariosMemoria.get(id).ultimoMicro = valor;
+  persistir(id);
   return valor;
 }
 
@@ -101,6 +115,7 @@ export function guardarUltimoMicroReaccion(usuarioId, valor) {
   const id = normalizarUsuarioId(usuarioId);
   registrarUsuario(id);
   usuariosMemoria.get(id).ultimoMicroReaccion = valor;
+  persistir(id);
   return valor;
 }
 
@@ -121,6 +136,7 @@ export function actualizarEstadoEmocional(usuarioId, estado) {
   });
   usuario.historialEmocional =
     usuario.historialEmocional.slice(-20);
+  persistir(id);
   return usuario.estadoEmocionalActual;
 }
 
@@ -135,5 +151,6 @@ export function actualizarPreferenciasComunicacion(
     ...usuario.preferenciasComunicacion,
     ...preferencias
   };
+  persistir(id);
   return usuario.preferenciasComunicacion;
 }

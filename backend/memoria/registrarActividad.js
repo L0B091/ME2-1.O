@@ -5,6 +5,7 @@ import memoriaPersistente from "./memoriaPersistente.js";
 
 const MAX_HORAS = 12;
 const CLAVE_ACTIVIDAD = "__actividad_usuario__";
+const CLAVE_ACTIVIDAD_LEGACY = "_actividad_usuario_";
 
 /**
  * Estructura base de actividad
@@ -50,7 +51,7 @@ function obtenerRegistroActividad(memoria) {
   }
 
   return memoria.find(
-    item => item && item.clave === CLAVE_ACTIVIDAD
+    item => item && (item.clave === CLAVE_ACTIVIDAD || item.clave === CLAVE_ACTIVIDAD_LEGACY)
   ) || null;
 }
 

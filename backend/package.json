@@ -1,7 +1,7 @@
 {
-  "name": "joi-interactive",
+  "name": "me2-backend",
   "version": "1.0.0",
-  "description": "Sistema de IA Joi con motores y modulos psicologicos",
+  "description": "Sistema de IA ME2 con motores y modulos psicologicos",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "test": "node --test"
   },
   "keywords": [
-    "Joi",
+    "ME2",
     "IA",
     "motores",
     "psicologia",

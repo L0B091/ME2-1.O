@@ -1,8 +1,46 @@
 import crypto from "crypto";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
+import storage from "../utils/jsonStorage.js";
 
 const DURACION_TOKEN = 1000 * 60 * 60 * 24 * 7;
+const SESSION_NAMESPACE = "sesiones_auth";
+const SESSION_KEY = "tokens";
+
+/** @type {Map<string, {token:string,userId:string,email:string,creado:number,expira:number}>} */
 const sesiones = new Map();
+
+function cargarSesiones() {
+  const data = storage.readGlobalData(SESSION_NAMESPACE, SESSION_KEY, { tokens: {} });
+  const tokens = data?.tokens && typeof data.tokens === "object" ? data.tokens : {};
+  const ahora = Date.now();
+  sesiones.clear();
+  for (const [token, sesion] of Object.entries(tokens)) {
+    if (!sesion || typeof sesion !== "object") continue;
+    if (!Number.isFinite(sesion.expira) || sesion.expira <= ahora) continue;
+    sesiones.set(token, {
+      token,
+      userId: String(sesion.userId || ""),
+      email: String(sesion.email || ""),
+      creado: Number(sesion.creado) || ahora,
+      expira: Number(sesion.expira)
+    });
+  }
+}
+
+function persistirSesiones() {
+  const ahora = Date.now();
+  const tokens = {};
+  for (const [token, sesion] of sesiones.entries()) {
+    if (sesion.expira <= ahora) {
+      sesiones.delete(token);
+      continue;
+    }
+    tokens[token] = sesion;
+  }
+  storage.writeGlobalData(SESSION_NAMESPACE, SESSION_KEY, { tokens });
+}
+
+cargarSesiones();
 
 function generarToken() {
   return crypto.randomBytes(48).toString("hex");
@@ -25,6 +63,7 @@ function emitirSesion(usuario) {
     creado,
     expira
   });
+  persistirSesiones();
 
   return {
     token,
@@ -102,6 +141,7 @@ function validarToken(token) {
 
   if (Date.now() > sesion.expira) {
     sesiones.delete(String(token));
+    persistirSesiones();
     return null;
   }
 
@@ -135,6 +175,7 @@ function sesionesActivas() {
 
 function cerrarSesion(token) {
   const existed = sesiones.delete(String(token || ""));
+  if (existed) persistirSesiones();
   return existed ? { ok: true, mensaje: "Sesión cerrada" } : { ok: false, error: "Token inválido" };
 }
 

@@ -4,16 +4,20 @@ import memoriaPersistente from "./memoriaPersistente.js";
 import recuerdosImportantes from "./recuerdosImportantes.js";
 import datosUsuario from "./datosUsuario.js";
 import historialConversacion from "./historialConversacion.js";
+import codigoMemoria from "./codigoMemoria.js";
+import documentosFiscales from "./documentosFiscales.js";
 
 const IGNORED_EXPRESSIONS = new Set([
   "hola",
   "hola joi",
+  "hola me2",
   "buenas",
   "buenos dias",
   "buenas tardes",
   "buenas noches",
   "gracias",
   "gracias joi",
+  "gracias me2",
   "ok",
   "okay",
   "dale"
@@ -65,13 +69,37 @@ function evaluarWriteBack({
     };
   }
 
-  const decision = decidir(texto);
+  let decision = decidir(texto);
 
   if (!decision.save) {
+    const especial = detectarMemoriaEspecializada(texto, original);
+    if (especial?.save) {
+      try {
+        return guardarEspecializada(userId, original, especial);
+      } catch (error) {
+        return {
+          guardado: false,
+          motivo: "error_memoria_especializada",
+          error: error?.message || String(error)
+        };
+      }
+    }
     return {
       guardado: false,
       motivo: "sin_informacion_persistente"
     };
+  }
+
+  if (decision.tipo === "codigo" || decision.tipo === "fiscal") {
+    try {
+      return guardarEspecializada(userId, original, decision);
+    } catch (error) {
+      return {
+        guardado: false,
+        motivo: "error_memoria_especializada",
+        error: error?.message || String(error)
+      };
+    }
   }
 
   return guardarDecision(
@@ -180,12 +208,26 @@ function resolverRespuestaContextual(
   for (let i = historial.length - 1; i >= 0; i--) {
     const mensaje = historial[i];
 
-    if (
-      mensaje &&
-      mensaje.rol === "joi" &&
-      typeof mensaje.mensaje === "string"
-    ) {
-      pregunta = mensaje.mensaje;
+    // historialConversacion stores `tipo` ("joi"|"usuario"), not `rol`
+    const rol =
+      mensaje?.tipo ||
+      mensaje?.rol ||
+      mensaje?.role ||
+      "";
+    const esAsistente =
+      rol === "joi" ||
+      rol === "assistant" ||
+      rol === "me2";
+    const textoMensaje =
+      typeof mensaje?.mensaje === "string"
+        ? mensaje.mensaje
+        : typeof mensaje?.text === "string"
+          ? mensaje.text
+          : typeof mensaje?.contenido === "string"
+            ? mensaje.contenido
+            : null;
+    if (mensaje && esAsistente && textoMensaje) {
+      pregunta = textoMensaje;
       break;
     }
   }
@@ -889,6 +931,85 @@ function generarClave(texto) {
     (fragmento || "general");
 }
 
+
+/**
+ * Detecta y persiste memorias de código / fiscales vía el mismo write-back.
+ * Android también escribe localmente; esto sincroniza el backend premium store.
+ */
+function detectarMemoriaEspecializada(texto, original) {
+  const codigoHints = [
+    "mi codigo", "mi código", "funcion ", "función ", "class ",
+    "const ", "import ", "export ", "bug ", "stacktrace", "repo ",
+    "archivo .js", "archivo .kt", "archivo .py", "pull request", "commit "
+  ];
+  const fiscalHints = [
+    "factura", "monotributo", "afip", "comprobante", "iva ",
+    "recibo", "cobro", "pago a", "cuit", "cuil", "contador",
+    "factura a", "factura b", "factura c", "retencion", "retención"
+  ];
+
+  if (contiene(texto, codigoHints)) {
+    return {
+      save: true,
+      tipo: "codigo",
+      categoria: "codigo",
+      importancia: 2,
+      usuario: false
+    };
+  }
+  if (contiene(texto, fiscalHints)) {
+    const movimiento = contiene(texto, ["cobro", "me pagaron", "me depositaron"])
+      ? "cobro"
+      : contiene(texto, ["pague", "pagué", "pago a", "transferi", "transferí"])
+        ? "pago"
+        : "neutral";
+    return {
+      save: true,
+      tipo: "fiscal",
+      categoria: "fiscal",
+      importancia: 2,
+      usuario: false,
+      movimiento
+    };
+  }
+  return null;
+}
+
+function guardarEspecializada(userId, original, decision) {
+  if (decision.tipo === "codigo") {
+    const archivo = codigoMemoria.guardarArchivo(userId, {
+      nombre: `nota_${Date.now()}.txt`,
+      resumen: original.slice(0, 240),
+      contenido: original,
+      lenguaje: "texto",
+      tags: ["writeback", "chat"]
+    });
+    return {
+      guardado: true,
+      tipo: "codigo",
+      id: archivo.id,
+      motivo: "memoria_codigo"
+    };
+  }
+  if (decision.tipo === "fiscal") {
+    const doc = documentosFiscales.guardarDocumento(userId, {
+      tipo: "nota_chat",
+      movimiento: decision.movimiento || "neutral",
+      descripcion: original.slice(0, 500),
+      tags: ["writeback", "chat"],
+      estado: "registrado"
+    });
+    return {
+      guardado: true,
+      tipo: "fiscal",
+      id: doc.id,
+      motivo: "memoria_fiscal"
+    };
+  }
+  return null;
+}
+
 export default {
-  evaluarWriteBack
+  evaluarWriteBack,
+  detectarMemoriaEspecializada
 };

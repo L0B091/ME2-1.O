@@ -3,7 +3,7 @@ TÉRMINOS Y CONDICIONES DE USO
 
 1. IDENTIFICACIÓN DEL SERVICIO
 
-El presente acuerdo regula el uso de la aplicación Joi, un sistema digital basado en inteligencia artificial que permite la interacción conversacional con fines recreativos y de entretenimiento.
+El presente acuerdo regula el uso de la aplicación ME2, un sistema digital basado en inteligencia artificial que permite la interacción conversacional con fines recreativos y de entretenimiento.
 
 El servicio no constituye una persona física ni una entidad consciente.
 

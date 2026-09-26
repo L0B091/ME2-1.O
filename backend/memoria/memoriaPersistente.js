@@ -14,7 +14,8 @@ const DIRECTORIO_MEMORIA = path.resolve(
 
 const MAX_ELEMENTOS = 100;
 
-const CLAVE_ACTIVIDAD = "_actividad_usuario_";
+const CLAVE_ACTIVIDAD = "__actividad_usuario__";
+const CLAVE_ACTIVIDAD_LEGACY = "_actividad_usuario_";
 
 /**
  * Asegura que exista el directorio de persistencia.
@@ -170,7 +171,7 @@ function agregar(usuarioId, elemento) {
  * Ejemplo:
  *
  * {
- *   clave: "_actividad_usuario_",
+ *   clave: "__actividad_usuario__",
  *   actividad: { ... }
  * }
  *
@@ -239,6 +240,15 @@ function actualizarActividad(
   usuarioId,
   actividad
 ) {
+  // Migrate legacy single-underscore key if present
+  const memoria = obtener(usuarioId);
+  const legacyIdx = memoria.findIndex(
+    item => item && item.clave === CLAVE_ACTIVIDAD_LEGACY
+  );
+  if (legacyIdx >= 0) {
+    memoria.splice(legacyIdx, 1);
+    guardar(usuarioId, memoria);
+  }
   return actualizarPorClave(
     usuarioId,
     CLAVE_ACTIVIDAD,
@@ -261,7 +271,7 @@ function obtenerPorClave(
 
   const memoria = obtener(usuarioId);
 
-  const registro = memoria.find(
+  let registro = memoria.find(
     function (item) {
       return (
         item &&
@@ -269,6 +279,15 @@ function obtenerPorClave(
       );
     }
   );
+
+  // Activity key migration: accept legacy "_actividad_usuario_"
+  if (!registro && clave === CLAVE_ACTIVIDAD) {
+    registro = memoria.find(
+      function (item) {
+        return item && item.clave === CLAVE_ACTIVIDAD_LEGACY;
+      }
+    ) || null;
+  }
 
   if (!registro) {
     return null;
