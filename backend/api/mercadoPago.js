@@ -139,7 +139,6 @@ async function verificarPago(paymentId, expectedUserId = null) {
 
   if (
     expectedUserId &&
-    metadataUserId &&
     metadataUserId !== expectedUserId &&
     externalReference !== expectedUserId
   ) {
