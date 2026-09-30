@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import cors from "cors";
 import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
@@ -51,6 +52,12 @@ const healthRateLimit = rateLimit({
 });
 const initiativeRateLimit = rateLimit({
   windowMs: 60 * 1000, limit: 6, standardHeaders: true, legacyHeaders: false
+});
+const chatRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 function getAllowedOrigins() {
@@ -422,13 +429,13 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAs
   return res.json({ ok: true, data });
 }));
 
-app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
-  const { mensaje, userId, contexto } = req.body || {};
+app.post("/chat", chatRateLimit, optionalAuth, handleAsync(async (req, res) => {
+  const { mensaje, contexto } = req.body || {};
   if (!mensaje || typeof mensaje !== "string") {
     return res.status(400).json({ ok: false, error: "Mensaje inválido" });
   }
 
-  const effectiveUserId = req.auth?.userId || userId || "anonimo";
+  const effectiveUserId = req.auth?.userId || `anonimo-${crypto.randomUUID()}`;
   const resultado = await orquestadorChat(mensaje, {
     ...contexto,
     userId: effectiveUserId,
