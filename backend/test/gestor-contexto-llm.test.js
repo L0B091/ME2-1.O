@@ -104,4 +104,15 @@ test("la selección es determinista y respeta el presupuesto configurado", async
   assert.ok(first.metadatos.tokensEstimados <= first.metadatos.presupuesto);
 });
 
+test("un mensaje muy largo queda limitado también con el presupuesto mínimo", async () => {
+  const { fuentes } = crearFuentes();
+  const result = await construirContextoLLM({
+    userId: "u11",
+    mensajeUsuario: `¿Qué habíamos decidido sobre el avatar? ${"detalle ".repeat(500)}`,
+    fuentes,
+    presupuestoTokens: 64
+  });
+  assert.equal(result.metadatos.presupuesto, 128);
+  assert.ok(result.metadatos.tokensEstimados <= 128);
+});
 
