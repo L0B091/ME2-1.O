@@ -41,6 +41,7 @@ function obtenerRegistro(userId) {
   return storage.readUserData(NAMESPACE, userId, {
     userId,
     premiumHasta: null,
+    paymentIds: [],
     historial: []
   });
 }
@@ -49,6 +50,7 @@ function guardarRegistro(userId, data) {
   storage.writeUserData(NAMESPACE, userId, {
     userId,
     premiumHasta: data.premiumHasta || null,
+    paymentIds: Array.isArray(data.paymentIds) ? [...new Set(data.paymentIds.map(String))] : [],
     historial: Array.isArray(data.historial) ? data.historial.slice(-50) : []
   });
 }
@@ -129,14 +131,40 @@ function registrarCheckout(userId, checkout = {}) {
 }
 
 function activarPremium(userId, paymentId, detail = {}) {
-  const premiumHasta = new Date(Date.now() + PREMIUM_DIAS * 24 * 60 * 60 * 1000).toISOString();
+  const normalizedPaymentId = String(paymentId || "").trim();
+  if (!normalizedPaymentId) {
+    const error = new Error("paymentId requerido");
+    error.status = 400;
+    throw error;
+  }
+
   const registro = obtenerRegistro(userId);
+  const paymentIds = Array.isArray(registro.paymentIds) ? registro.paymentIds.map(String) : [];
+  if (paymentIds.includes(normalizedPaymentId)) {
+    const premiumHastaActual = registro.premiumHasta || null;
+    return {
+      ok: true,
+      premiumActivo: Boolean(premiumHastaActual && new Date(premiumHastaActual).getTime() > Date.now()),
+      premiumHasta: premiumHastaActual,
+      paymentId: normalizedPaymentId,
+      status: detail.status || "approved",
+      feature: detail.feature || "M/A",
+      alreadyProcessed: true
+    };
+  }
+
+  const premiumHastaActualMs = registro.premiumHasta ? new Date(registro.premiumHasta).getTime() : 0;
+  const premiumHasta = new Date(
+    Math.max(Date.now(), Number.isFinite(premiumHastaActualMs) ? premiumHastaActualMs : 0) +
+      PREMIUM_DIAS * 24 * 60 * 60 * 1000
+  ).toISOString();
   registro.premiumHasta = premiumHasta;
+  registro.paymentIds = [...paymentIds, normalizedPaymentId];
   registro.historial = [
     ...(registro.historial || []),
     {
       tipo: "pago_aprobado",
-      paymentId,
+      paymentId: normalizedPaymentId,
       preferenceId: detail.preferenceId || null,
       feature: detail.feature || "M/A",
       status: detail.status || "approved",
