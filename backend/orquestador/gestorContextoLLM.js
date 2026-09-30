@@ -42,7 +42,7 @@ function clasificarNecesidad(message = "") {
 }
 
 function construirConsulta(message = "", decision = {}) {
-  const terminos = [...new Set(tokens(message))].slice(0, 8);
+  const terminos = [...new Set(tokens(message).map(term => term.slice(0, 48)))].slice(0, 8);
   return { texto: terminos.join(" "), terminos, categorias: decision.categorias || [], original: String(message) };
 }
 function decidirNecesidadMemoria(message = "", context = {}) {
@@ -225,7 +225,7 @@ function tokenEstimate(context) {
   return Math.ceil(JSON.stringify(body).length / 4);
 }
 function aplicarPresupuesto(context, budget = DEFAULT_BUDGET) {
-  const limit = Math.max(64, Math.floor(Number(budget) || DEFAULT_BUDGET));
+  const limit = Math.max(128, Math.floor(Number(budget) || DEFAULT_BUDGET));
   context.memoria.elementos = context.memoria.elementos.slice(0, MAX_MEMORIES);
   context.historial.elementos = context.historial.elementos.slice(-MAX_HISTORY);
   context.especializados.codigo = context.especializados.codigo.slice(0, MAX_CODE);
@@ -237,6 +237,12 @@ function aplicarPresupuesto(context, budget = DEFAULT_BUDGET) {
     else if (context.perfil?.resumen) delete context.perfil.resumen;
     else if (context.perfil?.intereses?.length) context.perfil.intereses.pop();
     else if (context.perfil?.nombre) context.perfil.nombre = null;
+    else if (context.memoria.consulta) context.memoria.consulta = "";
+    else if (context.memoria.categorias?.length) context.memoria.categorias.pop();
+    else if (context.estado.intencion) context.estado.intencion = "";
+    else if (context.estado.emocion) context.estado.emocion = "";
+    else if (context.estado.energia) context.estado.energia = "";
+    else if (context.memoria.categoria) context.memoria.categoria = null;
     else break;
   }
   context.metadatos.presupuesto = limit;
@@ -275,3 +281,4 @@ async function construirContextoLLM({ userId = null, mensajeUsuario = "", entrad
 
 export { aplicarPresupuesto, construirConsulta, construirContextoLLM, clasificarNecesidad, consultarMemoria, decidirNecesidadMemoria, obtenerEstadoConversacion, obtenerPerfilBase, rankearMemorias };
 export default { aplicarPresupuesto, construirConsulta, construirContextoLLM, clasificarNecesidad, consultarMemoria, decidirNecesidadMemoria, obtenerEstadoConversacion, obtenerPerfilBase, rankearMemorias };
+
