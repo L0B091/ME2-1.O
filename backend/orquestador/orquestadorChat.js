@@ -28,6 +28,7 @@ import documentosFiscales from "../memoria/documentosFiscales.js";
 
 //  NUEVO: MEMORIA ORQUESTADOR
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
+import gestorContextoLLM from "./gestorContextoLLM.js";
 import veniceClient from "../llm/veniceClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import expresionFinal from "../modulos/expresion/expresionFinal.js";
@@ -110,6 +111,21 @@ async function orquestador(mensajeUsuario, contexto = {}) {
         memoriaUsuario?.historialConversacion ||
         []
     );
+
+  let contextoLLM = null;
+  try {
+    contextoLLM = await gestorContextoLLM.construirContextoLLM({
+      userId: contexto.userId,
+      mensajeUsuario,
+      entradaProcesada,
+      estado: contexto.estado || null
+    });
+  } catch (error) {
+    console.error("Error en gestorContextoLLM:", error);
+  }
+  const debugContextoLLM = process.env.NODE_ENV === "development"
+    ? { contextoLLM }
+    : {};
 
   // =========================================================
   // [MEMORY] 2. MEMORIA (USUARIO BASE)
@@ -244,6 +260,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       video,
       premium: contextoCompleto.memoriaEspecializada.premium,
       debug: {
+        ...debugContextoLLM,
         memoriaLocal,
         memoriaUsuario,
         memoriaSistema,
@@ -291,6 +308,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       ),
       premium: contextoCompleto.memoriaEspecializada.premium,
       debug: {
+        ...debugContextoLLM,
         entradaProcesada,
         memoriaUsuario,
         memoriaSistema,
@@ -413,6 +431,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     video,
     premium: contextoCompleto.memoriaEspecializada.premium,
     debug: {
+      ...debugContextoLLM,
       entradaProcesada,
       cognicion: resultadoCognicion,
       memoriaUsuario,
