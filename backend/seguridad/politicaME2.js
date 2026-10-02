@@ -1,11 +1,11 @@
 /*
-* POLÍTICA JOI - REGLAS INQUEBRANTABLES
+* POLÍTICA ME2 - REGLAS INQUEBRANTABLES
 * -------------------------------------
 * Define límites éticos y de comportamiento del sistema.
 * Este módulo tiene prioridad sobre cualquier otro.
 */
 
-function politicaJoi(mensaje = "", contexto = {}) {
+function politicaME2(mensaje = "", contexto = {}) {
 
   if (!mensaje || typeof mensaje !== "string") {
     return { bloqueado: false };
@@ -145,4 +145,4 @@ function politicaJoi(mensaje = "", contexto = {}) {
   };
 }
 
-export default politicaJoi; 
+export default politicaME2; 

@@ -1,8 +1,8 @@
 // ritmoDeInteraccion.js
-// Modulo que regula cuando Joi debe interactuar con el usuario
+// Modulo que regula cuando ME2 debe interactuar con el usuario
 
 /**
- * Determina si Joi debe responder, esperar o iniciar
+ * Determina si ME2 debe responder, esperar o iniciar
  * una nueva interaccion segun el contexto.
  */
 

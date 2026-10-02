@@ -22,7 +22,7 @@ function normalizarNombre(valor = "") {
 
   const invalido = limpio.toLowerCase();
   if ([
-    "joi", "me2", "hola", "holi", "buenas", "gracias", "ninguno",
+    "me2", "hola", "holi", "buenas", "gracias", "ninguno",
     "como quieras", "da igual", "sin nombre", "ningún nombre", "ningun nombre",
     "nombre", "un nombre", "nickname", "un nickname", "apodo", "un apodo"
   ].includes(invalido)) {
@@ -119,7 +119,7 @@ function ultimoMensajePideNombrePersonaje(contexto = {}, mensajeActual = "") {
     if ((rol === "user" || rol === "usuario") && String(texto).trim() === String(mensajeActual).trim()) {
       continue;
     }
-    if ((rol === "assistant" || rol === "joi") && String(texto).includes("¿Qué nombre o nickname querés que tenga?")) {
+    if ((rol === "assistant" || rol === "asistente") && String(texto).includes("¿Qué nombre o nickname querés que tenga?")) {
       return true;
     }
     if (rol === "user" || rol === "usuario") break;

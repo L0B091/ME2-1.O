@@ -7,8 +7,7 @@ import datosUsuario from "../memoria/datosUsuario.js";
 
 test("no asigna un nombre por defecto al personaje", () => {
   assert.equal(preferenciaNombre.obtenerNombrePersonaje({}), null);
-  assert.equal(preferenciaNombre.normalizarNombre("Joi"), null);
-  assert.equal(preferenciaNombre.normalizarNombre("ME2"), null);
+    assert.equal(preferenciaNombre.normalizarNombre("ME2"), null);
 });
 
 test("pregunta por el nombre del personaje cuando el usuario quiere asignarlo", async () => {

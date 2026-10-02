@@ -68,7 +68,7 @@ async function proximosUnificados(usuarioID, limite = 5) {
   return { eventos: [...locales, ...google].sort((a, b) => instante(a) - instante(b)).slice(0, limite), googleCalendar: googleEstado };
 }
 
-function calendarioJoi(usuarioID, input) {
+function calendarioAccion(usuarioID, input) {
   if (!input?.accion) return { exito: false, mensaje: "Acción no definida" };
   if (input.accion === "agregar") return agregarEvento(usuarioID, input.datos);
   if (input.accion === "eliminar") return eliminarEvento(usuarioID, input.datos?.id || input.datos?.descripcion);
@@ -82,6 +82,6 @@ export default {
   eliminarEvento,
   obtenerEventosProximos,
   proximosUnificados,
-  calendarioJoi,
+  calendarioAccion,
   adapters: { local: localAdapter, google: googleAdapter }
 };

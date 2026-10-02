@@ -1,5 +1,5 @@
 /*
-* ANTI PROMPT INJECTION - JOI
+* ANTI PROMPT INJECTION - ME2
 * ---------------------------
 * Detecta intentos de manipulación del sistema,
 * instrucciones ocultas o intentos de romper comportamiento.

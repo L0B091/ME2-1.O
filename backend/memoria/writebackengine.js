@@ -9,14 +9,12 @@ import documentosFiscales from "./documentosFiscales.js";
 
 const IGNORED_EXPRESSIONS = new Set([
   "hola",
-  "hola joi",
   "hola me2",
   "buenas",
   "buenos dias",
   "buenas tardes",
   "buenas noches",
   "gracias",
-  "gracias joi",
   "gracias me2",
   "ok",
   "okay",
@@ -208,14 +206,14 @@ function resolverRespuestaContextual(
   for (let i = historial.length - 1; i >= 0; i--) {
     const mensaje = historial[i];
 
-    // historialConversacion stores `tipo` ("joi"|"usuario"), not `rol`
+    // historialConversacion stores `tipo` ("asistente"|"usuario"), not `rol`
     const rol =
       mensaje?.tipo ||
       mensaje?.rol ||
       mensaje?.role ||
       "";
     const esAsistente =
-      rol === "joi" ||
+      rol === "asistente" ||
       rol === "assistant" ||
       rol === "me2";
     const textoMensaje =
@@ -682,16 +680,18 @@ function decidir(texto) {
   }
 
   if (contiene(texto, [
-    "joi debe",
-    "joi tiene que",
-    "quiero que joi",
-    "joi nunca",
-    "joi siempre"
+    "me2 debe",
+    "me2 tiene que",
+    "quiero que me2",
+    "me2 nunca",
+    "me2 siempre",
+    "quiero que vos",
+    "quiero que me hables"
   ])) {
     return {
       save: true,
       tipo: "persistente",
-      categoria: "preferencias_joi",
+      categoria: "preferencias_asistente",
       importancia: 2,
       usuario: false
     };
@@ -876,13 +876,15 @@ function categoria(texto) {
   }
 
   if (contiene(texto, [
-    "joi debe",
-    "joi tiene que",
-    "quiero que joi",
-    "joi nunca",
-    "joi siempre"
+    "me2 debe",
+    "me2 tiene que",
+    "quiero que me2",
+    "me2 nunca",
+    "me2 siempre",
+    "quiero que vos",
+    "quiero que me hables"
   ])) {
-    return "preferencias_joi";
+    return "preferencias_asistente";
   }
 
   return "general";

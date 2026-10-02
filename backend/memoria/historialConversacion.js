@@ -65,7 +65,7 @@ function registrarMensaje(
 
   historial.push({
     mensaje: mensaje,
-    tipo: tipo === "joi" ? "joi" : "usuario",
+    tipo: tipo === "usuario" || tipo === "user" ? "usuario" : "asistente",
     timestamp: Date.now()
   });
 

@@ -9,7 +9,7 @@ import recuerdosImportantes from "./recuerdosImportantes.js";
 import datosUsuario from "./datosUsuario.js";
 
 /**
- * Coordina las capas de memoria de Joi.
+ * Coordina las capas de memoria de ME2.
  *
  * Este módulo NO decide qué información debe persistir.
  * Esa responsabilidad pertenece a writeBackEngine.js.

@@ -1,5 +1,5 @@
 /*
-* AUDITORÍA - JOI
+* AUDITORÍA - ME2
 * ----------------
 * Registro de eventos del sistema para:
 * - debugging

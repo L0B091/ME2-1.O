@@ -1,5 +1,5 @@
 /*
-* CONTROL DE USUARIO - JOI
+* CONTROL DE USUARIO - ME2
 * ------------------------
 * Gestiona comportamiento del usuario:
 * - intentos de manipulación

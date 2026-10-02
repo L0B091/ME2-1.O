@@ -1,5 +1,5 @@
 /*
-* LÍMITES DE USUARIO - JOI
+* LÍMITES DE USUARIO - ME2
 * ------------------------
 * Controla frecuencia de uso y evita abuso del sistema
 */
