@@ -130,7 +130,7 @@ export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId
       ...(iniciativa.contexto?.enlace ? [`Enlace: ${iniciativa.contexto.enlace}`] : [])
     ].join("\n")
   };
-  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, 12), solicitudIniciativa], { maxTokens: 160 });
+  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, Number(process.env.ME2_INITIATIVE_HISTORY || 4)), solicitudIniciativa], { maxTokens: 160 });
 }
 
 function fuenteDe(iniciativa) {
