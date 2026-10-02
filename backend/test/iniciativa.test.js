@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { evaluarIniciativa, POLITICA_INICIATIVA, interesesDe } from "../comportamiento/iniciativaConversacional.js";
 import { evaluarPerfilRitmo } from "../modulos/interaccion/perfilRitmoUsuario.js";
 import { evaluarAutonomia, validarSolicitudIniciativa } from "../orquestador/orquestadorNotificaciones.js";
-import veniceClient, { construirMensajes } from "../llm/veniceClient.js";
+import { generarIniciativaLLM } from "../orquestador/orquestadorNotificaciones.js";
 
 const HORA = 3600000;
 const ahora = Date.parse("2026-09-12T15:00:00Z");
@@ -254,35 +254,21 @@ test("real relevant News generates contextual initiative and explicit reference"
     }
   });
 
-  test("sleep starting while OpenRouter responds cancels delivery", async t => {
-    let clock = Date.parse("2026-09-12T21:59:59Z");
-    t.mock.method(Date, "now", () => clock);
-    const result = await evaluarAutonomia(solicitud(), {
-      llmConfigurado: true, newsConfigurado: false,
-      generar: async () => {
-        clock += 2000;
-        return { used: true, respuesta: "Retomamos tu proyecto?" };
-      }
-    });
-    assert.equal(result.motivoEspera, "descanso_probable");
-    assert.equal(result.iniciativa, undefined);
-  });
   assert.equal(result.iniciativa.mensaje, "Una novedad sobre tu interes por la astronomia.");
 });
 
-test("initiative context reaches OpenRouter on generation and later reply", () => {
-  const iniciativa = { id: "x", categoria: "RECUERDO", motivo: "retomar", contexto: { evidencia: "astronomia" } };
-  const mensajes = construirMensajes({
-    mensajeUsuario: "Contame mas",
-    contexto: {
-      iniciativa,
-      memoriaLocal: { recentConversation: [{ tipo: "user", mensaje: "Contame mas" }] }
+test("sleep starting while the LLM responds cancels delivery", async t => {
+  let clock = Date.parse("2026-09-12T21:59:59Z");
+  t.mock.method(Date, "now", () => clock);
+  const result = await evaluarAutonomia(solicitud(), {
+    llmConfigurado: true, newsConfigurado: false,
+    generar: async () => {
+      clock += 2000;
+      return { used: true, respuesta: "Retomamos tu proyecto?" };
     }
   });
-  assert.ok(mensajes.some(item => item.content.includes('"motivo":"retomar"')));
-  assert.equal(mensajes.at(-1).content, "Contame mas");
-  const generacion = construirMensajes({ contexto: { iniciativa, generarIniciativa: true } });
-  assert.ok(generacion.at(-1).content.includes("iniciativa seleccionada"));
+  assert.equal(result.motivoEspera, "descanso_probable");
+  assert.equal(result.iniciativa, undefined);
 });
 
 test("interest extraction excludes generic conversation words", () => {
@@ -290,28 +276,32 @@ test("interest extraction excludes generic conversation words", () => {
   assert.deepEqual(words, ["astronomia", "espacial"]);
 });
 
-test("initiative generator reuses the configured OpenRouter client and existing identity", async () => {
+test("initiative generator sends factual context to the Dolphin client (no persona blocks)", async () => {
   const originalFetch = globalThis.fetch;
-  const originalKey = process.env.OPENROUTER_API_KEY;
-  process.env.OPENROUTER_API_KEY = "test-only";
+  const env = { url: process.env.DOLPHIN_URL, model: process.env.DOLPHIN_MODEL };
+  process.env.DOLPHIN_URL = "http://dolphin.test/v1";
+  process.env.DOLPHIN_MODEL = "dolphin-test";
   let request;
   globalThis.fetch = async (url, options) => {
-    request = JSON.parse(options.body);
-    assert.ok(String(url).includes("openrouter"));
-    return { ok: true, json: async () => ({ choices: [{ message: { content: "Retomamos el proyecto?" } }] }) };
+    if (String(url).includes("dolphin.test")) {
+      request = JSON.parse(options.body);
+      return { ok: true, text: async () => JSON.stringify({ choices: [{ message: { content: "Retomamos el proyecto?" } }] }) };
+    }
+    throw new Error("offline");
   };
   try {
-    const result = await veniceClient.generarIniciativa(
-      evaluarIniciativa(solicitud()).iniciativa, solicitud().memoriaLocal
+    const result = await generarIniciativaLLM(
+      evaluarIniciativa(solicitud()).iniciativa, solicitud().memoriaLocal, null
     );
-    assert.equal(result.provider, "openrouter");
     assert.equal(result.used, true);
-    assert.ok(request.messages.some(item => item.content.includes("Identidad base:")));
-    assert.ok(request.messages.some(item => item.content.includes("Retomar un tema pendiente")));
-    assert.ok(request.messages.at(-1).content.includes("iniciativa seleccionada"));
+    assert.equal(result.respuesta, "Retomamos el proyecto?");
+    assert.equal(request.model, "dolphin-test");
+    assert.ok(request.messages[0].content.includes("Motivo de la iniciativa"));
+    assert.ok(!request.messages.some(item => item.content.includes("Identidad base:")));
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalKey === undefined) delete process.env.OPENROUTER_API_KEY;
-    else process.env.OPENROUTER_API_KEY = originalKey;
+    for (const [k, v] of [["DOLPHIN_URL", env.url], ["DOLPHIN_MODEL", env.model]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
   }
 });

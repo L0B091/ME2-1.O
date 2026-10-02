@@ -24,7 +24,9 @@ test("pregunta por el nombre del personaje cuando el usuario quiere asignarlo", 
     }
   });
 
-  assert.equal(result.respuesta, "Claro. ¿Qué nombre o nickname querés que tenga?");
+  // Sin plantillas: sin LLM configurado no hay respuesta armada.
+  assert.equal(result.respuesta, null);
+  assert.equal(result.llmDisponible, false);
 });
 
 test("interpreta una respuesta breve como nombre del personaje después de preguntar", () => {
@@ -43,7 +45,8 @@ test("guarda y confirma el nombre del personaje", async () => {
   const userId = "character-name-save";
   try {
     const result = await orquestador("Quiero que te llames Nova.", { userId });
-    assert.equal(result.respuesta, "Perfecto. Entonces voy a llamarme Nova.");
+    // El nombre se guarda como dato y llega al LLM en el contexto (sin frase armada).
+    assert.ok(result.debug.contexto.includes("Nombre que el usuario eligió para vos: Nova"));
     assert.equal(
       datosUsuario.obtener(userId)?.configuracion?.nombrePersonaje,
       "Nova"
