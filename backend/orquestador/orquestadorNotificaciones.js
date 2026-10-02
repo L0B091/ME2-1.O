@@ -3,7 +3,11 @@ import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import { evaluarIniciativa, interesesDe, CATEGORIAS, POLITICA_INICIATIVA } from "../comportamiento/iniciativaConversacional.js";
 import { validarConfiguracion, instanteLocal } from "../modulos/interaccion/perfilRitmoUsuario.js";
 import noticiasApi from "../api/noticias.js";
-import veniceClient from "../llm/veniceClient.js";
+import dolphinClient from "../llm/dolphinClient.js";
+import memoriaConversacional from "../memoria/memoriaConversacional.js";
+import historialConversacion from "../memoria/historialConversacion.js";
+import datosUsuario from "../memoria/datosUsuario.js";
+import contextoLLM from "./contextoLLM.js";
 import HttpError from "../utils/httpError.js";
 
 function objeto(value, nombre) {
@@ -92,11 +96,48 @@ export function validarSolicitudIniciativa(body) {
   return { ...body, registro, perfilRitmo: perfil, eventos };
 }
 
+// Genera el mensaje de iniciativa con el LLM usando solo contexto factual
+// (gustos, noticias, clima, agenda, motivo del evento). Sin plantillas.
+export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId = null) {
+  const herramientas = await contextoLLM.obtenerHerramientas(userId);
+  const memoria = userId ? memoriaConversacional.obtener(userId) : {};
+  const extras = [
+    ...(memoriaLocal.persistentMemories || []), ...(memoriaLocal.importantMemories || [])
+  ].map(m => m?.text).filter(Boolean);
+  const contexto = contextoLLM.construirMensajeContexto({
+    herramientas,
+    memoria: { ...memoria, hechos: [...(memoria.hechos || []), ...extras] },
+    datosPerfil: userId ? datosUsuario.obtener(userId) : null,
+    app: contextoLLM.funcionesApp(userId),
+    extra: [
+      "Tipo de solicitud: mensaje de INICIATIVA (la app inicia la conversación; el usuario no escribió ahora; se envía como notificación, máximo 240 caracteres).",
+      `Motivo de la iniciativa: ${iniciativa.motivo} (categoría ${iniciativa.categoria})`,
+      `Dato del evento: ${iniciativa.contexto?.evidencia || iniciativa.contexto?.descripcion || ""}`,
+      ...(iniciativa.contexto?.enlace ? [`Enlace: ${iniciativa.contexto.enlace}`] : [])
+    ]
+  });
+  const historial = (memoriaLocal.recentConversation || []).length
+    ? memoriaLocal.recentConversation.map(i => ({ tipo: i.role === "assistant" ? "joi" : "user", mensaje: i.text }))
+    : (userId ? historialConversacion.obtenerHistorial(userId, 20) : []);
+  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, 12)], { maxTokens: 160 });
+}
+
 export async function evaluarAutonomia(body, opciones = {}) {
   const solicitud = validarSolicitudIniciativa(body);
   const ahora = opciones.ahora ?? Date.now();
-  const generar = opciones.generar || ((iniciativa, memoria) => veniceClient.generarIniciativa(iniciativa, memoria));
-  const configurado = opciones.llmConfigurado ?? veniceClient.estaConfigurado();
+  const generar = opciones.generar || ((iniciativa, memoria) => generarIniciativaLLM(iniciativa, memoria, solicitud.userId));
+  const configurado = opciones.llmConfigurado ?? dolphinClient.estaConfigurado();
+  // Gustos guardados en el servidor también cuentan como intereses
+  const gustosServidor = memoriaConversacional.obtener(solicitud.userId).gustos || [];
+  if (gustosServidor.length) {
+    solicitud.memoriaLocal = {
+      ...solicitud.memoriaLocal,
+      persistentMemories: [
+        ...(solicitud.memoriaLocal.persistentMemories || []),
+        { text: `Le gusta: ${gustosServidor.join(", ")}`, timestamp: ahora }
+      ]
+    };
+  }
   const fallosFuentes = [];
   const eventos = [...solicitud.eventos];
   let decision = evaluarIniciativa({ ...solicitud, ahora, eventos });
@@ -109,7 +150,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
   }
   if (!configurado) return salir("llm_no_configurado");
   const intereses = interesesDe(solicitud.memoriaLocal).slice(0, 5);
-  if (intereses.length && (opciones.newsConfigurado ?? Boolean(process.env.NEWS_API_KEY?.trim()))) {
+  if (intereses.length && (opciones.newsConfigurado ?? true)) {
     try {
       const noticias = await (opciones.noticias || noticiasApi.obtenerNoticias)("", intereses);
       for (const noticia of noticias) {
@@ -119,7 +160,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
         const url = new URL(noticia.link);
         if (!["http:", "https:"].includes(url.protocol)) continue;
         eventos.push({
-          categoria: "NOTICIA", fuente: "newsapi", referenciaEvento: noticia.link,
+          categoria: "NOTICIA", fuente: noticia.proveedor || "noticias", referenciaEvento: noticia.link,
           motivo: "Una noticia reciente coincide con intereses documentados del usuario",
           timestamp, expiresAt: timestamp + POLITICA_INICIATIVA.vigenciaNoticiaMs,
           contexto: { evidencia: `${noticia.titulo}. ${noticia.descripcion || ""}`, enlace: noticia.link, fecha: noticia.fecha }
@@ -249,5 +290,6 @@ export default {
  tick,
  iniciar,
  construirDespachosAndroid,
- evaluarAutonomia
+ evaluarAutonomia,
+ generarIniciativaLLM
 };
