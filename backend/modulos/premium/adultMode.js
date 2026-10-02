@@ -1,7 +1,7 @@
 /**
- * Modo Adulto — flujo de producto hardcodeado.
- * Gate Premium → keyword por usuario → unlock → intensidad gradual.
- * No inventa assets Blender; solo sugiere categorías/teasers existentes.
+ * Modo Adulto — estado y guardrail (sin textos: el LLM redacta).
+ * Gate Premium → palabra clave por usuario (solo hash en disco) → unlock por SESIÓN → intensidad gradual.
+ * Sin la palabra clave en la sesión actual, el modo adulto queda apagado.
  * Contenido solo para avatar adulto ficticio (sin menores).
  */
 import crypto from "crypto";
@@ -93,14 +93,16 @@ function guardarRegistro(userId, data) {
   return payload;
 }
 
-function hashKeyword(keyword) {
-  return crypto.createHash("sha256").update(String(keyword).trim().toLowerCase(), "utf8").digest("hex");
+function hashKeyword(keyword, salt = "") {
+  return crypto.createHash("sha256").update(`${salt}:${normalizarTexto(keyword).replace(/\s+/g, " ")}`, "utf8").digest("hex");
 }
 
-function generarKeyword(userId) {
-  const seed = `${userId || "anon"}:${Date.now()}:${crypto.randomBytes(4).toString("hex")}`;
-  const idx = crypto.createHash("sha256").update(seed).digest().readUInt32BE(0) % KEYWORD_POOL.length;
-  return KEYWORD_POOL[idx];
+// Fácil de recordar: dos palabras cotidianas distintas (p. ej. "faro lluvia").
+function generarKeyword() {
+  const i = crypto.randomInt(KEYWORD_POOL.length);
+  let j = crypto.randomInt(KEYWORD_POOL.length - 1);
+  if (j >= i) j++;
+  return `${KEYWORD_POOL[i]} ${KEYWORD_POOL[j]}`;
 }
 
 function normalizarTexto(texto = "") {
@@ -131,13 +133,19 @@ function detectarSenalIntensidad(mensaje) {
   return "none";
 }
 
+// Compara contra el hash guardado: prueba cada par (y palabra) consecutivo del mensaje.
+function contieneKeywordHash(mensaje, keywordHash, salt = "") {
+  if (!keywordHash) return false;
+  const t = normalizarTexto(mensaje).replace(/[^a-z0-9ñ ]+/g, " ").split(/\s+/).filter(Boolean);
+  for (let i = 0; i < t.length; i++) {
+    if (hashKeyword(t[i], salt) === keywordHash) return true;
+    if (i + 1 < t.length && hashKeyword(`${t[i]} ${t[i + 1]}`, salt) === keywordHash) return true;
+  }
+  return false;
+}
+
 function contieneKeywordExacta(mensaje, keyword) {
-  if (!keyword) return false;
-  const normMsg = normalizarTexto(mensaje);
-  const normKey = normalizarTexto(keyword);
-  if (!normKey) return false;
-  const re = new RegExp(`(?:^|[^a-z0-9])${normKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:[^a-z0-9]|$)`, "i");
-  return re.test(normMsg);
+  return Boolean(keyword) && contieneKeywordHash(mensaje, hashKeyword(keyword));
 }
 
 function indiceTier(tier) {
@@ -158,48 +166,29 @@ function clampEscalation(currentTier, targetTier, unlockedTurnCount) {
   return INTENSITY_ORDER[Math.min(tgt, maxAllowed, cur + 1)];
 }
 
-function mensajePremiumRequerido() {
-  const plan = premiumManager.explicarPlan("Modo Adulto");
-  return (
-    "Para cruzar ese límite íntimo necesitás Premium. " +
-    "Premium abre memoria de código, gestor fiscal, respaldo en la nube y Modo Adulto " +
-    `(extensión de chat + avatar en cámara, con palabra clave tuya). ` +
-    `Son ${plan.precioARS} ARS por ${plan.duracionDias} días, sin renovación automática. ` +
-    "¿Abrimos el checkout de Mercado Pago?"
-  );
+const SESION_MS = () => Number(process.env.ME2_ADULT_SESSION_MIN || 120) * 60000;
+
+// La sesión adulta vence por inactividad (o al cerrar sesión): no queda desbloqueado "para siempre".
+function sesionVigente(reg, ahora = Date.now()) {
+  if (!reg.unlocked) return false;
+  const ultima = Date.parse(reg.lastAdultActivityAt || reg.unlockedAt || 0);
+  return Number.isFinite(ultima) && ahora - ultima <= SESION_MS();
 }
 
-function mensajeKeywordAsignada(keyword) {
-  return (
-    `Premium activo: habilitó la extensión de Modo Adulto. ` +
-    `Tu palabra clave para modo adulto será: ${keyword}. ` +
-    `Hasta que la digas exactamente en un mensaje, no hay clips adultos ni tono explícito. ` +
-    `Guardala: es tu candado para que nadie más active el avatar así de casual.`
-  );
-}
-
-function mensajeEsperaKeyword() {
-  return (
-    "Entiendo la onda, pero todavía no activamos Modo Adulto. " +
-    "Decí tu palabra clave exacta cuando quieras entrar; sin eso no subo la intensidad."
-  );
-}
-
-function mensajeUnlock(keyword) {
-  return (
-    `Palabra clave reconocida (${keyword}). Modo Adulto desbloqueado en tono suave. ` +
-    `Vamos de a poco, al ritmo tuyo — sin saltar a lo más intenso de una.`
-  );
+function bloquearSesion(userId) {
+  const reg = obtenerRegistro(userId);
+  return guardarRegistro(userId, { ...reg, unlocked: false, unlockedAt: null, lastAdultActivityAt: null, intensity: "none", intensityIndex: 0, adultTurnCount: 0 });
 }
 
 function obtenerEstadoPublico(userId) {
   const reg = obtenerRegistro(userId);
   const premium = premiumManager.obtenerEstado(userId);
+  const unlocked = sesionVigente(reg);
   const phase = !premium.premiumActivo
     ? "locked"
-    : !reg.extensionEnabled || !reg.keyword
+    : !reg.extensionEnabled || !reg.keywordHash
       ? "keyword_pending"
-      : !reg.unlocked
+      : !unlocked
         ? "awaiting_keyword"
         : "active";
 
@@ -207,14 +196,12 @@ function obtenerEstadoPublico(userId) {
     userId,
     premiumActivo: !!premium.premiumActivo,
     extensionEnabled: !!reg.extensionEnabled,
-    hasKeyword: !!reg.keyword,
-    unlocked: !!reg.unlocked,
+    hasKeyword: !!reg.keywordHash,
+    unlocked,
     intensity: reg.intensity || "none",
     intensityIndex: reg.intensityIndex || 0,
     phase,
-    clipHint: CLIP_BY_INTENSITY[reg.intensity || "none"] || CLIP_BY_INTENSITY.none,
-    // Nunca devolver la keyword en cleartext por API de estado (solo en el mensaje de asignación).
-    keywordHint: reg.keyword ? `${String(reg.keyword).slice(0, 1)}…` : null
+    clipHint: CLIP_BY_INTENSITY[reg.intensity || "none"] || CLIP_BY_INTENSITY.none
   };
 }
 
@@ -229,218 +216,62 @@ function habilitarExtension(userId) {
     throw err;
   }
   let reg = obtenerRegistro(userId);
-  if (!reg.keyword) {
-    const keyword = generarKeyword(userId);
+  if (!reg.keywordHash) {
+    const keyword = generarKeyword();
+    const keywordSalt = crypto.randomBytes(8).toString("hex");
     reg = guardarRegistro(userId, {
       ...reg,
       extensionEnabled: true,
-      keyword,
-      keywordHash: hashKeyword(keyword),
+      keyword: null,
+      keywordSalt,
+      keywordHash: hashKeyword(keyword, keywordSalt),
       unlocked: false,
       intensity: "none",
       intensityIndex: 0,
       adultTurnCount: 0
     });
-    return {
-      ok: true,
-      recienAsignada: true,
-      keyword,
-      mensaje: mensajeKeywordAsignada(keyword),
-      estado: obtenerEstadoPublico(userId)
-    };
+    // La palabra en claro solo se devuelve acá, una vez, para que el orquestador la entregue.
+    return { ok: true, recienAsignada: true, keyword, estado: obtenerEstadoPublico(userId) };
   }
   reg = guardarRegistro(userId, { ...reg, extensionEnabled: true });
-  return {
-    ok: true,
-    recienAsignada: false,
-    keyword: reg.keyword,
-    mensaje: null,
-    estado: obtenerEstadoPublico(userId)
-  };
+  return { ok: true, recienAsignada: false, keyword: null, estado: obtenerEstadoPublico(userId) };
 }
 
 /**
- * Intercepta el flujo de chat según el producto Adult Mode.
- * @returns {{ intercept: boolean, respuesta?: string, adult: object, video?: object|null, checkout?: object|null, toneOverride?: object|null }}
+ * Estado del modo adulto para este turno (sin respuesta armada; el orquestador pasa hechos al LLM).
+ * @returns {{ evento: string, adult: object, video?: object|null, pedidoAdulto: boolean }}
  */
 async function procesarEnChat(userId, mensaje, opciones = {}) {
-  const premium =
-    opciones.premium ||
-    (userId ? premiumManager.obtenerEstado(userId) : { premiumActivo: false });
-  let reg = userId ? obtenerRegistro(userId) : defaultState("anonimo");
-  const cruza = mensajeCruzaLimiteIntimo(mensaje);
-  const adultPublicBase = () => (userId ? obtenerEstadoPublico(userId) : obtenerEstadoPublico("anonimo"));
-
-  // 1) Sin premium + límite íntimo → pitch + checkout (checkout lo arma el orquestador/API)
-  if (cruza && !premium.premiumActivo) {
-    if (userId) {
-      guardarRegistro(userId, {
-        ...reg,
-        checkoutOfferedAt: new Date().toISOString()
-      });
-    }
-    return {
-      intercept: true,
-      respuesta: mensajePremiumRequerido(),
-      adult: { ...adultPublicBase(), checkoutOffered: true },
-      needsCheckout: true,
-      checkout: null,
-      video: {
-        categoria: "atenta",
-        etiqueta: "premium_gate",
-        assetName: null,
-        loop: true,
-        honestFallback: true
-      },
-      toneOverride: {
-        tono: "claro",
-        ritmo: "suave",
-        microexpresion: "mirada_atenta",
-        intensidad: "suave"
-      }
-    };
+  const premium = opciones.premium || (userId ? premiumManager.obtenerEstado(userId) : { premiumActivo: false });
+  const ahora = opciones.ahora ?? Date.now();
+  const pedidoAdulto = mensajeCruzaLimiteIntimo(mensaje);
+  if (!userId || userId === "anonimo" || !premium.premiumActivo) {
+    return { evento: pedidoAdulto ? "premium_requerido" : "sin_cambios", pedidoAdulto, adult: obtenerEstadoPublico(userId || "anonimo"), video: null };
   }
-
-  // 2) Premium activo: asegurar extensión + keyword
-  if (premium.premiumActivo && userId) {
-    if (!reg.extensionEnabled || !reg.keyword) {
-      const enabled = habilitarExtension(userId);
-      reg = obtenerRegistro(userId);
-      // Si el usuario cruzó límite o acabamos de asignar keyword, responder con la keyword.
-      if (enabled.recienAsignada || cruza) {
-        return {
-          intercept: true,
-          respuesta: enabled.mensaje || mensajeKeywordAsignada(reg.keyword),
-          adult: obtenerEstadoPublico(userId),
-          checkout: null,
-          video: {
-            categoria: "calida",
-            etiqueta: "keyword_asignada",
-            honestFallback: true
-          },
-          toneOverride: {
-            tono: "calido",
-            ritmo: "suave",
-            microexpresion: "sonrisa_suave",
-            intensidad: "suave"
-          }
-        };
-      }
-    }
+  let reg = obtenerRegistro(userId);
+  if (!reg.keywordHash) {
+    return { evento: pedidoAdulto ? "keyword_no_asignada" : "sin_cambios", pedidoAdulto, adult: obtenerEstadoPublico(userId), video: null };
   }
-
-  // 3) Con keyword, sin unlock: solo la keyword exacta abre; el sexo explícito solo NO alcanza
-  if (premium.premiumActivo && reg.keyword && !reg.unlocked) {
-    if (contieneKeywordExacta(mensaje, reg.keyword)) {
-      reg = guardarRegistro(userId, {
-        ...reg,
-        unlocked: true,
-        unlockedAt: new Date().toISOString(),
-        intensity: "soft_flirt",
-        intensityIndex: 1,
-        adultTurnCount: 1,
-        lastEscalationAt: new Date().toISOString()
-      });
-      return {
-        intercept: true,
-        respuesta: mensajeUnlock(reg.keyword),
-        adult: obtenerEstadoPublico(userId),
-        checkout: null,
-        video: {
-          ...CLIP_BY_INTENSITY.soft_flirt,
-          assetName: null,
-          loop: true
-        },
-        toneOverride: {
-          tono: "calido",
-          ritmo: "suave",
-          microexpresion: "mirada_suave",
-          intensidad: "soft_flirt"
-        }
-      };
+  if (reg.unlocked && !sesionVigente(reg, ahora)) reg = bloquearSesion(userId);
+  if (!reg.unlocked) {
+    if (contieneKeywordHash(mensaje, reg.keywordHash, reg.keywordSalt || "")) {
+      const iso = new Date(ahora).toISOString();
+      reg = guardarRegistro(userId, { ...reg, unlocked: true, unlockedAt: iso, lastAdultActivityAt: iso, intensity: "soft_flirt", intensityIndex: 1, adultTurnCount: 1, lastEscalationAt: iso });
+      return { evento: "desbloqueado_con_keyword", pedidoAdulto, adult: obtenerEstadoPublico(userId), video: { ...CLIP_BY_INTENSITY.soft_flirt, assetName: null, loop: true } };
     }
-    if (cruza || mensajeEsExplicito(mensaje)) {
-      return {
-        intercept: true,
-        respuesta: mensajeEsperaKeyword(),
-        adult: obtenerEstadoPublico(userId),
-        checkout: null,
-        video: {
-          categoria: "atenta",
-          etiqueta: "awaiting_keyword",
-          honestFallback: true
-        },
-        toneOverride: {
-          tono: "calido",
-          ritmo: "suave",
-          microexpresion: "mirada_atenta",
-          intensidad: "suave"
-        }
-      };
-    }
-    // Mensaje normal: no interceptar
-    return {
-      intercept: false,
-      adult: adultPublicBase(),
-      checkout: null,
-      video: null
-    };
+    return { evento: pedidoAdulto ? "bloqueado_sin_keyword" : "sin_cambios", pedidoAdulto, adult: obtenerEstadoPublico(userId), video: null };
   }
-
-  // 4) Activo: escalar gradual y sugerir clip por intensidad
-  if (premium.premiumActivo && reg.unlocked) {
-    const senal = detectarSenalIntensidad(mensaje);
-    const next = clampEscalation(reg.intensity || "none", senal === "none" ? reg.intensity : senal, (reg.adultTurnCount || 0) + 1);
-    const adultTurnCount = (reg.adultTurnCount || 0) + (senal !== "none" || cruza ? 1 : 0);
-    if (next !== reg.intensity || adultTurnCount !== reg.adultTurnCount) {
-      reg = guardarRegistro(userId, {
-        ...reg,
-        intensity: next,
-        intensityIndex: indiceTier(next),
-        adultTurnCount,
-        lastEscalationAt: next !== reg.intensity ? new Date().toISOString() : reg.lastEscalationAt
-      });
-    }
-    const clip = CLIP_BY_INTENSITY[reg.intensity] || CLIP_BY_INTENSITY.none;
-    return {
-      intercept: false,
-      adult: {
-        ...obtenerEstadoPublico(userId),
-        activeTone: reg.intensity,
-        allowAdultTone: true
-      },
-      checkout: null,
-      video: {
-        ...clip,
-        assetName: null,
-        loop: true
-      },
-      toneOverride:
-        reg.intensity !== "none"
-          ? {
-              tono: reg.intensity === "explicit" ? "intimo" : "calido",
-              ritmo: "pausado",
-              microexpresion: "mirada_suave",
-              intensidad: reg.intensity
-            }
-          : null
-    };
-  }
-
-  return {
-    intercept: false,
-    adult: adultPublicBase(),
-    checkout: null,
-    video: null
-  };
-}
-
-function aplicarTonoAdultoSiCorresponde(respuesta, adultResult) {
-  if (!adultResult?.adult?.allowAdultTone) return respuesta;
-  const intensity = adultResult.adult.intensity || "none";
-  if (intensity === "none" || intensity === "soft_flirt") return respuesta;
-  // No reescribe LLM; solo marca que el orquestador puede conservar el tono.
-  return respuesta;
+  // Activo en esta sesión: escalar gradual, refrescar actividad.
+  const senal = detectarSenalIntensidad(mensaje);
+  const next = clampEscalation(reg.intensity || "none", senal === "none" ? reg.intensity : senal, (reg.adultTurnCount || 0) + 1);
+  const adultTurnCount = (reg.adultTurnCount || 0) + (senal !== "none" || pedidoAdulto ? 1 : 0);
+  reg = guardarRegistro(userId, {
+    ...reg, intensity: next, intensityIndex: indiceTier(next), adultTurnCount,
+    lastAdultActivityAt: new Date(ahora).toISOString(),
+    lastEscalationAt: next !== reg.intensity ? new Date(ahora).toISOString() : reg.lastEscalationAt
+  });
+  const clip = CLIP_BY_INTENSITY[reg.intensity] || CLIP_BY_INTENSITY.none;
+  return { evento: "activo", pedidoAdulto, adult: { ...obtenerEstadoPublico(userId), activeTone: reg.intensity }, video: { ...clip, assetName: null, loop: true } };
 }
 
 export default {
@@ -453,6 +284,8 @@ export default {
   mensajeCruzaLimiteIntimo,
   contieneKeywordExacta,
   procesarEnChat,
-  aplicarTonoAdultoSiCorresponde,
+  bloquearSesion,
+  sesionVigente,
+  contieneKeywordHash,
   hashKeyword
 };

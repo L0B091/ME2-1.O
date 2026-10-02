@@ -3,6 +3,17 @@ import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
 import HttpError from "../utils/httpError.js";
+import storage from "../utils/jsonStorage.js";
+import flujoPremium from "../modulos/premium/flujoPremium.js";
+
+// Sin MERCADO_PAGO_ACCESS_TOKEN: modo simulado (link y pago mock) para desarrollo/pruebas.
+export function modoMock() {
+  return !String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim();
+}
+const MOCK_NS = "mercadopago_mock";
+function baseUrl() {
+  return (process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, "");
+}
 
 const API_BASE = "https://api.mercadopago.com";
 
@@ -72,6 +83,13 @@ async function generarLinkPago(userId, feature = "M/A") {
   }
 
   const precioARS = premiumManager.obtenerPrecioPremium();
+  if (modoMock()) {
+    const preferenceId = `mock-pref-${crypto.randomBytes(6).toString("hex")}`;
+    const url = `${baseUrl()}/api/mercadopago/mock/checkout/${preferenceId}`;
+    storage.writeUserData(MOCK_NS, preferenceId, { preferenceId, userId, feature, amountARS: precioARS, estado: "pendiente", creado: new Date().toISOString() });
+    premiumManager.registrarCheckout(userId, { preferenceId, initPoint: url, feature, amountARS: precioARS });
+    return { preferenceId, url, sandboxUrl: null, amountARS: precioARS, feature, mock: true };
+  }
   const body = {
     items: [
       {
@@ -129,7 +147,10 @@ async function verificarPago(paymentId, expectedUserId = null) {
     throw new HttpError(400, "paymentId requerido");
   }
 
-  const payment = await mercadoPagoRequest(`/v1/payments/${paymentId}`);
+  const payment = modoMock() && String(paymentId).startsWith("mock-pay-")
+    ? storage.readUserData(MOCK_NS, String(paymentId), null)
+    : await mercadoPagoRequest(`/v1/payments/${paymentId}`);
+  if (!payment) throw new HttpError(404, "Pago no encontrado");
   const metadataUserId = payment?.metadata?.userId || null;
   const externalReference = payment?.external_reference || null;
   const userId = expectedUserId || metadataUserId || externalReference;
@@ -148,6 +169,7 @@ async function verificarPago(paymentId, expectedUserId = null) {
   }
 
   if (payment.status !== "approved") {
+    if (String(paymentId).startsWith("mock-pay-")) storage.writeUserData(MOCK_NS, String(paymentId), { ...payment, procesado: true });
     return {
       ok: false,
       paymentId,
@@ -167,10 +189,31 @@ async function verificarPago(paymentId, expectedUserId = null) {
   } catch (error) {
     adultBootstrap = { ok: false, error: error?.message || String(error) };
   }
+  // Entrega de la palabra clave: queda pendiente para el próximo turno de chat (la redacta el LLM).
+  try {
+    flujoPremium.alActivarPremium(userId, adultBootstrap?.keyword || null);
+  } catch (error) {
+    console.error("[mercadoPago] flujoPremium:", error.message);
+  }
   return {
     ...activated,
-    adultMode: adultBootstrap
+    adultMode: adultBootstrap ? { ok: adultBootstrap.ok, recienAsignada: adultBootstrap.recienAsignada, estado: adultBootstrap.estado } : null
   };
+}
+
+// Simula que el usuario pagó la preferencia mock (equivalente al webhook aprobado).
+async function pagarMock(preferenceId, estado = "approved", expectedUserId = null) {
+  if (!modoMock()) throw new HttpError(403, "Pago simulado deshabilitado: Mercado Pago real configurado");
+  const pref = storage.readUserData(MOCK_NS, String(preferenceId || ""), null);
+  if (!pref?.userId) throw new HttpError(404, "Preferencia mock no encontrada");
+  if (expectedUserId && pref.userId !== expectedUserId) throw new HttpError(403, "La preferencia no pertenece al usuario");
+  const paymentId = `mock-pay-${crypto.randomBytes(6).toString("hex")}`;
+  storage.writeUserData(MOCK_NS, paymentId, {
+    id: paymentId, status: estado, status_detail: estado === "approved" ? "accredited" : "cc_rejected_other_reason",
+    external_reference: pref.userId, metadata: { userId: pref.userId, feature: pref.feature }, order: { id: preferenceId }
+  });
+  storage.writeUserData(MOCK_NS, preferenceId, { ...pref, estado, paymentId });
+  return procesarWebhook({ type: "payment", data: { id: paymentId } });
 }
 
 async function procesarWebhook(body = {}, query = {}) {
@@ -190,6 +233,8 @@ async function procesarWebhook(body = {}, query = {}) {
 }
 
 export default {
+  modoMock,
+  pagarMock,
   explicarPremium,
   generarLinkPago,
   verificarPago,

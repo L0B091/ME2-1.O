@@ -26,6 +26,8 @@ import login from "./auth/login.js";
 import { optionalAuth, requireAuth } from "./auth/authMiddleware.js";
 import bitacoraManager from "./modulos/bitacora/bitacoraManager.js";
 import datosUsuario from "./memoria/datosUsuario.js";
+import flujoPremium from "./modulos/premium/flujoPremium.js";
+import verificacionEdad from "./auth/verificacionEdad.js";
 
 dotenv.config();
 
@@ -181,8 +183,8 @@ app.post("/api/auth/login", authRateLimit, handleAsync(async (req, res) => {
 }));
 
 app.post("/api/auth/google", authRateLimit, handleAsync(async (req, res) => {
-  const { idToken } = req.body || {};
-  const resultado = await googleAuth.autenticarConGoogle(idToken);
+  const { idToken, serverAuthCode } = req.body || {};
+  const resultado = await googleAuth.autenticarConGoogle(idToken, serverAuthCode || null);
   return res.status(200).json({ ok: true, ...resultado });
 }));
 
@@ -191,6 +193,7 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
 });
 
 app.post("/api/auth/logout", requireAuth, (req, res) => {
+  try { adultMode.bloquearSesion(req.auth.userId); } catch {}
   res.json(login.cerrarSesion(req.authToken));
 });
 
@@ -391,8 +394,28 @@ app.post("/api/premium/:userId/adult/enable", requireAuth, handleAsync(async (re
   const userId = ensureOwnUser(req);
   ensurePremium(userId, "Modo Adulto");
   const result = adultMode.habilitarExtension(userId);
-  res.json({ ok: true, data: result });
+  // La palabra clave no viaja por API: la entrega el chat (LLM) en el próximo turno.
+  if (result.keyword) flujoPremium.alActivarPremium(userId, result.keyword);
+  res.json({ ok: true, data: { ok: result.ok, recienAsignada: result.recienAsignada, estado: result.estado } });
 }));
+
+// Mercado Pago simulado (solo sin MERCADO_PAGO_ACCESS_TOKEN)
+app.get("/api/mercadopago/mock/checkout/:preferenceId", (req, res) => {
+  if (!mercadoPagoApi.modoMock()) return res.status(404).json({ ok: false, error: "No disponible" });
+  res.json({ ok: true, mock: true, preferenceId: req.params.preferenceId, pagar: "POST /api/mercadopago/mock/pagar { preferenceId }" });
+});
+
+app.post("/api/mercadopago/mock/pagar", requireAuth, handleAsync(async (req, res) => {
+  const data = await mercadoPagoApi.pagarMock(req.body?.preferenceId, req.body?.estado || "approved", req.auth.userId);
+  res.json({ ok: true, data });
+}));
+
+// Dev: simula la fecha de nacimiento que devolvería Google People API (adaptador de verificación de edad).
+app.post("/api/dev/verificacion-edad", requireAuth, (req, res) => {
+  if (process.env.NODE_ENV !== "development") return res.status(404).json({ ok: false, error: "No disponible" });
+  const reg = verificacionEdad.guardar(req.auth.userId, req.body?.fechaNacimiento ?? null, "dev_mock_google");
+  res.json({ ok: true, data: { tieneFecha: Boolean(reg.fechaNacimiento), fuente: reg.fuente } });
+});
 
 app.get("/api/premium/:userId/backup/materials", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);

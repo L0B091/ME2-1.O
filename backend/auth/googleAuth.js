@@ -1,3 +1,4 @@
+import verificacionEdad from "./verificacionEdad.js";
 import { OAuth2Client } from "google-auth-library";
 import login from "./login.js";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
@@ -67,7 +68,7 @@ function sincronizarPerfil(payload) {
   return usuario;
 }
 
-async function autenticarConGoogle(idToken) {
+async function autenticarConGoogle(idToken, serverAuthCode = null) {
   if (!googleAuthEnabled()) {
     throw new HttpError(503, "Google Auth desactivada en Beta");
   }
@@ -88,6 +89,12 @@ async function autenticarConGoogle(idToken) {
 
   const usuario = sincronizarPerfil(payload);
   const sesion = login.iniciarSesionParaUsuario(usuario.email);
+  // Fecha de nacimiento (People API) para la verificación de edad de Premium.
+  try {
+    await verificacionEdad.sincronizarDesdeLogin(usuario.id, serverAuthCode);
+  } catch (error) {
+    console.error("[googleAuth] cumpleaños no disponible:", error.message);
+  }
 
   if (!sesion.ok) {
     throw new HttpError(500, sesion.error || "No se pudo iniciar la sesión");

@@ -16,6 +16,7 @@ import datosUsuario from "../memoria/datosUsuario.js";
 import dolphinClient from "../llm/dolphinClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
+import flujoPremium from "../modulos/premium/flujoPremium.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
@@ -138,31 +139,32 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     };
   }
 
-  // Modo adulto: solo estado/gate (sin respuestas armadas)
-  const premium = premiumManager.obtenerEstado(userId);
-  let adultResult = { intercept: false, adult: null };
+  // Premium + modo adulto: solo estado/gate como HECHOS (el LLM redacta oferta, rechazo, link y palabra clave)
+  let premium = premiumManager.obtenerEstado(userId);
+  const extra = [];
+  let checkout = null;
+  let flujo = { lineas: [], estado: null, link: null, evento: null };
   try {
-    adultResult = await adultMode.procesarEnChat(userId, mensajeUsuario, { premium, intentarCheckout: true });
+    flujo = await flujoPremium.procesar(userId, mensajeUsuario, {
+      premium, generarLink: (uid, feature) => mercadoPagoApi.generarLinkPago(uid, feature)
+    });
+    extra.push(...flujo.lineas);
+    if (flujo.link?.url) checkout = { initPoint: flujo.link.url, preferenceId: flujo.link.preferenceId || null, mock: Boolean(flujo.link.mock) };
+  } catch (error) {
+    console.error("Error en flujoPremium:", error.message);
+  }
+  premium = premiumManager.obtenerEstado(userId);
+  let adultResult = { evento: "sin_cambios", adult: null, video: null, pedidoAdulto: false };
+  try {
+    adultResult = await adultMode.procesarEnChat(userId, mensajeUsuario, { premium });
   } catch (error) {
     console.error("Error en adultMode:", error.message);
   }
-  let checkout = adultResult?.checkout || null;
-  const extra = [];
-  if (adultResult?.intercept) {
-    extra.push(`Evento modo adulto: ${adultResult.video?.etiqueta || (adultResult.needsCheckout ? "premium_requerido" : "estado_actualizado")}`);
-    if (adultResult.adult?.keyword && adultResult.video?.etiqueta === "keyword_asignada") {
-      extra.push(`Palabra clave del modo adulto asignada al usuario: ${adultResult.adult.keyword}`);
-    }
-    if (adultResult.needsCheckout && userId !== "anonimo") {
-      try {
-        const link = await mercadoPagoApi.generarLinkPago(userId, "Modo Adulto");
-        checkout = { initPoint: link?.init_point || link?.sandbox_init_point || null, preferenceId: link?.id || link?.preferenceId || null };
-        premiumManager.registrarCheckout(userId, { preferenceId: checkout.preferenceId, feature: "Modo Adulto", initPoint: checkout.initPoint });
-        if (checkout.initPoint) extra.push(`Link de pago Premium generado: ${checkout.initPoint}`);
-      } catch {
-        extra.push("Link de pago Premium: no disponible (Mercado Pago no configurado)");
-      }
-    }
+  if (adultResult.adult?.unlocked) {
+    extra.push(`Modo adulto: ACTIVO solo en esta sesión (${adultResult.evento === "desbloqueado_con_keyword" ? "recién desbloqueado con la palabra clave correcta" : "desbloqueado con la palabra clave"}); intensidad actual: ${adultResult.adult.intensity}.`);
+  } else if (adultResult.pedidoAdulto) {
+    const motivo = adultResult.evento === "premium_requerido" ? "requiere Premium" : "falta la palabra clave en esta sesión";
+    extra.push(`Modo adulto: DESACTIVADO (${motivo}). El pedido íntimo/erótico del usuario no está habilitado.`);
   }
 
   // [ACTIONS] alarmas / agenda (deterministas)
@@ -228,6 +230,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     llmDisponible: Boolean(respuesta),
     expresion: EXPRESION_NEUTRA,
     video: adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video,
+    flujoPremium: { estado: flujo.estado, evento: flujo.evento },
     premium,
     adultMode: adultResult?.adult || null,
     checkout,
