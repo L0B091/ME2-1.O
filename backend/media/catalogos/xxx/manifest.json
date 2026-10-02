@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "catalogo": "xxx",
+  "adulto": true,
+  "descripcion": "Catálogo de medios del MODO ADULTO (placeholder vacío). Solo seleccionable con Premium + palabra clave desbloqueada en la sesión. Ver README.md para el esquema.",
+  "items": []
+}

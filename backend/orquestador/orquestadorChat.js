@@ -17,6 +17,8 @@ import dolphinClient from "../llm/dolphinClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import flujoPremium from "../modulos/premium/flujoPremium.js";
+import selectorMedia from "../modulos/media/selectorMedia.js";
+import reacciones from "../modulos/interaccion/reacciones.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
@@ -224,12 +226,24 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   }
 
   const video = selectorVideo.seleccionarVideo({ adultMode: adultResult?.adult }, EXPRESION_NEUTRA);
+  const videoFinal = adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video;
+  // Texto + clip siempre; GIF opcional solo en modo adulto (catálogo adulto con gating estricto).
+  const { clip, media } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
+  // Reacción ocasional (emoji) sobre la burbuja del usuario, persistida en el historial.
+  let reaccion = null;
+  if (respuesta && userId !== "anonimo") {
+    reaccion = reacciones.decidir(userId, mensajeUsuario, { gustosNuevos: memoriaEscritura?.hechos?.gustos || [] });
+    if (reaccion && persistirEnServidor) historialConversacion.anotarReaccion(userId, reaccion.emoji);
+  }
 
   return {
     respuesta,
     llmDisponible: Boolean(respuesta),
     expresion: EXPRESION_NEUTRA,
-    video: adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video,
+    video: videoFinal,
+    clip,
+    media,
+    reaccion: reaccion ? { emoji: reaccion.emoji } : null,
     flujoPremium: { estado: flujo.estado, evento: flujo.evento },
     premium,
     adultMode: adultResult?.adult || null,

@@ -221,7 +221,27 @@ function extraerContexto(usuarioId) {
   };
 }
 
+// Reacción (emoji) del avatar sobre el último mensaje del usuario; queda persistida en el historial.
+function anotarReaccion(usuarioId, emoji) {
+  const ruta = obtenerRuta(usuarioId);
+  if (!ruta || !emoji || !fs.existsSync(ruta)) return null;
+  try {
+    const historial = JSON.parse(fs.readFileSync(ruta, "utf-8"));
+    for (let i = historial.length - 1; i >= 0; i--) {
+      if (historial[i].tipo === "usuario") {
+        historial[i].reaccion = emoji;
+        fs.writeFileSync(ruta, JSON.stringify(historial, null, 2), "utf-8");
+        return historial[i];
+      }
+    }
+  } catch (error) {
+    console.error("[historialConversacion] reacción:", error.message);
+  }
+  return null;
+}
+
 export default {
+  anotarReaccion,
   registrarMensaje,
   obtenerHistorial,
   limpiarHistorial,

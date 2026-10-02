@@ -27,6 +27,7 @@ import { optionalAuth, requireAuth } from "./auth/authMiddleware.js";
 import bitacoraManager from "./modulos/bitacora/bitacoraManager.js";
 import datosUsuario from "./memoria/datosUsuario.js";
 import flujoPremium from "./modulos/premium/flujoPremium.js";
+import selectorMedia from "./modulos/media/selectorMedia.js";
 import verificacionEdad from "./auth/verificacionEdad.js";
 
 dotenv.config();
@@ -399,6 +400,19 @@ app.post("/api/premium/:userId/adult/enable", requireAuth, handleAsync(async (re
   res.json({ ok: true, data: { ok: result.ok, recienAsignada: result.recienAsignada, estado: result.estado } });
 }));
 
+// Medios del chat. Catálogo adulto: solo con Premium + palabra clave desbloqueada en la sesión.
+app.get("/api/media/:catalogo/:id", requireAuth, (req, res) => {
+  const { catalogo, id } = req.params;
+  if (!["normal", "xxx"].includes(catalogo)) return res.status(404).json({ ok: false, error: "Catálogo inexistente" });
+  if (catalogo === "xxx") {
+    const a = adultMode.obtenerEstado(req.auth.userId);
+    if (!(a.premiumActivo && a.unlocked)) return res.status(403).json({ ok: false, error: "Modo adulto no activo en esta sesión" });
+  }
+  const f = selectorMedia.archivoDe(catalogo, id);
+  if (!f) return res.status(404).json({ ok: false, error: "Medio no encontrado" });
+  res.sendFile(f.ruta);
+});
+
 // Mercado Pago simulado (solo sin MERCADO_PAGO_ACCESS_TOKEN)
 app.get("/api/mercadopago/mock/checkout/:preferenceId", (req, res) => {
   if (!mercadoPagoApi.modoMock()) return res.status(404).json({ ok: false, error: "No disponible" });
@@ -543,6 +557,9 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
     respuesta: resultado.respuesta,
     acciones: resultado?.acciones || null,
     video: resultado?.video || null,
+    clip: resultado?.clip || null,
+    media: resultado?.media || null,
+    reaccion: resultado?.reaccion || null,
     expresion: resultado?.expresion || null,
     premium: resultado?.premium || null,
     adultMode: resultado?.adultMode || null,
