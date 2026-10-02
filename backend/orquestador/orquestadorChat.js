@@ -25,6 +25,8 @@ import { detectarAlarma } from "../modulos/detectorAlarmas.js";
 import { detectarEvento } from "../modulos/detectorAgenda.js";
 import contextoLLM from "./contextoLLM.js";
 import perfilBasico from "../modulos/onboarding/perfilBasico.js";
+import estadoEmocional from "../memoria/estadoEmocional.js";
+import continuidad from "../memoria/continuidad.js";
 
 const EXPRESION_NEUTRA = Object.freeze({ tono: "neutral", ritmo: "normal", microexpresion: "mirada_atenta", intensidad: "suave" });
 
@@ -32,7 +34,7 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
   if (!memoriaLocal || typeof memoriaLocal !== "object") return null;
   const recentConversation = Array.isArray(memoriaLocal.recentConversation)
     ? memoriaLocal.recentConversation
-      .map(item => ({ tipo: item?.role === "assistant" ? "joi" : "user", mensaje: String(item?.text || "").trim() }))
+      .map(item => ({ tipo: item?.role === "assistant" ? "asistente" : "usuario", mensaje: String(item?.text || "").trim() }))
       .filter(item => item.mensaje)
     : [];
   return {
@@ -120,6 +122,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     const r = memoriaConversacional.registrar(userId, mensajeUsuario);
     memoriaHechos = r.memoria;
     memoriaEscritura = { hechos: r.extraido, cambios: r.cambios };
+    estadoEmocional.registrar(userId, mensajeUsuario);
+    continuidad.registrar(userId, mensajeUsuario);
     try {
       memoriaEscritura.writeBack = writeBackEngine.evaluarWriteBack({ userId, mensaje: mensajeUsuario, entradaProcesada });
     } catch (error) {
@@ -191,6 +195,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     app: contextoLLM.funcionesApp(userId),
     accionesTurno: [...(onboarding.hechosTurno || []), ...acciones],
     onboarding: perfilBasico.lineasContexto(onboarding),
+    estadoEmocional: userId !== "anonimo" ? estadoEmocional.resumen(userId) : null,
+    pendientes: userId !== "anonimo" ? continuidad.pendientesVigentes(userId) : [],
     extra
   });
   const mensajes = [
@@ -212,7 +218,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // [MEMORY] write-back de la respuesta del LLM
   if (respuesta && persistirEnServidor && userId !== "anonimo") {
-    historialConversacion.registrarMensaje(userId, respuesta, "joi");
+    historialConversacion.registrarMensaje(userId, respuesta, "asistente");
   }
 
   const video = selectorVideo.seleccionarVideo({ adultMode: adultResult?.adult }, EXPRESION_NEUTRA);

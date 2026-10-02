@@ -126,7 +126,21 @@ function lineasAgenda(a) {
 /**
  * Mensaje de sistema neutral: únicamente hechos de contexto.
  */
-export function construirMensajeContexto({ herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [], onboarding = [] }) {
+function lineasEstado(estadoEmocional, pendientes = []) {
+  const l = [];
+  if (estadoEmocional) {
+    const hace = estadoEmocional.haceMinutos < 60 ? `hace ${estadoEmocional.haceMinutos} min` : `hace ${Math.round(estadoEmocional.haceMinutos / 60)} h`;
+    l.push(estadoEmocional.vigente
+      ? `Estado emocional del usuario (señal detectada en sus mensajes): ${estadoEmocional.emocion}, ${hace} ("${estadoEmocional.evidencia}")`
+      : `Último estado emocional detectado del usuario: ${estadoEmocional.emocion}, ${hace} (ya no vigente)`);
+  }
+  if (pendientes.length) {
+    l.push("Temas pendientes que el usuario mencionó:", ...pendientes.slice(-5).map(p => `  • ${p.texto} (${new Date(p.timestamp).toISOString().slice(0, 10)})`));
+  }
+  return l;
+}
+
+export function construirMensajeContexto({ herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [], onboarding = [], estadoEmocional = null, pendientes = [] }) {
   const h = herramientas.hora;
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
@@ -139,6 +153,7 @@ export function construirMensajeContexto({ herramientas, memoria, datosPerfil, c
   if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
   if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
   if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...memoria.hechos.slice(-15).map(x => `  • ${x}`));
+  l.push(...lineasEstado(estadoEmocional, pendientes));
   l.push(`Hora actual: ${h.hora} (${h.zonaHoraria}${h.zonaDelUsuario ? "" : ", zona horaria por defecto del servidor; la del usuario aún no se conoce"})`);
   l.push(`Fecha de hoy: ${h.fechaLarga}`);
   const u = herramientas.ubicacion;
@@ -162,7 +177,7 @@ const HISTORIAL_CHARS = Number(process.env.ME2_HISTORY_CHARS || 1200);
 
 export function historialAMensajes(historial = [], limite = HISTORIAL_MAX) {
   return historial.slice(-Math.min(limite, HISTORIAL_MAX)).map(item => ({
-    role: item.tipo === "joi" || item.role === "assistant" ? "assistant" : "user",
+    role: item.role === "assistant" || (item.tipo && item.tipo !== "usuario" && item.tipo !== "user") ? "assistant" : "user",
     content: String(item.mensaje ?? item.text ?? "").slice(0, HISTORIAL_CHARS)
   })).filter(m => m.content.trim());
 }

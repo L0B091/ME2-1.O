@@ -8,6 +8,8 @@ import memoriaConversacional from "../memoria/memoriaConversacional.js";
 import historialConversacion from "../memoria/historialConversacion.js";
 import datosUsuario from "../memoria/datosUsuario.js";
 import contextoLLM from "./contextoLLM.js";
+import estadoEmocional from "../memoria/estadoEmocional.js";
+import continuidad from "../memoria/continuidad.js";
 import relojApi from "../api/reloj.js";
 import calendarioApi from "../api/calendario.js";
 import obtenerClima from "../api/clima.js";
@@ -113,10 +115,12 @@ export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId
     memoria: { ...memoria, hechos: [...(memoria.hechos || []), ...extras] },
     datosPerfil: userId ? datosUsuario.obtener(userId) : null,
     characterName: userId ? datosUsuario.obtener(userId)?.configuracion?.nombrePersonaje || null : null,
-    app: contextoLLM.funcionesApp(userId)
+    app: contextoLLM.funcionesApp(userId),
+    estadoEmocional: userId ? estadoEmocional.resumen(userId) : null,
+    pendientes: userId ? continuidad.pendientesVigentes(userId) : []
   });
   const historial = (memoriaLocal.recentConversation || []).length
-    ? memoriaLocal.recentConversation.map(i => ({ tipo: i.role === "assistant" ? "joi" : "user", mensaje: i.text }))
+    ? memoriaLocal.recentConversation.map(i => ({ tipo: i.role === "assistant" ? "asistente" : "usuario", mensaje: i.text }))
     : (userId ? historialConversacion.obtenerHistorial(userId, 20) : []);
   // Los datos de la iniciativa van en un mensaje de sistema FINAL (después del historial):
   // así el turno a generar es el de la app, aunque el último mensaje del historial sea del asistente.
@@ -146,6 +150,14 @@ export async function evaluarAutonomia(body, opciones = {}) {
   const generar = opciones.generar || ((iniciativa, memoria) => generarIniciativaLLM(iniciativa, memoria, solicitud.userId));
   const configurado = opciones.llmConfigurado ?? dolphinClient.estaConfigurado();
   const memoriaServidor = memoriaConversacional.obtener(solicitud.userId);
+  if (!(solicitud.memoriaLocal.recentConversation || []).length) {
+    solicitud.memoriaLocal = {
+      ...solicitud.memoriaLocal,
+      recentConversation: historialConversacion.obtenerHistorial(solicitud.userId, 40)
+        .filter(m => m.mensaje && Number.isFinite(Number(m.timestamp)))
+        .map(m => ({ role: m.tipo === "usuario" ? "user" : "assistant", text: String(m.mensaje), timestamp: Number(m.timestamp) }))
+    };
+  }
   const gustosServidor = memoriaServidor.gustos || [];
   // Gustos guardados en el servidor también cuentan como intereses
   if (gustosServidor.length) {
@@ -159,7 +171,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
   }
   // Última interacción conocida por el servidor (historial/reloj) para respetar el timing.
   const ultimoServidor = Math.max(
-    ...historialConversacion.obtenerHistorial(solicitud.userId, 50).filter(m => m.tipo !== "joi").map(m => Number(m.timestamp) || 0), 0,
+    ...historialConversacion.obtenerHistorial(solicitud.userId, 50).filter(m => m.tipo === "usuario").map(m => Number(m.timestamp) || 0), 0,
     (() => { const min = relojApi.tiempoDesdeUltimaInteraccion(solicitud.userId); return min == null ? 0 : ahora - min * 60000; })()
   );
   if (ultimoServidor > (solicitud.perfilRitmo.ultimaInteraccion || 0)) {
@@ -267,7 +279,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
 }
 
 /**
-* ORQUESTADOR DE NOTIFICACIONES JOI
+* ORQUESTADOR DE NOTIFICACIONES ME2
 * Ejecuta alarmas automáticamente cuando corresponde
 * Sistema multiusuario centralizado
 */

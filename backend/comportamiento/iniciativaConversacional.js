@@ -5,7 +5,7 @@
 import crypto from "node:crypto";
 import ritmoDeInteraccion from "../modulos/interaccion/ritmoDeInteraccion.js";
 import { evaluarPerfilRitmo } from "../modulos/interaccion/perfilRitmoUsuario.js";
-import { obtenerContinuidad } from "../identidad/vidaFueraDeConversacion.js";
+import { obtenerContinuidad } from "../memoria/continuidad.js";
 
 const HORA = 60 * 60 * 1000;
 export const POLITICA_INICIATIVA = Object.freeze({
