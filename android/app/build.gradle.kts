@@ -8,17 +8,13 @@ val backendBaseUrl = firstNonBlank(
     System.getenv("ME2_BACKEND_URL"),
     findProperty("ME2_BACKEND_BASE_URL") as String?,
     System.getenv("ME2_ANDROID_BACKEND_BASE_URL"),
-    findProperty("JOI_BACKEND_BASE_URL") as String?,
-    System.getenv("JOI_ANDROID_BACKEND_BASE_URL"),
     // Emulator loopback to host machine; override with ME2_BACKEND_URL for physical device LAN IP.
     "http://10.0.2.2:3000"
 )
 
 val googleWebClientId = firstNonBlank(
     findProperty("ME2_GOOGLE_WEB_CLIENT_ID") as String?,
-    System.getenv("ME2_ANDROID_GOOGLE_WEB_CLIENT_ID"),
-    findProperty("JOI_GOOGLE_WEB_CLIENT_ID") as String?,
-    System.getenv("JOI_ANDROID_GOOGLE_WEB_CLIENT_ID")
+    System.getenv("ME2_ANDROID_GOOGLE_WEB_CLIENT_ID")
 )
 
 // Product path: Google Sign-In is the only login. Default ON.
@@ -26,8 +22,6 @@ val enableGoogleAuth =
     firstNonBlank(
         findProperty("ME2_ENABLE_GOOGLE_AUTH") as String?,
         System.getenv("ME2_ANDROID_ENABLE_GOOGLE_AUTH"),
-        findProperty("JOI_ENABLE_GOOGLE_AUTH") as String?,
-        System.getenv("JOI_ANDROID_ENABLE_GOOGLE_AUTH"),
         "true"
     ).toBoolean()
 

@@ -75,7 +75,7 @@ class Me2AlarmStore(context: Context) {
             legacy.edit().clear().apply()
             return
         }
-        // Encrypted legacy may exist under joi_alarm_store via EncryptedSharedPreferences
+        // Encrypted legacy store (pre-rebrand name) may exist via EncryptedSharedPreferences
         runCatching {
             val masterKey = MasterKey.Builder(appContext)
                 .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)

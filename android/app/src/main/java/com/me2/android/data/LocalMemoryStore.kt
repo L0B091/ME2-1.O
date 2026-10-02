@@ -417,7 +417,7 @@ class LocalMemoryStore(context: Context) {
         }
         val lowered = cleaned.lowercase(Locale.US)
         if (lowered in setOf(
-                "joi", "me2", "hola", "holi", "buenas", "gracias", "ninguno",
+                "me2", "hola", "holi", "buenas", "gracias", "ninguno",
                 "como quieras", "da igual", "sin nombre", "ningún nombre", "ningun nombre",
                 "nombre", "un nombre", "nickname", "un nickname", "apodo", "un apodo"
             )

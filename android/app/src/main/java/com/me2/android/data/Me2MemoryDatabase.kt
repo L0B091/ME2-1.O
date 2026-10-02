@@ -119,7 +119,7 @@ abstract class Me2MemoryDatabase : RoomDatabase() {
             }
         }
 
-        /** Prefer me2_memory.db; copy joi_memory.db (+ -wal/-shm) once if present. */
+        /** Prefer me2_memory.db; copy the legacy pre-rebrand DB (+ -wal/-shm) once if present. */
         private fun migrateDbFileIfNeeded(context: Context) {
             val newDb = context.getDatabasePath(DB_NAME)
             if (newDb.exists()) return

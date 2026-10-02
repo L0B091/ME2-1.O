@@ -12,7 +12,7 @@ object Me2NotificationChannels {
     const val CHANNEL_MESSAGES = "ME2_MESSAGES"
     const val CHANNEL_ALARMS = "ME2_ALARMS"
 
-    /** Kept for upgrade safety: old installs may still have JOI_* channels registered. */
+    /** Kept for upgrade safety: old installs may still have the pre-rebrand channels registered. */
     const val LEGACY_CHANNEL_MESSAGES = "JOI_MESSAGES"
     const val LEGACY_CHANNEL_ALARMS = "JOI_ALARMS"
 
@@ -58,14 +58,14 @@ object Me2NotificationChannels {
         manager.createNotificationChannel(messageChannel)
         manager.createNotificationChannel(alarmChannel)
 
-        // Upgrade safety: ensure legacy channels still exist so pending alarms posted to JOI_* keep working.
+        // Upgrade safety: ensure legacy channels still exist so pending alarms posted to them keep working.
         if (manager.getNotificationChannel(LEGACY_CHANNEL_MESSAGES) == null) {
             manager.createNotificationChannel(
                 NotificationChannel(
                     LEGACY_CHANNEL_MESSAGES,
                     "ME2 Messages (legacy)",
                     NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Canal legacy JOI_MESSAGES; nuevos avisos usan ME2_MESSAGES" }
+                ).apply { description = "Canal heredado; nuevos avisos usan ME2_MESSAGES" }
             )
         }
         if (manager.getNotificationChannel(LEGACY_CHANNEL_ALARMS) == null) {
@@ -74,7 +74,7 @@ object Me2NotificationChannels {
                     LEGACY_CHANNEL_ALARMS,
                     "ME2 Alarms (legacy)",
                     NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Canal legacy JOI_ALARMS; nuevas alarmas usan ME2_ALARMS" }
+                ).apply { description = "Canal heredado; nuevas alarmas usan ME2_ALARMS" }
             )
         }
     }

@@ -10,15 +10,15 @@ local cifrada con Room, autenticacion beta, canales Android y alarmas nativas.
 | Responsabilidad | Componente |
 | --- | --- |
 | Decision unica de iniciar/esperar | `backend/comportamiento/iniciativaConversacional.js`, export `evaluarIniciativa` |
-| Ritmo y continuidad | `ritmoDeInteraccion.js`, `vidaFueraDeConversacion.js` |
+| Ritmo y continuidad | `ritmoDeInteraccion.js`, `backend/memoria/continuidad.js` |
 | Fuentes, decision y generacion | `backend/orquestador/orquestadorNotificaciones.js` |
-| Identidad y LLM | `personalityEngine.js` y el cliente OpenRouter existente |
+| LLM | `backend/llm/dolphinClient.js` (personalidad en el master prompt del modelo) |
 | Memoria conversacional | `LocalMemoryStore`, sin otra capa de memoria |
-| Registro operativo | `JoiInitiativeStore`, tabla cifrada en la misma base Room |
-| Evaluacion en segundo plano | `JoiInitiativeScheduler` y `JoiInitiativeWorker`, WorkManager |
-| Entrega | `JoiNotificationCoordinator`, canal `JOI_MESSAGES` existente |
-| Alarmas explicitas | `JoiAlarmScheduler`, `JoiAlarmReceiver` y protocolo existente |
-| Apertura y descarte | `MainActivity` y `JoiInitiativeReceiver` |
+| Registro operativo | `Me2InitiativeStore`, tabla cifrada en la misma base Room |
+| Evaluacion en segundo plano | `Me2InitiativeScheduler` y `Me2InitiativeWorker`, WorkManager |
+| Entrega | `Me2NotificationCoordinator`, canal `ME2_MESSAGES` |
+| Alarmas explicitas | `Me2AlarmScheduler`, `Me2AlarmReceiver` y protocolo existente |
+| Apertura y descarte | `MainActivity` y `Me2InitiativeReceiver` |
 
 No existian un scheduler de iniciativas, un registro operativo ni un perfil
 de descanso. Los archivos nuevos cubren esas responsabilidades. No se
@@ -121,7 +121,7 @@ Las reglas ajustables estan centralizadas en `POLITICA_INICIATIVA`:
 | Aprendizaje de horario | Al menos 7 dias con 4 horas distintas observadas por dia |
 
 El descanso configurado prevalece sobre lo aprendido. La inferencia usa
-solo interacciones de JOI, en una ventana movil de 30 dias; puede volver a
+solo interacciones de ME2, en una ventana movil de 30 dias; puede volver a
 provisional si deja de tener evidencia. No mide el sueno real ni vigila
 otras aplicaciones. Los horarios cruzan medianoche; `configurado.dias`
 puede especificar horarios por dia (0 domingo a 6 sabado), correspondientes
@@ -138,7 +138,7 @@ no cancela alarmas explicitas.
 - WorkManager requiere red y bateria suficiente; no usa servicio permanente.
 - Dos trabajos concurrentes no evaluan a la vez dentro del proceso.
 - Los trabajos persisten ante muerte normal del proceso/reinicio; se reutiliza
-  `JoiBootReceiver` sin duplicar trabajos.
+  `Me2BootReceiver` sin duplicar trabajos.
 - Doze, ahorro de bateria y restricciones del fabricante pueden diferir el
   trabajo. **Forzar detencion desde Ajustes impide ejecucion hasta reabrir
   la app**; ningun scheduler normal garantiza saltarse esa restriccion.
@@ -153,8 +153,8 @@ no cancela alarmas explicitas.
 
 Se mantienen las opciones beta existentes: `BETA_PREMIUM_DEFAULT=true`,
 `GOOGLE_AUTH_ENABLED=false` y Google Android desactivado por defecto.
-Configure `JOI_BACKEND_BASE_URL` (Gradle) o
-`JOI_ANDROID_BACKEND_BASE_URL` (entorno) para conectar el backend.
+Configure `ME2_BACKEND_BASE_URL` (Gradle) o
+`ME2_ANDROID_BACKEND_BASE_URL` (entorno) para conectar el backend.
 Las claves `OPENROUTER_API_KEY` y `NEWS_API_KEY` permanecen exclusivamente
 en el entorno del servidor; no se compilan en el APK.
 

@@ -37,7 +37,7 @@ class PremiumBackupCrypto {
             return null
         }
 
-        // Prefer ME2 salts; fall back to legacy Joi salts so old backups restore.
+        // Prefer ME2 salts; fall back to legacy pre-rebrand salts so old backups restore.
         listOf(false, true).forEach { legacy ->
             runCatching {
                 val iv = Base64.decode(payload.getString("iv"), Base64.NO_WRAP)
