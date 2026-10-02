@@ -64,10 +64,12 @@ export async function chat(messages, opciones = {}) {
   const body = {
     model: c.model,
     messages,
-    max_tokens: opciones.maxTokens || c.maxTokens,
+    // Modelos con razonamiento (p. ej. Gemini 3) gastan tokens antes de responder: piso configurable.
+    max_tokens: Math.max(opciones.maxTokens || c.maxTokens, Number(process.env.DOLPHIN_MIN_TOKENS || 0)),
     stream: false
   };
   if (Number.isFinite(c.temperature)) body.temperature = c.temperature;
+  if (process.env.DOLPHIN_REASONING_EFFORT) body.reasoning_effort = process.env.DOLPHIN_REASONING_EFFORT;
 
   // Reintento con backoff ante saturación (429/503), respetando Retry-After si viene.
   const intentos = Math.max(1, Number(process.env.DOLPHIN_RETRIES || 3));
@@ -101,9 +103,11 @@ export async function chat(messages, opciones = {}) {
   }
   const contenido = data?.choices?.[0]?.message?.content;
   if (typeof contenido !== "string" || !contenido.trim()) {
-    return { used: false, respuesta: null, reason: "respuesta_vacia" };
+    return { used: false, respuesta: null, reason: "respuesta_vacia", finishReason: data?.choices?.[0]?.finish_reason || null };
   }
-  return { used: true, respuesta: contenido.trim(), model: data?.model || c.model, usage: data?.usage || null };
+  const finishReason = data?.choices?.[0]?.finish_reason || null;
+  if (finishReason === "length") console.warn("[dolphin] respuesta cortada por max_tokens (finish_reason=length)");
+  return { used: true, respuesta: contenido.trim(), model: data?.model || c.model, usage: data?.usage || null, finishReason };
 }
 
 export default { chat, estaConfigurado, obtenerDiagnostico };
