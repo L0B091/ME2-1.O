@@ -112,18 +112,25 @@ export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId
     herramientas,
     memoria: { ...memoria, hechos: [...(memoria.hechos || []), ...extras] },
     datosPerfil: userId ? datosUsuario.obtener(userId) : null,
-    app: contextoLLM.funcionesApp(userId),
-    extra: [
-      "Tipo de solicitud: mensaje de INICIATIVA (la app inicia la conversación; el usuario no escribió ahora; se envía como notificación, máximo 240 caracteres).",
-      `Motivo de la iniciativa: ${iniciativa.motivo} (categoría ${iniciativa.categoria})`,
-      `Dato del evento: ${iniciativa.contexto?.evidencia || iniciativa.contexto?.descripcion || ""}`,
-      ...(iniciativa.contexto?.enlace ? [`Enlace: ${iniciativa.contexto.enlace}`] : [])
-    ]
+    characterName: userId ? datosUsuario.obtener(userId)?.configuracion?.nombrePersonaje || null : null,
+    app: contextoLLM.funcionesApp(userId)
   });
   const historial = (memoriaLocal.recentConversation || []).length
     ? memoriaLocal.recentConversation.map(i => ({ tipo: i.role === "assistant" ? "joi" : "user", mensaje: i.text }))
     : (userId ? historialConversacion.obtenerHistorial(userId, 20) : []);
-  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, 12)], { maxTokens: 160 });
+  // Los datos de la iniciativa van en un mensaje de sistema FINAL (después del historial):
+  // así el turno a generar es el de la app, aunque el último mensaje del historial sea del asistente.
+  const solicitudIniciativa = {
+    role: "system",
+    content: [
+      "Tipo de solicitud: mensaje de INICIATIVA (la app inicia la conversación; el usuario no escribió ahora; se envía como notificación, máximo 240 caracteres).",
+      `Fuente elegida: ${iniciativa.contexto?.fuenteServidor || (iniciativa.fuente === "calendario" ? "recordatorio" : iniciativa.categoria.toLowerCase())}`,
+      `Motivo de la iniciativa: ${iniciativa.motivo} (categoría ${iniciativa.categoria})`,
+      `Dato del evento: ${iniciativa.contexto?.evidencia || iniciativa.contexto?.descripcion || ""}`,
+      ...(iniciativa.contexto?.enlace ? [`Enlace: ${iniciativa.contexto.enlace}`] : [])
+    ].join("\n")
+  };
+  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, 12), solicitudIniciativa], { maxTokens: 160 });
 }
 
 function fuenteDe(iniciativa) {

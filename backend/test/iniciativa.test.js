@@ -296,7 +296,7 @@ test("initiative generator sends factual context to the Dolphin client (no perso
     assert.equal(result.used, true);
     assert.equal(result.respuesta, "Retomamos el proyecto?");
     assert.equal(request.model, "dolphin-test");
-    assert.ok(request.messages[0].content.includes("Motivo de la iniciativa"));
+    assert.ok(request.messages.at(-1).content.includes("Motivo de la iniciativa"));
     assert.ok(!request.messages.some(item => item.content.includes("Identidad base:")));
   } finally {
     globalThis.fetch = originalFetch;
