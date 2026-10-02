@@ -62,6 +62,9 @@ export function extraerHechos(mensaje = "") {
   for (const m of texto.matchAll(/\b(trabajo (?:de|como|en)|estudio)\s+([^.;!?\n]+)/gi)) {
     out.hechos.push(`${m[1].toLowerCase()} ${cortarClausula(m[2])}`);
   }
+  // Respuesta sobre el sueño (p. ej. a la iniciativa "cómo dormiste"): se guarda tal cual la dijo.
+  const sueno = texto.match(/\b(?:no pude dormir|no dorm[ií]|insomnio|me desvel[eé]|(?:dorm[ií]|descans[eé])\s+(?:re\s+|muy\s+|bastante\s+|super\s+)?(?:bien|mal|poco|horrible|fatal|genial|b[aá]rbaro|para el orto|como un tronco|de diez|como el orto))[^.;!?\n]{0,60}/i);
+  if (sueno) out.hechos.push(`sueño: ${cortarClausula(sueno[0].toLowerCase())}`);
   return out;
 }
 

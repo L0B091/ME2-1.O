@@ -119,9 +119,16 @@ class Me2InitiativeStoreTest {
         store().configureSleep("user", "07:00", "07:00")
     }
 
-    @Test(expected = IllegalStateException::class)
+    @Test
     fun unreadableRecordDoesNotSilentlyResetDeduplication() {
-        store().reserve("user", initiative())
-        Me2InitiativeStore(dao, { EncryptedLocalPayload("test", it) }, { _, _ -> null }).snapshot("user")
+        assertTrue(store().reserve("user", initiative()))
+        // Unreadable vault payload: graceful empty snapshot, no crash.
+        val unreadable = Me2InitiativeStore(dao, { EncryptedLocalPayload("test", it) }, { _, _ -> null })
+        assertEquals(0, unreadable.snapshot("user").length())
+        assertTrue(unreadable.records("user").isEmpty())
+        // Reading must not overwrite the stored record: deduplication still blocks the same initiative.
+        assertEquals(1, store().records("user").size)
+        assertFalse(store().reserve("user", initiative()))
+        assertEquals(1, store().records("user").size)
     }
 }

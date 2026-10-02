@@ -9,6 +9,9 @@ const MAX_HISTORIAL = 30;
 const VIGENCIA_MS = 12 * 3600e3;
 
 const SENALES = {
+  // Sueño primero: "dormí muy bien" no debe caer en "muy bien" (alegría).
+  descansado: ["dormí bien", "dormi bien", "dormí muy bien", "dormi muy bien", "dormí genial", "dormi genial", "dormí bárbaro", "dormi barbaro", "descansé bien", "descanse bien", "dormí como un tronco", "dormi como un tronco", "descansado", "descansada"],
+  cansancio_sueno: ["dormí mal", "dormi mal", "dormí poco", "dormi poco", "dormí horrible", "dormi horrible", "dormí fatal", "dormi fatal", "dormí re mal", "dormi re mal", "dormí muy mal", "dormi muy mal", "no pude dormir", "no dormí", "no dormi", "insomnio", "me desvelé", "me desvele", "dormí para el orto", "dormi para el orto"],
   alegria: ["feliz", "contento", "contenta", "alegre", "genial", "re bien", "muy bien", "excelente", "emocionado", "emocionada"],
   tristeza: ["triste", "deprimido", "deprimida", "me siento mal", "estoy mal", "bajoneado", "bajoneada", "angustiado", "angustiada"],
   enojo: ["enojado", "enojada", "molesto", "molesta", "fastidiado", "fastidiada", "harto", "harta", "furioso", "furiosa", "re caliente"],
@@ -28,7 +31,7 @@ export function detectar(mensaje = "") {
       if (i === -1) continue;
       const previo = t.slice(Math.max(0, i - 16), i + 1);
       if (/\b(no|ni|nada)\s+(estoy\s+|me siento\s+|tan\s+)?$/.test(previo)) continue;
-      return { emocion, senal };
+      return { emocion: emocion === "cansancio_sueno" ? "cansancio" : emocion, senal };
     }
   }
   return null;

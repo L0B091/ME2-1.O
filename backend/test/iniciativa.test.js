@@ -4,6 +4,10 @@ import { evaluarIniciativa, POLITICA_INICIATIVA, interesesDe } from "../comporta
 import { evaluarPerfilRitmo } from "../modulos/interaccion/perfilRitmoUsuario.js";
 import { evaluarAutonomia, validarSolicitudIniciativa } from "../orquestador/orquestadorNotificaciones.js";
 import { generarIniciativaLLM } from "../orquestador/orquestadorNotificaciones.js";
+import storage from "../utils/jsonStorage.js";
+
+// Historial de fuentes por usuario es persistente: cada test arranca sin rotación previa.
+test.beforeEach(() => storage.writeUserData("iniciativas_fuentes", "local-test", {}));
 
 const HORA = 3600000;
 const ahora = Date.parse("2026-09-12T15:00:00Z");

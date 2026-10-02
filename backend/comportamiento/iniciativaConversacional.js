@@ -1,6 +1,5 @@
 // iniciativaConversacional.js
-// Motor que regula cuando ME2 toma la iniciativa en la conversacion
-// Integrado con ejes dinámicos A-H y comportamiento
+// Política que regula cuándo ME2 toma la iniciativa (solo decisión y datos; el texto lo escribe el LLM).
 
 import crypto from "node:crypto";
 import ritmoDeInteraccion from "../modulos/interaccion/ritmoDeInteraccion.js";
@@ -18,8 +17,18 @@ export const POLITICA_INICIATIVA = Object.freeze({
   descansoProvisional: Object.freeze({ dormir: "22:00", despertar: "09:00" }),
   prioridades: Object.freeze({
     ALARMA: 100, EVENTO: 90, TRANSITO: 80, TRANSPORTE: 80, CLIMA: 75, NOTICIA: 70,
-    EVENTO_SOCIAL: 60, CONVERSACION: 50, RECUERDO: 40, CURIOSIDAD: 30, SOCIAL: 20, EVENTO_INTERNO: 30
-  })
+    EVENTO_SOCIAL: 60, CONVERSACION: 50, RECUERDO: 40, PLANEAR_SALIDA: 36, SUENO: 35, SALIDA_PAREJA: 34,
+    PELICULA_JUNTOS: 33, JUEGO_PASATIEMPO: 33, CURIOSIDAD: 30, SOCIAL: 20, EVENTO_INTERNO: 30
+  }),
+  // Tema alternativo "cómo dormiste": solo de mañana, peso bajo, no diario.
+  sueno: Object.freeze({ ventanaDesde: 6, ventanaHasta: 12, cooldownDias: 3 }),
+  // Temas de compañía opcionales: días mínimos entre usos de cada fuente.
+  compania: Object.freeze({
+    salida_pareja: Object.freeze({ cooldownDias: 3 }), juego_pasatiempo: Object.freeze({ cooldownDias: 4 }),
+    pelicula_juntos: Object.freeze({ cooldownDias: 3 }), planear_salida: Object.freeze({ cooldownDias: 5 })
+  }),
+  // Penalización de prioridad por fuente usada recientemente (rotación).
+  penalizacionRotacion: 6
 });
 
 export const CATEGORIAS = Object.freeze([
@@ -47,6 +56,12 @@ function firma(fuente, referencia) {
   return crypto.createHash("sha256").update(`${fuente}:${referencia}`).digest("hex");
 }
 
+// Fuentes construidas por el servidor con datos del usuario → clave de prioridad.
+const CLAVE_FUENTE = Object.freeze({
+  recuerdo_relevante: "RECUERDO", clima: "CLIMA", sueno: "SUENO", salida_pareja: "SALIDA_PAREJA",
+  juego_pasatiempo: "JUEGO_PASATIEMPO", pelicula_juntos: "PELICULA_JUNTOS", planear_salida: "PLANEAR_SALIDA"
+});
+
 function prepararCandidato(evento, intereses, ahora, politica) {
   const interno = evento.fuente === "continuidad";
   if (!CATEGORIAS.includes(evento.categoria) || !evento.motivo || !evento.contexto) return null;
@@ -59,16 +74,20 @@ function prepararCandidato(evento, intereses, ahora, politica) {
   const interesNombrado = typeof evento.contexto.interesUsuario === "string" &&
     palabras(evento.contexto.interesUsuario).some(p => palabras(evidencia).includes(p));
   // Fuentes construidas por el servidor desde datos del propio usuario (recuerdo/clima de su ciudad).
-  const fuenteServidor = ["recuerdo", "clima"].includes(evento.contexto.fuenteServidor);
+  const fuenteServidor = Object.hasOwn(CLAVE_FUENTE, evento.contexto.fuenteServidor || "");
   if (!interno && !evento.contexto.programadoPorUsuario && !interesNombrado && !fuenteServidor && coincidencias.length < 2) return null;
   if (!evidencia.trim()) return null;
   const referencia = evento.referenciaEvento || evento.id || firma(evento.fuente, evidencia);
   const clavePrioridad = evento.categoria === "SOCIAL" && !evento.contexto.espontanea ? "EVENTO_SOCIAL"
-    : evento.contexto.fuenteServidor === "clima" ? "CLIMA" : evento.categoria;
+    : CLAVE_FUENTE[evento.contexto.fuenteServidor] || evento.categoria;
+  const penalizacion = Math.max(0, Number(evento.contexto.penalizacionRotacion) || 0);
+  const base = politica.prioridades[clavePrioridad];
+  // La rotación reordena, pero no hunde una fuente por debajo del umbral espontáneo.
+  const prioridad = penalizacion ? Math.max(base - penalizacion, Math.min(base, politica.prioridades.CURIOSIDAD + 1)) : base;
   return {
     id: firma(evento.fuente, `${evento.categoria}:${referencia}`),
     categoria: evento.categoria, motivo: evento.motivo, timestamp: ahora,
-    referenciaEvento: referencia, prioridad: politica.prioridades[clavePrioridad],
+    referenciaEvento: referencia, prioridad,
     fuente: evento.fuente,
     contexto: { ...evento.contexto, interesesRelacionados: coincidencias },
     expiresAt: Math.min(evento.expiresAt, ahora + politica.expiracionMs)
@@ -150,124 +169,3 @@ export function evaluarIniciativa({
   }
   return esperar(motivoEspera);
 }
-
-function iniciativaConversacional(contexto = {}) {
-
-  const {
-    energiaUsuario = 0.5,          // 0 a 1
-    tiempoSilencio = 0,            // segundos
-    estadoConversacion = "normal", // normal, fluida, intensa
-    intensidadEmocional = 1,       // Eje A: 1 a 7
-    ritmo = "medio",               // Eje B: lento, medio, alto
-    energiaSocial = "media",       // Eje C: baja, media, alta
-    tensionLudica = 0,             // Eje D: 0 a 3
-    regulacion = {                 // Eje E
-      intensidadMaxima: null,
-      tensionLudicaMaxima: null
-    },
-    contextoEspecial = null,       // intimidad, aftercare, etc.
-    microComportamiento = {},      // microacciones de ME2
-    estiloExpresivo = {},          // gestos, tono, pausas
-    // Android owns 5-min check-in + 60-min eval; default disables short in-chat ping
-    desactivarReactivarCorto = true,
-    umbralSilencioReactivarSegundos = 60 * 60  // 60 minutos si se reactivara
-  } = contexto;
-
-  const decision = {
-    iniciar: false,
-    tipoIniciativa: null,
-    mensaje: null
-  };
-
-  // --- SILENCIO PROLONGADO ---
-  // Product: do NOT fight Android's 5-min "¿Seguís ahí?" with a 20s canned ping.
-  // Short silence reactivar is off by default (desactivarReactivarCorto).
-  if (
-    !desactivarReactivarCorto &&
-    tiempoSilencio > umbralSilencioReactivarSegundos &&
-    contextoEspecial !== "aftercare"
-  ) {
-    decision.iniciar = true;
-    decision.tipoIniciativa = "reactivar";
-
-    const frases = [
-      "¿Seguís ahí?",
-      "Podemos seguir cuando quieras.",
-      "Me quedé pensando en lo que dijiste."
-    ];
-
-    decision.mensaje = frases[Math.floor(Math.random() * frases.length)];
-    return decision;
-  }
-
-  // --- ENERGÍA BAJA DEL USUARIO ---
-  if (energiaUsuario < 0.3 && contextoEspecial !== "aftercare") {
-    decision.iniciar = true;
-    decision.tipoIniciativa = "suave";
-
-    const frases = [
-      "¿Cómo estuvo tu día?",
-      "Si quieres podemos hablar de algo ligero.",
-      "¿Hay algo que te gustaría contarme?"
-    ];
-
-    decision.mensaje = frases[Math.floor(Math.random() * frases.length)];
-    return decision;
-  }
-
-  // --- INICIATIVA ACTIVA SEGÚN EJE A, B, C, D ---
-  if (
-    intensidadEmocional >= 3 &&
-    ritmo === "alto" &&
-    energiaSocial === "alta" &&
-    (regulacion.intensidadMaxima === null || intensidadEmocional <= regulacion.intensidadMaxima)
-  ) {
-    decision.iniciar = true;
-    decision.tipoIniciativa = "activa";
-
-    const frases = [
-      "Se me ocurre algo divertido para compartir.",
-      "¿Quieres que proponga una idea para nosotros?",
-      "Tengo una sugerencia, ¿te interesa?"
-    ];
-
-    decision.mensaje = frases[Math.floor(Math.random() * frases.length)];
-    return decision;
-  }
-
-  // --- CONTEXTO DE INTIMIDAD ---
-  if (contextoEspecial === "intimidad") {
-    decision.iniciar = true;
-    decision.tipoIniciativa = "juguetona";
-
-    const frases = [
-      "¿Te gusta así?",
-      "¿Querés que siga?",
-      "Podemos probar algo más si quieres."
-    ];
-
-    decision.mensaje = frases[Math.floor(Math.random() * frases.length)];
-    return decision;
-  }
-
-  // --- CONTEXTO DE AFTERCARE ---
-  if (contextoEspecial === "aftercare") {
-    decision.iniciar = true;
-    decision.tipoIniciativa = "suave";
-
-    const frases = [
-      "Me gustó nuestra interacción, ¿todo bien?",
-      "Espero que te haya gustado, ¿querés que repitamos alguna parte la próxima vez?"
-    ];
-
-    decision.mensaje = frases[Math.floor(Math.random() * frases.length)];
-    return decision;
-  }
-
-  // --- CONVERSACIÓN NORMAL ---
-  decision.iniciar = false;
-  return decision;
-
-}
-
-export default iniciativaConversacional;
