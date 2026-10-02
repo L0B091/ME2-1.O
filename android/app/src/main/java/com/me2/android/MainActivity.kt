@@ -534,7 +534,12 @@ class MainActivity : AppCompatActivity() {
                     val detail = result.videoEtiqueta?.uppercase(Locale.getDefault())
                         ?: result.microExpression?.uppercase(Locale.getDefault())
                         ?: "SYNC"
-                    appendAssistantReply(result.reply, state, detail, typewriter = true)
+                    // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
+                    if (result.reply.isNotBlank() || result.media == null) {
+                        appendAssistantReply(result.reply, state, detail, typewriter = true)
+                    } else {
+                        applyAssistantAvatarState(state, detail)
+                    }
                     applyChatMedia(result)
                     startedFromEmptyLocalMemory = false
                     result.premiumUntilMillis?.let { premiumUntil ->

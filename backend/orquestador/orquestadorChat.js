@@ -19,6 +19,7 @@ import adultMode from "../modulos/premium/adultMode.js";
 import flujoPremium from "../modulos/premium/flujoPremium.js";
 import selectorMedia from "../modulos/media/selectorMedia.js";
 import reacciones from "../modulos/interaccion/reacciones.js";
+import formatoAdulto from "../modulos/media/formatoAdulto.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
@@ -163,6 +164,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     console.error("Error en adultMode:", error.message);
   }
   if (adultResult.adult?.unlocked) {
+    extra.push(formatoAdulto.LINEA_CONTRATO);
     extra.push(`Modo adulto: ACTIVO solo en esta sesión (${adultResult.evento === "desbloqueado_con_keyword" ? "recién desbloqueado con la palabra clave correcta" : "desbloqueado con la palabra clave"}); intensidad actual: ${adultResult.adult.intensity}.`);
   } else if (adultResult.pedidoAdulto) {
     const motivo = adultResult.evento === "premium_requerido" ? "requiere Premium" : "falta la palabra clave en esta sesión";
@@ -220,25 +222,33 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     debugLLM = { ...debugLLM, used: false, error: error.message };
   }
 
+  // [FORMATO] modo adulto: texto | gif | texto+gif (validado por el orquestador). Fuera: siempre texto.
+  const formato = respuesta != null
+    ? formatoAdulto.decidir({ userId, respuesta, mensaje: mensajeUsuario, adult: adultResult?.adult, persistir: persistirEnServidor && userId !== "anonimo" })
+    : { formato: "texto", texto: null, gif: null, motivo: "llm_no_disponible" };
+  respuesta = respuesta != null ? formato.texto : null;
+  const media = formato.gif;
+
   // [MEMORY] write-back de la respuesta del LLM
-  if (respuesta && persistirEnServidor && userId !== "anonimo") {
-    historialConversacion.registrarMensaje(userId, respuesta, "asistente");
+  if ((respuesta || media) && persistirEnServidor && userId !== "anonimo") {
+    historialConversacion.registrarMensaje(userId, respuesta || `[GIF: ${(media.tags || []).join(", ")}]`, "asistente");
   }
 
   const video = selectorVideo.seleccionarVideo({ adultMode: adultResult?.adult }, EXPRESION_NEUTRA);
   const videoFinal = adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video;
   // Texto + clip siempre; GIF opcional solo en modo adulto (catálogo adulto con gating estricto).
-  const { clip, media } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
+  const { clip } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
   // Reacción ocasional (emoji) sobre la burbuja del usuario, persistida en el historial.
   let reaccion = null;
-  if (respuesta && userId !== "anonimo") {
+  if ((respuesta || media) && userId !== "anonimo") {
     reaccion = reacciones.decidir(userId, mensajeUsuario, { gustosNuevos: memoriaEscritura?.hechos?.gustos || [] });
     if (reaccion && persistirEnServidor) historialConversacion.anotarReaccion(userId, reaccion.emoji);
   }
 
   return {
     respuesta,
-    llmDisponible: Boolean(respuesta),
+    llmDisponible: Boolean(respuesta || media),
+    formato: formato.formato,
     expresion: EXPRESION_NEUTRA,
     video: videoFinal,
     clip,

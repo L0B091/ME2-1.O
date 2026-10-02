@@ -543,7 +543,7 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
     relojApi.guardarUltimaInteraccion(req.auth.userId);
   }
 
-  if (!resultado?.respuesta) {
+  if (!resultado?.respuesta && !resultado?.media) {
     return res.status(503).json({
       ok: false,
       error: "LLM no disponible",
@@ -554,7 +554,8 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
 
   return res.status(200).json({
     ok: true,
-    respuesta: resultado.respuesta,
+    respuesta: resultado.respuesta || "",
+    formato: resultado.formato || "texto",
     acciones: resultado?.acciones || null,
     video: resultado?.video || null,
     clip: resultado?.clip || null,

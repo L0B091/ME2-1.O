@@ -33,7 +33,7 @@ export function catalogosPermitidos(adult, catalogos = [cargarCatalogo("normal")
  * @param {{ mensaje: string, contexto?: string, adult?: object, catalogos?: object[], soloAdulto?: boolean }} p
  * @returns {{ tipo: "clip"|"gif", id: string, catalogo: string, url: string, tags: string[] }|null}
  */
-export function seleccionar({ mensaje = "", contexto = "", adult = null, catalogos, soloAdulto = true, tipo = null } = {}) {
+export function seleccionar({ mensaje = "", contexto = "", adult = null, catalogos, soloAdulto = true, tipo = null, excluir = [] } = {}) {
   const permitidos = catalogosPermitidos(adult, catalogos).filter(c => !soloAdulto || c.adulto);
   if (!permitidos.length) return null;
   const tope = INTENSITY_ORDER.indexOf(adult?.intensity || "none");
@@ -42,6 +42,7 @@ export function seleccionar({ mensaje = "", contexto = "", adult = null, catalog
   for (const c of permitidos) {
     for (const item of c.items) {
       if (tipo && item.tipo !== tipo) continue;
+      if (excluir.includes(item.id)) continue;
       if (c.adulto && INTENSITY_ORDER.indexOf(item.intensidad || "explicit") > tope) continue;
       const puntaje = (item.tags || []).filter(t => [...palabras(t)].some(p => claves.has(p))).length;
       if (puntaje > 0 && (!mejor || puntaje > mejor.puntaje)) mejor = { puntaje, item, catalogo: c.nombre };
@@ -54,7 +55,7 @@ export function seleccionar({ mensaje = "", contexto = "", adult = null, catalog
 /**
  * Contrato de respuesta: SIEMPRE hay clip (texto + clip). En modo adulto el clip sale del catálogo adulto si hay
  * coincidencia; si no, el clip de la galería del avatar (categoría elegida por contexto, o fallback).
- * El GIF es un extra opcional, solo en modo adulto.
+ * El GIF lo decide formatoAdulto.js (solo modo adulto).
  */
 export function mediosRespuesta({ mensaje = "", respuesta = "", adult = null, videoGaleria = null, catalogos } = {}) {
   const adultoActivo = Boolean(adult?.premiumActivo && adult?.unlocked);
@@ -62,8 +63,7 @@ export function mediosRespuesta({ mensaje = "", respuesta = "", adult = null, vi
   const clip = clipAdulto
     ? { ...clipAdulto, fuente: "catalogo_adulto" }
     : { tipo: "clip", fuente: "galeria", catalogo: "galeria", categoria: videoGaleria?.categoria || "loop_neutral", id: videoGaleria?.assetName || null, fallback: !videoGaleria?.categoria };
-  const gif = adultoActivo ? seleccionar({ mensaje, contexto: respuesta, adult, catalogos, tipo: "gif" }) : null;
-  return { clip, media: gif };
+  return { clip };
 }
 
 export function archivoDe(catalogo, id, raiz = RAIZ) {

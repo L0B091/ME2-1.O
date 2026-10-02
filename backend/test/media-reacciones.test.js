@@ -18,19 +18,20 @@ test("gating: fuera de sesión adulta el catálogo adulto nunca es seleccionable
   for (const adult of [null, { premiumActivo: false, unlocked: false }, { premiumActivo: true, unlocked: false }, { premiumActivo: false, unlocked: true }]) {
     assert.deepEqual(selectorMedia.catalogosPermitidos(adult, cats).map(c => c.nombre), ["normal"]);
     assert.equal(selectorMedia.seleccionar({ mensaje: "vamos a la playa", adult, catalogos: cats }), null);
-    const { clip, media } = selectorMedia.mediosRespuesta({ mensaje: "vamos a la playa", adult, catalogos: cats, videoGaleria: { categoria: "alegre" } });
-    assert.equal(clip.fuente, "galeria"); assert.equal(clip.categoria, "alegre"); assert.equal(media, null);
+    const { clip } = selectorMedia.mediosRespuesta({ mensaje: "vamos a la playa", adult, catalogos: cats, videoGaleria: { categoria: "alegre" } });
+    assert.equal(clip.fuente, "galeria"); assert.equal(clip.categoria, "alegre");
+    assert.equal(selectorMedia.seleccionar({ mensaje: "playa guiño", adult, catalogos: cats, tipo: "gif" }), null);
   }
 });
 
-test("selector por tags + tope de intensidad de la sesión; clip siempre presente, GIF opcional", () => {
+test("selector por tags + tope de intensidad de la sesión; clip siempre presente", () => {
   const r = selectorMedia.mediosRespuesta({ mensaje: "Vamos a la playa", adult: activo, catalogos: cats });
   assert.equal(r.clip.id, "c_playa"); assert.equal(r.clip.fuente, "catalogo_adulto");
-  assert.equal(r.media.tipo, "gif"); assert.equal(r.media.id, "g_guino");
-  assert.equal(r.media.url, "/api/media/xxx/g_guino");
+  const g = selectorMedia.seleccionar({ mensaje: "playa", adult: activo, catalogos: cats, tipo: "gif" });
+  assert.equal(g.id, "g_guino"); assert.equal(g.url, "/api/media/xxx/g_guino");
   // "noche" pide intensidad intimate > soft_flirt → no se elige; cae a la galería (fallback)
   const n = selectorMedia.mediosRespuesta({ mensaje: "esta noche hay luna", adult: activo, catalogos: cats });
-  assert.equal(n.clip.fuente, "galeria"); assert.equal(n.clip.fallback, true); assert.equal(n.media, null);
+  assert.equal(n.clip.fuente, "galeria"); assert.equal(n.clip.fallback, true);
   const alto = selectorMedia.mediosRespuesta({ mensaje: "esta noche hay luna", adult: { ...activo, intensity: "intimate" }, catalogos: cats });
   assert.equal(alto.clip.id, "c_noche");
 });
