@@ -7,7 +7,7 @@ import orquestadorChat from "./orquestador/orquestadorChat.js";
 import veniceClient from "./llm/veniceClient.js";
 import horaApi from "./api/hora.js";
 import relojApi from "./api/reloj.js";
-import climaApi from "./api/clima.js";
+import climaApi, { UBICACION_DEFAULT } from "./api/clima.js";
 import noticiasApi from "./api/noticias.js";
 import calendarioApi from "./api/calendario.js";
 import notificacionesApi from "./api/notificaciones.js";
@@ -218,10 +218,14 @@ app.post("/api/reloj/:userId/interaccion", requireAuth, (req, res) => {
 });
 
 app.get("/api/clima", handleAsync(async (req, res) => {
-  const lat = Number(req.query.lat ?? -34.6037);
-  const lon = Number(req.query.lon ?? -58.3816);
-  const data = await climaApi(lat, lon);
-  res.json({ ok: true, data });
+  const lat = req.query.lat != null ? Number(req.query.lat) : UBICACION_DEFAULT.lat;
+  const lon = req.query.lon != null ? Number(req.query.lon) : UBICACION_DEFAULT.lon;
+  try {
+    const data = await climaApi(lat, lon);
+    res.json({ ok: true, data });
+  } catch (error) {
+    res.status(503).json({ ok: false, disponible: false, error: error.message });
+  }
 }));
 
 app.get("/api/noticias", handleAsync(async (req, res) => {
@@ -231,8 +235,12 @@ app.get("/api/noticias", handleAsync(async (req, res) => {
     .map(item => item.trim())
     .filter(Boolean);
 
-  const data = await noticiasApi.obtenerNoticias(ciudad, categorias);
-  res.json({ ok: true, data });
+  try {
+    const data = await noticiasApi.obtenerNoticias(ciudad, categorias);
+    res.json({ ok: true, proveedor: noticiasApi.proveedorNoticias(), data });
+  } catch (error) {
+    res.status(503).json({ ok: false, disponible: false, error: error.message });
+  }
 }));
 
 app.get("/api/calendario/:userId", requireAuth, (req, res) => {

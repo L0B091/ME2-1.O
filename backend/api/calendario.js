@@ -1,59 +1,71 @@
-import storage from "../utils/jsonStorage.js";
+// calendario.js — eventos del usuario vía adaptador (local hoy, Google Calendar después).
 import notificaciones from "./notificaciones.js";
+import localAdapter from "./calendarioAdapters/localAdapter.js";
+import googleAdapter from "./calendarioAdapters/googleCalendarAdapter.js";
+import storage from "../utils/jsonStorage.js";
 
-const NAMESPACE = "calendario";
+const OFFSET = process.env.ME2_TZ_OFFSET || "-03:00";
 
-function listarEventos(usuarioID) {
-  return storage.readUserData(NAMESPACE, usuarioID, []);
+function leerLocal(userId) {
+  return storage.readUserData("calendario", userId, []);
 }
 
-function guardarEventos(usuarioID, eventos) {
-  storage.writeUserData(NAMESPACE, usuarioID, eventos);
-  return eventos;
+function instante(evento) {
+  const t = Date.parse(`${evento.fecha}T${(evento.hora || "00:00").padStart(5, "0")}:00${OFFSET}`);
+  return Number.isFinite(t) ? t : NaN;
+}
+
+function listarEventos(usuarioID) {
+  return leerLocal(usuarioID);
 }
 
 function agregarEvento(usuarioID, evento) {
-  if (!usuarioID || !evento?.fecha) {
-    return { exito: false, mensaje: "Faltan datos del evento" };
+  if (!usuarioID || !evento?.fecha || !/^\d{4}-\d{2}-\d{2}$/.test(String(evento.fecha))) {
+    return { exito: false, mensaje: "Faltan datos del evento (fecha YYYY-MM-DD)" };
   }
-
-  const eventos = listarEventos(usuarioID);
+  const hora = /^\d{1,2}:\d{2}$/.test(String(evento.hora || "")) ? String(evento.hora).padStart(5, "0") : "08:00";
+  const eventos = leerLocal(usuarioID);
   const nuevoEvento = {
     id: String(evento.id || `${usuarioID}_${Date.now()}`),
     tipo: String(evento.tipo || "evento"),
     fecha: String(evento.fecha),
-    hora: String(evento.hora || "08:00"),
+    hora,
     descripcion: String(evento.descripcion || "Sin descripción"),
+    origen: "local",
     createdAt: new Date().toISOString()
   };
-
   eventos.push(nuevoEvento);
-  guardarEventos(usuarioID, eventos);
-
-  const fechaEvento = new Date(`${nuevoEvento.fecha}T${nuevoEvento.hora}`);
-  if (!Number.isNaN(fechaEvento.getTime())) {
-    notificaciones.notificarRecordatorio(usuarioID, nuevoEvento.descripcion, fechaEvento.toISOString());
-  }
-
+  storage.writeUserData("calendario", usuarioID, eventos);
+  const t = instante(nuevoEvento);
+  if (Number.isFinite(t)) notificaciones.notificarRecordatorio(usuarioID, nuevoEvento.descripcion, new Date(t).toISOString());
   return { exito: true, mensaje: "Evento agregado correctamente", evento: nuevoEvento };
 }
 
 function eliminarEvento(usuarioID, eventoId) {
-  const eventos = listarEventos(usuarioID);
+  const eventos = leerLocal(usuarioID);
   const filtrados = eventos.filter(item => item.id !== eventoId && item.descripcion !== eventoId);
-  guardarEventos(usuarioID, filtrados);
+  storage.writeUserData("calendario", usuarioID, filtrados);
   return {
     exito: filtrados.length !== eventos.length,
     mensaje: filtrados.length !== eventos.length ? "Evento eliminado" : "No se encontró el evento"
   };
 }
 
-function obtenerEventosProximos(usuarioID) {
-  const ahora = Date.now();
-  return listarEventos(usuarioID).filter(evento => {
-    const fecha = new Date(`${evento.fecha}T${evento.hora || "00:00"}`).getTime();
-    return Number.isFinite(fecha) && fecha >= ahora;
-  });
+function obtenerEventosProximos(usuarioID, ahora = Date.now()) {
+  return leerLocal(usuarioID)
+    .filter(evento => instante(evento) >= ahora)
+    .sort((a, b) => instante(a) - instante(b));
+}
+
+// Une local + Google (si está configurado). Nunca lanza: informa disponibilidad.
+async function proximosUnificados(usuarioID, limite = 5) {
+  const locales = obtenerEventosProximos(usuarioID);
+  let google = [];
+  let googleEstado = googleAdapter.disponible() ? "ok" : "no_configurado";
+  if (googleAdapter.disponible()) {
+    try { google = await googleAdapter.listar(usuarioID); } catch (e) { googleEstado = "error"; }
+  }
+  return { eventos: [...locales, ...google].sort((a, b) => instante(a) - instante(b)).slice(0, limite), googleCalendar: googleEstado };
 }
 
 function calendarioJoi(usuarioID, input) {
@@ -69,5 +81,7 @@ export default {
   agregarEvento,
   eliminarEvento,
   obtenerEventosProximos,
-  calendarioJoi
+  proximosUnificados,
+  calendarioJoi,
+  adapters: { local: localAdapter, google: googleAdapter }
 };

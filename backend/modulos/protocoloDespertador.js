@@ -31,7 +31,7 @@ async function push(userID, mensaje) {
   notificacionesApi.notificarAlarma(userID, mensaje);
 }
 
-const BA_DEFAULT = { lat: -34.6037, lon: -58.3816 };
+const BA_DEFAULT = { lat: -33.3342, lon: -60.2108 }; // San Nicolás de los Arroyos
 
 /**
  * Prefer stored user coords when available; otherwise Buenos Aires default.
@@ -42,7 +42,9 @@ async function obtenerMensajeClimaSeguro(coords = null) {
     const lat = Number.isFinite(Number(coords?.lat)) ? Number(coords.lat) : BA_DEFAULT.lat;
     const lon = Number.isFinite(Number(coords?.lon)) ? Number(coords.lon) : BA_DEFAULT.lon;
     const clima = await obtenerClima(lat, lon);
-    return clima?.mensajeCorto || "Buen día. Ya registré tu despertar.";
+    return Number.isFinite(clima?.temperatura)
+      ? `${Math.round(clima.temperatura)}°C, ${clima.descripcion || ""}`.trim()
+      : "Buen día. Ya registré tu despertar.";
   } catch (error) {
     return "Buen día. Ya registré tu despertar.";
   }
