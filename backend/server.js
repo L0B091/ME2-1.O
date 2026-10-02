@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
 
 import orquestadorChat from "./orquestador/orquestadorChat.js";
-import veniceClient from "./llm/veniceClient.js";
+import dolphinClient from "./llm/dolphinClient.js";
 import horaApi from "./api/hora.js";
 import relojApi from "./api/reloj.js";
 import climaApi, { UBICACION_DEFAULT } from "./api/clima.js";
@@ -89,7 +89,11 @@ function authStatus() {
     googleConfigured: Boolean(String(process.env.GOOGLE_CLIENT_ID || "").trim()),
     mercadoPagoConfigured: Boolean(String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim()),
     openWeatherConfigured: Boolean(String(process.env.OPENWEATHER_API_KEY || "").trim()),
-    newsConfigured: Boolean(String(process.env.NEWS_API_KEY || "").trim())
+    newsConfigured: Boolean(String(process.env.NEWS_API_KEY || "").trim()),
+    newsProvider: noticiasApi.proveedorNoticias(),
+    weatherProvider: "open-meteo / met-norway (sin key)",
+    googleCalendarConfigured: calendarioApi.adapters.google.disponible(),
+    cloudBackupAdapter: backupManager.adaptadorActivo()
   };
 }
 
@@ -136,7 +140,7 @@ app.get("/health", healthRateLimit, (req, res) => {
     servicio: "ME2 Backend",
     estado: "activo",
     timestamp: new Date().toISOString(),
-    llm: veniceClient.obtenerDiagnostico(),
+    llm: dolphinClient.obtenerDiagnostico(),
     integrations: authStatus(),
     cors: {
       mode: "restricted",
@@ -388,24 +392,24 @@ app.get("/api/premium/:userId/backup/materials", requireAuth, (req, res) => {
   res.json({ ok: true, data: premiumManager.obtenerMateriales(userId) });
 });
 
-app.get("/api/premium/:userId/backup", requireAuth, (req, res) => {
+app.get("/api/premium/:userId/backup", requireAuth, handleAsync(async (req, res) => {
   const userId = ensureOwnUser(req);
   const premium = premiumManager.obtenerEstado(userId);
   if (!premium.premiumActivo) {
     return res.status(403).json({ ok: false, error: "Premium requerido para restaurar respaldo" });
   }
-  res.json({ ok: true, data: backupManager.obtenerBackup(userId) });
-});
+  res.json({ ok: true, data: await backupManager.obtenerBackup(userId) });
+}));
 
-app.put("/api/premium/:userId/backup", requireAuth, (req, res) => {
+app.put("/api/premium/:userId/backup", requireAuth, handleAsync(async (req, res) => {
   const userId = ensureOwnUser(req);
   const premium = premiumManager.obtenerEstado(userId);
   if (!premium.premiumActivo) {
     return res.status(403).json({ ok: false, error: "Premium requerido para guardar respaldo" });
   }
   const backup = req.body?.backup || {};
-  res.json({ ok: true, data: backupManager.guardarBackup(userId, backup) });
-});
+  res.json({ ok: true, data: await backupManager.guardarBackup(userId, backup) });
+}));
 
 app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);
@@ -484,7 +488,6 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
   const resultado = await orquestadorChat(mensaje, {
     ...contexto,
     userId: effectiveUserId,
-    generarIniciativa: false,
     timestamp: Date.now()
   });
 
@@ -492,9 +495,19 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
     relojApi.guardarUltimaInteraccion(req.auth.userId);
   }
 
+  if (!resultado?.respuesta) {
+    return res.status(503).json({
+      ok: false,
+      error: "LLM no disponible",
+      acciones: resultado?.acciones || null,
+      debug: process.env.NODE_ENV === "development" ? resultado?.debug || null : undefined
+    });
+  }
+
   return res.status(200).json({
     ok: true,
-    respuesta: resultado?.respuesta || "No hubo respuesta",
+    respuesta: resultado.respuesta,
+    acciones: resultado?.acciones || null,
     video: resultado?.video || null,
     expresion: resultado?.expresion || null,
     premium: resultado?.premium || null,

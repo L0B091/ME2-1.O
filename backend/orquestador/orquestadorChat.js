@@ -1,560 +1,227 @@
 /*
-* ORQUESTADOR.JS
-* Punto único de entrada del sistema
-* Conecta: Entrada → Memoria → Cognición → Personalidad → Estilo
+* ORQUESTADOR DE CHAT (rama me2_dlp)
+* Motor de la app: Entrada → Memoria → Herramientas/acciones → Contexto → LLM → Memoria.
+* La personalidad vive en el master prompt del modelo (Dolphin Mistral Venice).
+* Este orquestador NO aplica filtros de personalidad, plantillas ni frases armadas:
+* la respuesta del LLM vuelve al usuario sin modificar.
 */
 
-// =============================
-//  ETIQUETAS DEL SISTEMA
-// =============================
-// [ENTRY]      → Entrada del usuario
-// [MEMORY]     → Gestión de memoria
-// [CONTEXT]    → Contexto unificado
-// [COGNITION]  → Motor de decisión
-// [PERSONA]    → Personalidad
-// [STYLE]      → Estilo expresivo
-// [OUTPUT]     → Respuesta final
-
 import procesadorEntrada from "../motor/procesadorEntrada.js";
-import cognicion from "../motor/cognicion.js";
-import personalidad from "../motor/personalidad.js";
-import estiloExpresivo from "../motor/estiloExpresivo.js";
-
 import { obtenerUsuario } from "../memoria/usuarioMemoria.js";
 import historialConversacion from "../memoria/historialConversacion.js";
 import writeBackEngine from "../memoria/writebackengine.js";
-import codigoMemoria from "../memoria/codigoMemoria.js";
-import documentosFiscales from "../memoria/documentosFiscales.js";
-
-//  NUEVO: MEMORIA ORQUESTADOR
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
-import veniceClient from "../llm/veniceClient.js";
+import memoriaConversacional from "../memoria/memoriaConversacional.js";
+import datosUsuario from "../memoria/datosUsuario.js";
+import dolphinClient from "../llm/dolphinClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
-import expresionFinal from "../modulos/expresion/expresionFinal.js";
 import selectorVideo from "../modulos/video/selectorVideo.js";
-import personalityEngine from "../modulos/personalidad/personalityEngine.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
-import datosUsuario from "../memoria/datosUsuario.js";
+import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
+import calendarioApi from "../api/calendario.js";
+import { detectarAlarma } from "../modulos/detectorAlarmas.js";
+import { detectarEvento } from "../modulos/detectorAgenda.js";
+import contextoLLM from "./contextoLLM.js";
+
+const EXPRESION_NEUTRA = Object.freeze({ tono: "neutral", ritmo: "normal", microexpresion: "mirada_atenta", intensidad: "suave" });
 
 function normalizarMemoriaLocal(memoriaLocal = {}) {
-  if (!memoriaLocal || typeof memoriaLocal !== "object") {
-    return null;
-  }
-
+  if (!memoriaLocal || typeof memoriaLocal !== "object") return null;
   const recentConversation = Array.isArray(memoriaLocal.recentConversation)
     ? memoriaLocal.recentConversation
-      .map(item => ({
-        tipo: item?.role === "assistant" ? "joi" : "user",
-        mensaje: String(item?.text || "").trim()
-      }))
+      .map(item => ({ tipo: item?.role === "assistant" ? "joi" : "user", mensaje: String(item?.text || "").trim() }))
       .filter(item => item.mensaje)
     : [];
-
   return {
     source: memoriaLocal.source || "android_local_primary",
     characterName: memoriaLocal.characterName || null,
-    shortTermFocus: memoriaLocal.shortTermFocus || null,
-    shortTermIntent: memoriaLocal.shortTermIntent || null,
     recentConversation,
-    persistentMemories: Array.isArray(memoriaLocal.persistentMemories)
-      ? memoriaLocal.persistentMemories
-      : [],
-    importantMemories: Array.isArray(memoriaLocal.importantMemories)
-      ? memoriaLocal.importantMemories
-      : [],
-    codeMemories: Array.isArray(memoriaLocal.codeMemories)
-      ? memoriaLocal.codeMemories
-      : [],
-    fiscalMemories: Array.isArray(memoriaLocal.fiscalMemories)
-      ? memoriaLocal.fiscalMemories
-      : []
+    persistentMemories: Array.isArray(memoriaLocal.persistentMemories) ? memoriaLocal.persistentMemories : [],
+    importantMemories: Array.isArray(memoriaLocal.importantMemories) ? memoriaLocal.importantMemories : []
   };
+}
+
+// Acciones deterministas del orquestador (el LLM solo las confirma con su voz).
+function ejecutarAcciones(userId, mensaje, persistir) {
+  const acciones = [];
+  const resultado = { alarma: null, evento: null };
+  if (!userId || userId === "anonimo") return { acciones, resultado };
+
+  const pedidoAlarma = detectarAlarma(mensaje);
+  if (pedidoAlarma?.accion === "crear" && pedidoAlarma.hora && persistir !== false) {
+    try {
+      const alarma = gestorDeAlarmas.crearAlarma(userId, pedidoAlarma.hora, { titulo: pedidoAlarma.titulo });
+      resultado.alarma = { accion: "creada", ...alarma };
+      acciones.push(`Alarma CREADA y guardada para las ${alarma.hora} (${alarma.titulo}); se sincroniza con el teléfono.`);
+    } catch (error) {
+      resultado.alarma = { accion: "error", error: error.message };
+      acciones.push(`No se pudo crear la alarma: ${error.message}`);
+    }
+  } else if (pedidoAlarma?.accion === "crear" && !pedidoAlarma.hora) {
+    acciones.push("El usuario pidió una alarma pero no se entendió la hora; no se creó ninguna alarma.");
+  } else if (pedidoAlarma?.accion === "cancelar") {
+    const activas = gestorDeAlarmas.obtenerAlarmasPorUsuario(userId);
+    const objetivo = pedidoAlarma.hora ? activas.filter(a => a.hora === pedidoAlarma.hora) : activas.slice(-1);
+    objetivo.forEach(a => gestorDeAlarmas.cerrarAlarma(userId, a.id));
+    resultado.alarma = { accion: "cancelada", ids: objetivo.map(a => a.id) };
+    acciones.push(objetivo.length
+      ? `Alarma(s) CANCELADA(s): ${objetivo.map(a => a.hora).join(", ")}`
+      : "El usuario pidió cancelar una alarma pero no había ninguna que coincida.");
+  }
+
+  const pedidoEvento = !pedidoAlarma ? detectarEvento(mensaje) : null;
+  if (pedidoEvento) {
+    const r = calendarioApi.agregarEvento(userId, pedidoEvento);
+    resultado.evento = r;
+    acciones.push(r.exito
+      ? `Evento AGENDADO: ${r.evento.fecha} ${r.evento.hora} — ${r.evento.descripcion}`
+      : `No se pudo agendar el evento: ${r.mensaje}`);
+  }
+  return { acciones, resultado };
 }
 
 async function orquestador(mensajeUsuario, contexto = {}) {
-  let memoriaUsuario = null;
+  const userId = contexto.userId || "anonimo";
   const memoriaLocal = Object.prototype.hasOwnProperty.call(contexto, "memoriaLocal")
     ? normalizarMemoriaLocal(contexto.memoriaLocal)
     : null;
-  const persistirEnServidor =
-    !memoriaLocal || memoriaLocal.source !== "android_local_primary";
-  const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(
-    mensajeUsuario,
-    { memoriaLocal }
-  );
+  const persistirEnServidor = !memoriaLocal || memoriaLocal.source !== "android_local_primary";
 
-  if (contexto.userId && nombrePersonajeDetectado && persistirEnServidor) {
-    preferenciaNombre.guardarNombrePersonaje(
-      contexto.userId,
-      nombrePersonajeDetectado
-    );
+  // [MEMORY] historial previo (antes de registrar este mensaje)
+  const historialPrevio = memoriaLocal?.recentConversation?.length
+    ? memoriaLocal.recentConversation
+    : historialConversacion.obtenerHistorial(userId, 40);
+
+  // Nombre del personaje (dato, sin respuesta armada)
+  const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(mensajeUsuario, { memoriaLocal });
+  if (nombrePersonajeDetectado && persistirEnServidor) {
+    preferenciaNombre.guardarNombrePersonaje(userId, nombrePersonajeDetectado);
   }
 
-  if (contexto.userId) {
-    try {
-      memoriaUsuario = obtenerUsuario(contexto.userId);
-    } catch (err) {
-      memoriaUsuario = null;
-    }
-  }
+  let memoriaUsuario = null;
+  try { memoriaUsuario = obtenerUsuario(userId); } catch { memoriaUsuario = null; }
+  const entradaProcesada = procesadorEntrada.procesarEntrada(userId, mensajeUsuario, historialPrevio);
 
-  // =========================================================
-  // [ENTRY] 1. ENTRADA
-  // =========================================================
-
-  const entradaProcesada =
-    procesadorEntrada.procesarEntrada(
-      contexto.userId || "anonimo",
-      mensajeUsuario,
-      memoriaLocal?.recentConversation ||
-        memoriaUsuario?.historialConversacion ||
-        []
-    );
-
-  // =========================================================
-  // [MEMORY] 2. MEMORIA (USUARIO BASE)
-  // =========================================================
-
-  // NUEVO: MEMORIA COGNITIVA COMPLETA
+  // Memoria del sistema (registra el mensaje del usuario en el historial)
   let memoriaSistema = null;
-
-  if (contexto.userId) {
-    try {
-      memoriaSistema = await memoriaOrquestador.ejecutar({
-        userId: contexto.userId,
-        mensaje: mensajeUsuario,
-        entradaProcesada,
-        persistirEnServidor
-      });
-    } catch (err) {
-      console.error("Error en memoriaOrquestador:", err);
-      memoriaSistema = null;
-    }
-  }
-
-  // =========================================================
-  // [CONTEXT] 3. CONTEXTO UNIFICADO
-  // =========================================================
-
-  const contextoCompleto = {
-    ...contexto,
-    entradaProcesada,
-    memoriaUsuario,
-    memoriaLocal,
-
-    //  NUEVO: CONTEXTO COGNITIVO COMPLETO
-    memoriaSistema,
-    memoriaEspecializada: {
-      codigoReciente: contexto.userId
-        ? codigoMemoria.contextoBreve(contexto.userId, 5)
-        : [],
-      documentosFiscales: contexto.userId
-        ? documentosFiscales.resumen(contexto.userId)
-        : null,
-      premium: contexto.userId
-        ? premiumManager.obtenerEstado(contexto.userId)
-        : null
-    }
-  };
-
-  if (nombrePersonajeDetectado) {
-    contextoCompleto.memoriaLocal = {
-      ...(contextoCompleto.memoriaLocal || {}),
-      characterName: nombrePersonajeDetectado
-    };
-  }
-
-  const nombrePersonaje = preferenciaNombre.obtenerNombrePersonaje({
-    ...contextoCompleto,
-    datosUsuario: contexto.userId ? datosUsuario.obtener(contexto.userId) : null
-  });
-  contextoCompleto.characterName = nombrePersonaje;
-
-  if (memoriaLocal?.shortTermFocus) {
-    contextoCompleto.memoriaSistema = {
-      ...memoriaSistema,
-      memoriaCorta: {
-        ...(memoriaSistema?.memoriaCorta || {}),
-        foco: memoriaLocal.shortTermFocus,
-        intencionDetectada:
-          memoriaLocal.shortTermIntent ||
-          memoriaSistema?.memoriaCorta?.intencionDetectada
-      }
-    };
-  }
-
-  if (memoriaLocal?.recentConversation?.length) {
-    contextoCompleto.memoriaSistema = {
-      ...(contextoCompleto.memoriaSistema || {}),
-      memoriaSelectiva: {
-        ...(contextoCompleto.memoriaSistema?.memoriaSelectiva || {}),
-        memoriaReciente: memoriaLocal.recentConversation
-      }
-    };
-  }
-
-  if (memoriaLocal?.codeMemories?.length) {
-    contextoCompleto.memoriaEspecializada.codigoReciente =
-      memoriaLocal.codeMemories;
-  }
-
-  if (memoriaLocal?.fiscalMemories?.length) {
-    contextoCompleto.memoriaEspecializada.documentosFiscales = {
-      source: "android_local_primary",
-      totalDocumentos: memoriaLocal.fiscalMemories.length,
-      items: memoriaLocal.fiscalMemories
-    };
-  }
-
-  // =========================================================
-  // [ADULT] Modo Adulto — gate Premium → keyword → intensidad
-  // =========================================================
-  let adultResult = {
-    intercept: false,
-    adult: contexto.userId ? adultMode.obtenerEstado(contexto.userId) : null,
-    checkout: null,
-    video: null
-  };
   try {
-    adultResult = await adultMode.procesarEnChat(
-      contexto.userId,
-      mensajeUsuario,
-      {
-        premium: contextoCompleto.memoriaEspecializada.premium,
-        intentarCheckout: true
-      }
-    );
+    memoriaSistema = await memoriaOrquestador.ejecutar({ userId, mensaje: mensajeUsuario, entradaProcesada, persistirEnServidor });
   } catch (error) {
-    console.error("Error en adultMode:", error);
-  }
-  contextoCompleto.adultMode = adultResult?.adult || null;
-
-  if (adultResult?.intercept) {
-    const expresionMeta = adultResult.toneOverride || {
-      tono: "calido",
-      ritmo: "suave",
-      microexpresion: "mirada_atenta",
-      intensidad: "suave"
-    };
-    const video =
-      adultResult.video ||
-      selectorVideo.seleccionarVideo(contextoCompleto, expresionMeta);
-
-    let checkout = adultResult.checkout || null;
-    if (adultResult.needsCheckout && contexto.userId) {
-      try {
-        const link = await mercadoPagoApi.generarLinkPago(contexto.userId, "Modo Adulto");
-        premiumManager.registrarCheckout(contexto.userId, {
-          preferenceId: link?.id || link?.preferenceId,
-          feature: "Modo Adulto",
-          initPoint: link?.init_point || link?.sandbox_init_point
-        });
-        checkout = {
-          initPoint: link?.init_point || link?.sandbox_init_point || null,
-          preferenceId: link?.id || link?.preferenceId || null
-        };
-      } catch (error) {
-        checkout = null;
-      }
-    }
-
-    if (contexto.userId && adultResult.respuesta && persistirEnServidor) {
-      historialConversacion.registrarMensaje(
-        contexto.userId,
-        adultResult.respuesta,
-        "joi"
-      );
-    }
-
-    return {
-      respuesta: adultResult.respuesta,
-      expresion: expresionMeta,
-      video,
-      premium: contextoCompleto.memoriaEspecializada.premium,
-      adultMode: adultResult.adult,
-      checkout,
-      debug: {
-        adultMode: adultResult,
-        memoriaLocal,
-        memoriaUsuario
-      }
-    };
+    console.error("Error en memoriaOrquestador:", error.message);
   }
 
-  const perfilPersonalidad =
-    personalityEngine.analizar(
-      mensajeUsuario,
-      contextoCompleto
-    );
-
-  contextoCompleto.personalidad = perfilPersonalidad;
-
-  if (
-    nombrePersonajeDetectado ||
-    preferenciaNombre.debePreguntarNombrePersonaje(mensajeUsuario, contextoCompleto)
-  ) {
-    const respuesta = nombrePersonajeDetectado
-      ? preferenciaNombre.construirConfirmacionNombrePersonaje(nombrePersonajeDetectado)
-      : preferenciaNombre.construirPreguntaNombrePersonaje();
-    const expresion = expresionFinal.aplicarExpresionFinal(
-      respuesta,
-      contextoCompleto
-    );
-    const video = selectorVideo.seleccionarVideo(
-      contextoCompleto,
-      expresion.metadata
-    );
-
-    if (contexto.userId && respuesta && persistirEnServidor) {
-      historialConversacion.registrarMensaje(
-        contexto.userId,
-        respuesta,
-        "joi"
-      );
-    }
-
-    return {
-      respuesta: expresion.mensaje,
-      expresion: expresion.metadata,
-      video,
-      premium: contextoCompleto.memoriaEspecializada.premium,
-      debug: {
-        memoriaLocal,
-        memoriaUsuario,
-        memoriaSistema,
-        characterName: contextoCompleto.characterName,
-        nombrePersonajeDetectado
-      }
-    };
-  }
-
-  let debugMemoriaEscritura = null;
-
-  if (contexto.userId && persistirEnServidor) {
+  // Hechos del usuario (nombre, gustos, cosas que contó) — persistidos
+  let memoriaEscritura = null;
+  let memoriaHechos = memoriaConversacional.obtener(userId);
+  if (persistirEnServidor && userId !== "anonimo") {
+    const r = memoriaConversacional.registrar(userId, mensajeUsuario);
+    memoriaHechos = r.memoria;
+    memoriaEscritura = { hechos: r.extraido, cambios: r.cambios };
     try {
-      debugMemoriaEscritura =
-        writeBackEngine.evaluarWriteBack({
-          userId: contexto.userId,
-          mensaje: mensajeUsuario,
-          entradaProcesada
-        });
+      memoriaEscritura.writeBack = writeBackEngine.evaluarWriteBack({ userId, mensaje: mensajeUsuario, entradaProcesada });
     } catch (error) {
-      console.error("Error en writeBackEngine:", error);
-      debugMemoriaEscritura = {
-        guardado: false,
-        error: error.message
-      };
+      memoriaEscritura.writeBack = { guardado: false, error: error.message };
     }
   }
-
-  // =========================================================
-  // [COGNITION] 4. COGNICIÓN (DECISIÓN CENTRAL)
-  // =========================================================
-
-  if (perfilPersonalidad?.seguridad?.bloqueado) {
-    return {
-      respuesta: perfilPersonalidad.seguridad.mensaje,
-      expresion: {
-        tono: "serio",
-        ritmo: "suave",
-        microexpresion: "mirada_atenta",
-        intensidad: "suave"
-      },
-      video: selectorVideo.seleccionarVideo(
-        contextoCompleto,
-        { tono: "serio" }
-      ),
-      premium: contextoCompleto.memoriaEspecializada.premium,
-      debug: {
-        entradaProcesada,
-        memoriaUsuario,
-        memoriaSistema,
-        memoriaEspecializada:
-          contextoCompleto.memoriaEspecializada,
-        memoriaLocal,
-        memoriaEscritura:
-          debugMemoriaEscritura,
-        personalidad: perfilPersonalidad
-      }
+  if (memoriaLocal) {
+    memoriaHechos = {
+      ...memoriaHechos,
+      hechos: [...(memoriaHechos.hechos || []), ...memoriaLocal.persistentMemories.map(m => m?.text).filter(Boolean),
+        ...memoriaLocal.importantMemories.map(m => m?.text).filter(Boolean)]
     };
   }
 
-  const resultadoCognicion = await cognicion(mensajeUsuario, contextoCompleto);
-
-  let respuesta = resultadoCognicion?.respuesta || "No pude generar una respuesta.";
-  let debugLLM = {
-    ...veniceClient.obtenerDiagnostico(),
-    used: false,
-    fallback: "motor_local"
-  };
-
-  // Primer contacto / saludo sin historial: no pasar basura de cognición ("Ok.") como guía.
-  const primerContactoLLM = veniceClient.esPrimerContacto(
-    contextoCompleto,
-    mensajeUsuario
-  );
-  const respuestaBaseLLM = primerContactoLLM ? "" : respuesta;
-
+  // Modo adulto: solo estado/gate (sin respuestas armadas)
+  const premium = premiumManager.obtenerEstado(userId);
+  let adultResult = { intercept: false, adult: null };
   try {
-    const resultadoLLM =
-      await veniceClient.generarRespuesta({
-        mensajeUsuario,
-        contexto: contextoCompleto,
-        respuestaBase: respuestaBaseLLM
-      });
-
-    if (resultadoLLM?.respuesta) {
-      respuesta = resultadoLLM.respuesta;
-      debugLLM = {
-        provider: resultadoLLM.provider,
-        model: resultadoLLM.model,
-        configured: resultadoLLM.configured,
-        used: resultadoLLM.used,
-        usage: resultadoLLM.usage || null
-      };
-    } else if (resultadoLLM?.reason) {
-      debugLLM = {
-        ...debugLLM,
-        configured: resultadoLLM.configured,
-        reason: resultadoLLM.reason
-      };
-    }
+    adultResult = await adultMode.procesarEnChat(userId, mensajeUsuario, { premium, intentarCheckout: true });
   } catch (error) {
-    console.error("Error llamando a Venice:", error);
-    debugLLM = {
-      ...debugLLM,
-      error: error.message
-    };
+    console.error("Error en adultMode:", error.message);
   }
-
-  if (primerContactoLLM) {
-    const genericasPrimer = new Set([
-      "ok.",
-      "ok",
-      "puedo ayudarte con eso.",
-      "entiendo lo que decís.",
-      "entiendo lo que decis.",
-      "no pude generar una respuesta."
-    ]);
-    const limpia = String(respuesta || "").trim().toLowerCase();
-    if (!debugLLM?.used || genericasPrimer.has(limpia) || !limpia) {
-      const saludos = [
-        "Hola, qué bueno que estés acá. ¿Cómo te llamás?",
-        "Hola, un gusto. ¿Cómo andás?",
-        "Hola, recién empezamos… ¿cómo estás?"
-      ];
-      respuesta = saludos[Math.floor(Math.random() * saludos.length)];
-      debugLLM = {
-        ...debugLLM,
-        firstContactFallback: true
-      };
+  let checkout = adultResult?.checkout || null;
+  const extra = [];
+  if (adultResult?.intercept) {
+    extra.push(`Evento modo adulto: ${adultResult.video?.etiqueta || (adultResult.needsCheckout ? "premium_requerido" : "estado_actualizado")}`);
+    if (adultResult.adult?.keyword && adultResult.video?.etiqueta === "keyword_asignada") {
+      extra.push(`Palabra clave del modo adulto asignada al usuario: ${adultResult.adult.keyword}`);
+    }
+    if (adultResult.needsCheckout && userId !== "anonimo") {
+      try {
+        const link = await mercadoPagoApi.generarLinkPago(userId, "Modo Adulto");
+        checkout = { initPoint: link?.init_point || link?.sandbox_init_point || null, preferenceId: link?.id || link?.preferenceId || null };
+        premiumManager.registrarCheckout(userId, { preferenceId: checkout.preferenceId, feature: "Modo Adulto", initPoint: checkout.initPoint });
+        if (checkout.initPoint) extra.push(`Link de pago Premium generado: ${checkout.initPoint}`);
+      } catch {
+        extra.push("Link de pago Premium: no disponible (Mercado Pago no configurado)");
+      }
     }
   }
 
-  // =========================================================
-  // [PERSONA] 5. PERSONALIDAD (QUIÉN LO DICE)
-  // =========================================================
+  // [ACTIONS] alarmas / agenda (deterministas)
+  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor);
 
-  if (perfilPersonalidad?.basePersona?.estado) {
-    contextoCompleto.estado =
-      perfilPersonalidad.basePersona.estado;
-  } else if (
-    personalidad &&
-    typeof personalidad.decidirComportamiento === "function"
-  ) {
-    const decisionPersonalidad =
-      personalidad.decidirComportamiento({
-        mensajeUsuario,
-        estado: contexto.estado || {}
-      });
+  // [CONTEXT] herramientas + memoria + funciones de la app
+  const herramientas = await contextoLLM.obtenerHerramientas(userId, {
+    lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria
+  });
+  const characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({
+    memoriaLocal, datosUsuario: datosUsuario.obtener(userId)
+  });
+  const mensajeContexto = contextoLLM.construirMensajeContexto({
+    herramientas,
+    memoria: memoriaHechos,
+    datosPerfil: datosUsuario.obtener(userId),
+    characterName,
+    app: contextoLLM.funcionesApp(userId),
+    accionesTurno: acciones,
+    extra
+  });
+  const mensajes = [
+    mensajeContexto,
+    ...contextoLLM.historialAMensajes(historialPrevio, 20),
+    { role: "user", content: mensajeUsuario }
+  ];
 
-    if (decisionPersonalidad?.estado) {
-      contextoCompleto.estado =
-        decisionPersonalidad.estado;
-    }
+  // [LLM] respuesta sin filtros
+  let respuesta = null;
+  let debugLLM = { ...dolphinClient.obtenerDiagnostico(), used: false };
+  try {
+    const r = await dolphinClient.chat(mensajes);
+    debugLLM = { ...debugLLM, ...r, respuesta: undefined };
+    respuesta = r.respuesta;
+  } catch (error) {
+    debugLLM = { ...debugLLM, used: false, error: error.message };
   }
 
-  // =========================================================
-  // [STYLE] 6. ESTILO EXPRESIVO (CÓMO LO DICE)
-  // =========================================================
-
-  // En primer contacto no aplicar estiloExpresivo (evita "che, Ok. 😉" y mid-chat fluff).
-  if (!primerContactoLLM && typeof estiloExpresivo === "function") {
-    respuesta = estiloExpresivo(respuesta, contextoCompleto);
+  // [MEMORY] write-back de la respuesta del LLM
+  if (respuesta && persistirEnServidor && userId !== "anonimo") {
+    historialConversacion.registrarMensaje(userId, respuesta, "joi");
   }
 
-  respuesta = personalityEngine.aplicar(
-    respuesta,
-    perfilPersonalidad,
-    contextoCompleto
-  );
-
-  const expresion =
-    expresionFinal.aplicarExpresionFinal(
-      respuesta,
-      contextoCompleto
-    );
-  respuesta = expresion.mensaje;
-
-  let video =
-    selectorVideo.seleccionarVideo(
-      contextoCompleto,
-      expresion.metadata
-    );
-
-  if (adultResult?.video?.categoria && adultResult?.adult?.unlocked) {
-    video = {
-      ...video,
-      ...adultResult.video,
-      categoria: adultResult.video.categoria || video.categoria,
-      etiqueta: adultResult.video.etiqueta || video.etiqueta
-    };
-  }
-
-  if (adultResult?.toneOverride?.intensidad && adultResult?.adult?.allowAdultTone) {
-    expresion.metadata = {
-      ...expresion.metadata,
-      ...adultResult.toneOverride
-    };
-  }
-
-  if (contexto.userId && respuesta && persistirEnServidor) {
-    historialConversacion.registrarMensaje(
-      contexto.userId,
-      respuesta,
-      "joi"
-    );
-  }
-
-  // =========================================================
-  // [OUTPUT] 7. SALIDA FINAL
-  // =========================================================
+  const video = selectorVideo.seleccionarVideo({ adultMode: adultResult?.adult }, EXPRESION_NEUTRA);
 
   return {
     respuesta,
-    expresion: expresion.metadata,
-    video,
-    premium: contextoCompleto.memoriaEspecializada.premium,
+    llmDisponible: Boolean(respuesta),
+    expresion: EXPRESION_NEUTRA,
+    video: adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video,
+    premium,
     adultMode: adultResult?.adult || null,
-    checkout: adultResult?.checkout || null,
+    checkout,
+    acciones: accionesResultado,
     debug: {
-      entradaProcesada,
-      cognicion: resultadoCognicion,
-      memoriaUsuario,
-
-      // NUEVO DEBUG COMPLETO
-      memoriaSistema,
-      memoriaEspecializada:
-        contextoCompleto.memoriaEspecializada,
-      memoriaLocal,
-      memoriaEscritura:
-        debugMemoriaEscritura,
       llm: debugLLM,
-      personalidad: perfilPersonalidad
+      contexto: mensajeContexto.content,
+      historialEnviado: mensajes.length - 2,
+      memoriaEscritura,
+      memoriaHechos,
+      memoriaSistema: memoriaSistema ? Object.keys(memoriaSistema) : null,
+      memoriaUsuario: memoriaUsuario ? true : false
     }
   };
 }
 
-export default orquestador; 
+export default orquestador;
