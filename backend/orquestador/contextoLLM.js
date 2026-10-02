@@ -68,7 +68,8 @@ function lineaClima(c) {
 function lineasNoticias(n) {
   if (!Array.isArray(n)) return [`Noticias: NO DISPONIBLES en este momento (${n?.motivo || "sin datos"})`];
   if (!n.length) return ["Noticias: sin titulares recientes"];
-  return ["Titulares recientes (Argentina):", ...n.slice(0, 3).map(x => `  • ${x.titulo}${x.fecha ? ` [${x.fecha.slice(0, 10)}]` : ""}`)];
+  const fuente = n[0]?.proveedor === "newsapi" ? "NewsAPI" : "Google News Argentina";
+  return [`Noticias de hoy obtenidas por la app en tiempo real (${fuente}):`, ...n.slice(0, 3).map(x => `  • ${x.titulo}${x.fecha ? ` [${x.fecha.slice(0, 10)}]` : ""}`)];
 }
 
 function lineasAgenda(a) {
@@ -84,7 +85,14 @@ export function construirMensajeContexto({ herramientas, memoria, datosPerfil, c
   const h = herramientas.hora;
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
-  l.push(`Fecha y hora actual: ${h.fechaLarga}, ${h.hora} (${h.zonaHoraria})`);
+  const nombre = memoria?.nombre || datosPerfil?.identidad?.nombre || null;
+  l.push(`Nombre del usuario: ${nombre || "desconocido"}`);
+  if (characterName) l.push(`Nombre que el usuario eligió para vos: ${characterName}`);
+  if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
+  if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
+  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...memoria.hechos.slice(-15).map(x => `  • ${x}`));
+  l.push(`Hora actual: ${h.hora} (${h.zonaHoraria})`);
+  l.push(`Fecha de hoy: ${h.fechaLarga}`);
   l.push(`Ubicación por defecto del usuario: ${memoria?.ciudad || UBICACION_DEFAULT.ciudad}`);
   l.push(lineaClima(herramientas.clima));
   l.push(...lineasNoticias(herramientas.noticias));
@@ -92,22 +100,19 @@ export function construirMensajeContexto({ herramientas, memoria, datosPerfil, c
   l.push(herramientas.alarmas.length
     ? `Alarmas activas del usuario: ${herramientas.alarmas.map(a => `${a.hora} (${a.titulo})`).join(", ")}`
     : "Alarmas activas del usuario: ninguna");
-  const nombre = memoria?.nombre || datosPerfil?.identidad?.nombre || null;
-  l.push(`Nombre del usuario: ${nombre || "desconocido"}`);
-  if (characterName) l.push(`Nombre que el usuario eligió para vos: ${characterName}`);
-  if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
-  if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
-  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...memoria.hechos.slice(-15).map(x => `  • ${x}`));
   l.push("Funciones de la app:", ...app.lineas.map(x => `  • ${x}`));
   if (accionesTurno.length) l.push("Acciones del sistema en este mensaje:", ...accionesTurno.map(x => `  • ${x}`));
   if (extra.length) l.push(...extra);
   return { role: "system", content: l.join("\n") };
 }
 
-export function historialAMensajes(historial = [], limite = 20) {
-  return historial.slice(-limite).map(item => ({
+const HISTORIAL_MAX = Number(process.env.ME2_HISTORY_MESSAGES || 12);
+const HISTORIAL_CHARS = Number(process.env.ME2_HISTORY_CHARS || 1200);
+
+export function historialAMensajes(historial = [], limite = HISTORIAL_MAX) {
+  return historial.slice(-Math.min(limite, HISTORIAL_MAX)).map(item => ({
     role: item.tipo === "joi" || item.role === "assistant" ? "assistant" : "user",
-    content: String(item.mensaje ?? item.text ?? "").slice(0, 4000)
+    content: String(item.mensaje ?? item.text ?? "").slice(0, HISTORIAL_CHARS)
   })).filter(m => m.content.trim());
 }
 

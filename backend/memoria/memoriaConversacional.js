@@ -27,14 +27,17 @@ function capitalizar(nombre) {
   return nombre.split(" ").map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(" ");
 }
 
-const NO_NOMBRES = new Set(["bien", "mal", "yo", "de", "un", "una", "el", "la", "muy", "re", "tan", "medio", "programador", "argentino", "nuevo", "nueva"]);
+const NO_NOMBRES = new Set(["bien", "mal", "yo", "de", "un", "una", "el", "la", "muy", "re", "tan", "medio", "programador", "argentino", "nuevo", "nueva", "y", "que", "qué", "como", "cómo", "asi", "así"]);
 
 export function extraerHechos(mensaje = "") {
   const texto = String(mensaje);
   const out = { nombre: null, ciudad: null, gustos: [], disgustos: [], hechos: [] };
 
-  const nombre = texto.match(/\b(?:me llamo|mi nombre es|llamame|decime)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/i);
-  if (nombre && !NO_NOMBRES.has(nombre[1].toLowerCase())) out.nombre = capitalizar(limpiar(nombre[1]));
+  // Trigger insensible a mayúsculas; el apellido opcional debe venir capitalizado. Excluye preguntas ("¿cómo me llamo?").
+  const nombre = texto.match(/(?<![Cc][oó]mo\s)(?<![Cc][oó]mo\ste\s)\b(?:[Mm]e llamo|[Mm]i nombre es|[Ll]lamame|[Ll]lámame)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)(?:\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+))?/);
+  if (nombre && !NO_NOMBRES.has(nombre[1].toLowerCase()) && !/\?\s*$/.test(texto.slice(nombre.index, nombre.index + 60).split(/[.!]/)[0])) {
+    out.nombre = capitalizar(limpiar([nombre[1], nombre[2]].filter(Boolean).join(" ")));
+  }
 
   const ciudad = texto.match(/\b(?:vivo en|soy de|estoy viviendo en)\s+([A-Za-zÁÉÍÓÚÑáéíóúñ .]+?)(?=[,.;!?]|$| y )/i);
   if (ciudad) out.ciudad = limpiar(ciudad[1]).slice(0, 60);
