@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Barra fina cyan con halo: pista tenue + progreso recortado. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background">
+        <shape><corners android:radius="3dp" /><solid android:color="@color/me2_divider" /></shape>
+    </item>
+    <item android:id="@android:id/progress">
+        <clip>
+            <layer-list>
+                <item><shape><corners android:radius="3dp" /><solid android:color="#332AE6D4" /></shape></item>
+                <item android:top="1.5dp" android:bottom="1.5dp">
+                    <shape><corners android:radius="2dp" /><solid android:color="@color/me2_accent" /></shape></item>
+            </layer-list>
+        </clip>
+    </item>
+</layer-list>

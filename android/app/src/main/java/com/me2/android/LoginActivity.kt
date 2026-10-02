@@ -12,6 +12,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.Scope
 import com.me2.android.config.ApiConfig
 import com.me2.android.data.LocalMemoryStore
 import com.me2.android.data.SessionStorage
@@ -97,6 +98,9 @@ class LoginActivity : AppCompatActivity() {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
                 .requestEmail()
                 .requestIdToken(clientId)
+                // Fecha de nacimiento de la cuenta Google (People API) para verificar 18+ antes de Premium.
+                .requestScopes(Scope(BIRTHDAY_SCOPE))
+                .requestServerAuthCode(clientId)
                 .build()
             googleSignInClient = GoogleSignIn.getClient(this, gso)
             binding.googleButton.setOnClickListener {
@@ -168,7 +172,7 @@ class LoginActivity : AppCompatActivity() {
 
         thread {
             runCatching {
-                backendClient.authenticateWithGoogle(idToken)
+                backendClient.authenticateWithGoogle(idToken, account.serverAuthCode)
             }.onSuccess { auth ->
                 val session = UserSession(
                     displayName = auth.displayName.ifBlank { fallbackSession.displayName },
@@ -219,6 +223,7 @@ class LoginActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "Me2Login"
+        private const val BIRTHDAY_SCOPE = "https://www.googleapis.com/auth/user.birthday.read"
         const val EXTRA_DEMO_PREVIEW = "demo_preview"
         const val PREFS_LAUNCH_GUARD = "me2_launch_guard"
         const val KEY_MAIN_PENDING = "main_pending"

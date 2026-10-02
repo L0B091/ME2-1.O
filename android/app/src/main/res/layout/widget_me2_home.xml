@@ -9,13 +9,14 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/bg_widget_ring"
-        android:padding="6dp">
+        android:padding="12dp">
 
         <ImageView
             android:id="@+id/widgetAvatar"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:scaleType="centerCrop"
+            android:scaleType="fitCenter"
+            android:adjustViewBounds="true"
             android:src="@drawable/me2_mark"
             android:contentDescription="@string/app_name" />
 

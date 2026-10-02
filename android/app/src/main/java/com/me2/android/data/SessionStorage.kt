@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
-import kotlin.math.min
 
 class SessionStorage(context: Context) {
     private val appContext = context.applicationContext
@@ -78,10 +77,8 @@ class SessionStorage(context: Context) {
         preferences.edit().putLong(KEY_USAGE_MINUTES, current + minutes).apply()
     }
 
-    fun linkPercentage(session: UserSession): Int {
-        val hours = session.usageMinutes / 60.0
-        return min(99, (44 + hours * 2).toInt())
-    }
+    fun linkPercentage(session: UserSession): Double =
+        com.me2.android.ui.LinkProgress.percent(session.usageMinutes)
 
     fun saveAdultKeyword(keyword: String?) {
         preferences.edit().putString(KEY_ADULT_KEYWORD, keyword).apply()

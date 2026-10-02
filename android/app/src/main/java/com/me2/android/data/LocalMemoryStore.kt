@@ -9,7 +9,9 @@ data class LocalConversationEntry(
     val role: String,
     val text: String,
     val timestamp: Long,
-    val initiativeId: String? = null
+    val initiativeId: String? = null,
+    /** Emoji con el que reaccionó el avatar (solo en mensajes del usuario). */
+    val reaction: String? = null
 )
 
 data class LocalMemoryNote(
@@ -58,6 +60,7 @@ data class LocalMe2Memory(
                     put("text", entry.text)
                     put("timestamp", entry.timestamp)
                     entry.initiativeId?.let { put("initiativeId", it) }
+                    entry.reaction?.let { put("reaction", it) }
                 })
             }
         })
@@ -139,7 +142,8 @@ data class LocalMe2Memory(
                     role = item.optString("role", "user"),
                     text = item.optString("text", ""),
                     timestamp = item.optLong("timestamp", System.currentTimeMillis()),
-                    initiativeId = item.optString("initiativeId").takeIf { it.isNotBlank() }
+                    initiativeId = item.optString("initiativeId").takeIf { it.isNotBlank() },
+                    reaction = item.optString("reaction").takeIf { it.isNotBlank() }
                 )
             }
             return result
@@ -287,6 +291,16 @@ class LocalMemoryStore(context: Context) {
                 appendFiscalMemory(userId, item.optString("name", "fiscal"), item.optString("summary", item.optString("text")))
             }
         }
+    }
+
+    /** Persiste la reacción del avatar sobre el último mensaje del usuario. */
+    fun setReactionOnLastUserMessage(userId: String, emoji: String) {
+        val memory = load(userId)
+        val idx = memory.conversation.indexOfLast { it.role == "user" }
+        if (idx < 0) return
+        val conv = memory.conversation.toMutableList()
+        conv[idx] = conv[idx].copy(reaction = emoji)
+        save(memory.copy(conversation = conv))
     }
 
     fun appendAssistantMessage(userId: String, rawText: String) {

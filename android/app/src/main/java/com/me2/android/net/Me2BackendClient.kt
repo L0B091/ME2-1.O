@@ -46,7 +46,10 @@ data class BackendChatResult(
     val adultMode: AdultModeSnapshot? = null,
     val checkoutInitPoint: String? = null,
     val videoCategoria: String? = null,
-    val videoEtiqueta: String? = null
+    val videoEtiqueta: String? = null,
+    val clip: com.me2.android.ui.ChatMediaRouting.Clip? = null,
+    val media: com.me2.android.ui.ChatMediaRouting.Media? = null,
+    val reaction: String? = null
 )
 
 data class PremiumStatusResult(
@@ -91,6 +94,26 @@ class Me2BackendClient {
     private val baseUrl: String = ApiConfig.backendBaseUrl.ifBlank { BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/') }
     private val betaPremiumMillis = 4102444800000L
 
+    fun absoluteUrl(path: String?): String? = when {
+        path.isNullOrBlank() -> null
+        path.startsWith("http") -> path
+        else -> "$baseUrl$path"
+    }
+
+    /** Descarga autenticada (medios del chat protegidos por sesión). */
+    fun fetchBytes(url: String, authToken: String?): ByteArray {
+        val c = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10_000; readTimeout = 20_000
+            authToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+        }
+        try {
+            if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
+            return c.inputStream.use { it.readBytes() }
+        } finally {
+            c.disconnect()
+        }
+    }
+
     fun isConfigured(): Boolean = ApiConfig.isBackendReady() && baseUrl.isNotEmpty()
 
     fun isOnline(context: Context): Boolean {
@@ -100,11 +123,12 @@ class Me2BackendClient {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    fun authenticateWithGoogle(idToken: String): BackendAuthResult {
+    /** serverAuthCode (scope user.birthday.read): el backend lo canjea para leer la fecha de nacimiento (verificación 18+). */
+    fun authenticateWithGoogle(idToken: String, serverAuthCode: String? = null): BackendAuthResult {
         val json = request(
             method = "POST",
             path = "/api/auth/google",
-            body = JSONObject().put("idToken", idToken)
+            body = JSONObject().put("idToken", idToken).apply { serverAuthCode?.let { put("serverAuthCode", it) } }
         )
         val data = json.optJSONObject("data") ?: json
         val profile = data.optJSONObject("profile") ?: JSONObject()
@@ -189,7 +213,17 @@ class Me2BackendClient {
             },
             checkoutInitPoint = checkoutJson?.optString("initPoint")?.ifBlank { null },
             videoCategoria = videoJson?.optString("categoria")?.ifBlank { null },
-            videoEtiqueta = videoJson?.optString("etiqueta")?.ifBlank { null }
+            videoEtiqueta = videoJson?.optString("etiqueta")?.ifBlank { null },
+            clip = json.optJSONObject("clip")?.let {
+                com.me2.android.ui.ChatMediaRouting.Clip(
+                    tipo = it.optString("tipo", "clip"), fuente = it.optString("fuente", "galeria"),
+                    categoria = it.optString("categoria").ifBlank { null }, url = absoluteUrl(it.optString("url"))
+                )
+            },
+            media = json.optJSONObject("media")?.let {
+                com.me2.android.ui.ChatMediaRouting.Media(tipo = it.optString("tipo"), url = absoluteUrl(it.optString("url")))
+            },
+            reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null }
         )
     }
 

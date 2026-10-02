@@ -25,6 +25,13 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import android.graphics.ImageDecoder
+import android.graphics.drawable.AnimatedImageDrawable
+import android.widget.ImageView
+import java.nio.ByteBuffer
+import com.me2.android.ui.ChatMediaRouting
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -44,6 +51,7 @@ import com.me2.android.notifications.Me2NotificationCoordinator
 import com.me2.android.notifications.Me2InitiativeScheduler
 import com.me2.android.notifications.Me2InitiativeStore
 import com.me2.android.ui.ChatAdapter
+import com.me2.android.ui.BitacoraContent
 import com.me2.android.widget.Me2HomeWidgetProvider
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -290,6 +298,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupToolbar() {
         binding.drawerLayout.setScrimColor(ContextCompat.getColor(this, R.color.me2_drawer_scrim))
         binding.bitacoraButton.setOnClickListener {
+            runCatching { renderBitacoraTexts(sessionStorage.loadUser() ?: currentSession) }
             binding.drawerLayout.openDrawer(GravityCompat.START)
         }
         binding.clearChatButton.setOnClickListener {
@@ -302,7 +311,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupChat() {
-        chatAdapter = ChatAdapter()
+        chatAdapter = ChatAdapter(gifLoader = ::loadChatGif)
         binding.chatRecyclerView.layoutManager = LinearLayoutManager(this).apply {
             stackFromEnd = true
         }
@@ -311,20 +320,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupBitacora(session: UserSession) {
-        binding.userNameText.text = "MAIL // ${session.email.uppercase(Locale.getDefault())}"
-        val planTag = when {
-            session.isDemo -> getString(R.string.demo_session_plan)
-            session.isPremium -> "PREMIUM"
-            else -> "FREE"
-        }
-        binding.userIdText.text = "PLAN // $planTag"
-        binding.linkText.text = "ENLACE PSICOLÓGICO // ${sessionStorage.linkPercentage(session)}%"
-        val planLabel = when {
-            session.isDemo -> getString(R.string.demo_session_plan)
-            session.isPremium -> "ESTABLE (PREMIUM)"
-            else -> "ESTABLE (FREE)"
-        }
-        binding.statusText.text = "ESTADO // $planLabel"
+        renderBitacoraTexts(session)
         binding.homeWidgetSwitch.setOnCheckedChangeListener(null)
         binding.homeWidgetSwitch.isChecked = sessionStorage.isHomeWidgetEnabled()
         binding.homeWidgetSwitch.setOnCheckedChangeListener { _, checked ->
@@ -354,10 +350,19 @@ class MainActivity : AppCompatActivity() {
                 completeSignOut()
             }
         }
+    }
 
-        binding.premiumButton.setOnClickListener {
-            showPremiumDialog()
-        }
+    /** Bitácora: nombre, AVATAR // nombre (si se conoce), NODO_ID, MAIL y enlace con un decimal. Sin plan/premium. */
+    private fun renderBitacoraTexts(session: UserSession) {
+        val avatarName = runCatching { localMemoryStore.load(session.id).characterName }.getOrNull()
+        val content = BitacoraContent.build(session.displayName, session.email, session.id, avatarName, session.usageMinutes)
+        binding.userNameText.text = content.userName
+        binding.avatarNameText.text = content.avatarLine.orEmpty()
+        binding.avatarNameText.visibility = if (content.avatarLine == null) View.GONE else View.VISIBLE
+        binding.nodeIdText.text = content.nodeLine
+        binding.mailText.text = content.mailLine
+        binding.linkText.text = content.linkLabel
+        binding.linkProgressBar.progress = content.linkProgressTenths
     }
 
 
@@ -437,7 +442,7 @@ class MainActivity : AppCompatActivity() {
                 entry.text
             }
             val isMe2 = entry.role != "user"
-            val message = ChatMessage(text, isMe2)
+            val message = ChatMessage(text, isMe2, reaction = if (isMe2) null else entry.reaction)
             fullConversation += message
             if (entry.timestamp > memory.hiddenConversationThrough) visibleConversation += message
         }
@@ -472,87 +477,6 @@ class MainActivity : AppCompatActivity() {
         binding.chatRecyclerView.post {
             if (chatAdapter.itemCount > 0) {
                 binding.chatRecyclerView.scrollToPosition(chatAdapter.itemCount - 1)
-            }
-        }
-    }
-
-    private fun showPremiumDialog() {
-        val premiumCopy = if (currentSession.isPremium) {
-            getString(R.string.adult_mode_active_copy)
-        } else {
-            getString(R.string.adult_mode_premium_copy)
-        }
-        val builder = AlertDialog.Builder(this)
-            .setTitle("PREMIUM ME2")
-            .setMessage(premiumCopy)
-
-        if (currentSession.isPremium && !currentSession.authToken.isNullOrBlank()) {
-            builder
-                .setPositiveButton(getString(R.string.premium_backup)) { _, _ ->
-                    performPremiumBackup()
-                }
-                .setNeutralButton(getString(R.string.premium_tools)) { _, _ ->
-                    showPremiumToolsDialog()
-                }
-                .setNegativeButton(getString(R.string.premium_restore)) { _, _ ->
-                    restorePremiumBackup()
-                }
-        } else {
-            builder
-                .setPositiveButton(getString(R.string.premium_checkout)) { _, _ ->
-                    openMercadoPagoCheckout()
-                }
-                .setNegativeButton("CERRAR", null)
-        }
-
-        builder.show()
-    }
-
-    private fun showPremiumToolsDialog() {
-        if (!currentSession.isPremium) {
-            Toast.makeText(this, getString(R.string.premium_required), Toast.LENGTH_SHORT).show()
-            return
-        }
-        val memory = localMemoryStore.load(currentSession.id)
-        val summary = buildString {
-            append("CÓDIGO: ${memory.codeMemories.size} recuerdos\n")
-            append("FISCAL: ${memory.fiscalMemories.size} recuerdos\n")
-            append("TODO: envío de mail al contador / captura de imágenes fiscales pendiente en backend.")
-        }
-        AlertDialog.Builder(this)
-            .setTitle(getString(R.string.premium_tools))
-            .setMessage(summary)
-            .setPositiveButton("CERRAR", null)
-            .show()
-    }
-
-    private fun openMercadoPagoCheckout() {
-        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured()) {
-            Toast.makeText(this, getString(R.string.premium_checkout_unavailable), Toast.LENGTH_LONG).show()
-            return
-        }
-        if (!backendClient.isOnline(this)) {
-            Toast.makeText(this, getString(R.string.premium_checkout_offline), Toast.LENGTH_LONG).show()
-            return
-        }
-        Toast.makeText(this, getString(R.string.premium_checkout_starting), Toast.LENGTH_SHORT).show()
-        thread {
-            runCatching {
-                backendClient.createMercadoPagoCheckout(currentSession)
-            }.onSuccess { checkout ->
-                runOnUiThread {
-                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(checkout.initPoint)))
-                    // After returning, refresh premium status (verify endpoint may be unconfigured).
-                    syncPremiumState()
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        error.message?.takeIf { it.isNotBlank() } ?: getString(R.string.premium_checkout_unavailable),
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
             }
         }
     }
@@ -611,19 +535,13 @@ class MainActivity : AppCompatActivity() {
                         ?: result.microExpression?.uppercase(Locale.getDefault())
                         ?: "SYNC"
                     appendAssistantReply(result.reply, state, detail, typewriter = true)
+                    applyChatMedia(result)
                     startedFromEmptyLocalMemory = false
                     result.premiumUntilMillis?.let { premiumUntil ->
                         updateCurrentSession(currentSession.copy(premiumUntilMillis = premiumUntil))
                     }
-                    result.checkoutInitPoint?.takeIf { it.isNotBlank() }?.let { initPoint ->
-                        runCatching {
-                            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(initPoint)))
-                        }
-                    }
-                    // Persist keyword if ME2 just assigned one in the reply.
-                    extractAdultKeyword(result.reply)?.let { keyword ->
-                        sessionStorage.saveAdultKeyword(keyword)
-                    }
+                    // El link de pago llega dentro del texto del LLM (clickeable en la burbuja); la palabra
+                    // clave del modo adulto no se guarda en el teléfono (el backend solo guarda su hash).
                 }
             }.onFailure {
                 runOnUiThread {
@@ -658,22 +576,70 @@ class MainActivity : AppCompatActivity() {
         renderConversation()
     }
 
+    /**
+     * Reacción emoji → burbuja del usuario; clip adulto remoto → contenedor del avatar (solo video);
+     * GIF → burbuja inline del avatar (solo modo adulto). Nunca GIF en el contenedor de video.
+     */
+    private fun applyChatMedia(result: com.me2.android.net.BackendChatResult) {
+        val adultUnlocked = result.adultMode?.unlocked == true
+        result.reaction?.let { emoji ->
+            markLastUserReaction(fullConversation, emoji)
+            markLastUserReaction(visibleConversation, emoji)
+            runCatching { localMemoryStore.setReactionOnLastUserMessage(currentSession.id, emoji) }
+        }
+        ChatMediaRouting.avatarRemoteClipUrl(result.clip, adultUnlocked)?.let { playRemoteAvatarClip(it) }
+        ChatMediaRouting.inlineGifUrl(result.media, adultUnlocked)?.let { url ->
+            val gifBubble = ChatMessage("", true, gifUrl = url)
+            fullConversation += gifBubble
+            visibleConversation += gifBubble
+        }
+        renderConversation()
+    }
+
+    private fun markLastUserReaction(list: MutableList<ChatMessage>, emoji: String) {
+        val idx = list.indexOfLast { !it.fromMe2 }
+        if (idx >= 0) list[idx] = list[idx].copy(reaction = emoji)
+    }
+
+    private fun playRemoteAvatarClip(url: String) {
+        val exoPlayer = player ?: return
+        runCatching {
+            val headers = currentSession.authToken?.let { mapOf("Authorization" to "Bearer $it") } ?: emptyMap()
+            val factory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(headers)
+            exoPlayer.setMediaSource(ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(url)))
+            currentAvatarClipId = "remote:$url"
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
+        }.onFailure { Log.w(TAG, "clip remoto no disponible: ${it.javaClass.simpleName}") }
+    }
+
+    private fun loadChatGif(url: String, target: ImageView) {
+        target.tag = url
+        val token = currentSession.authToken
+        thread {
+            val drawable = runCatching {
+                val bytes = backendClient.fetchBytes(url, token)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    ImageDecoder.decodeDrawable(ImageDecoder.createSource(ByteBuffer.wrap(bytes)))
+                } else {
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { android.graphics.drawable.BitmapDrawable(resources, it) }
+                }
+            }.getOrNull()
+            runOnUiThread {
+                if (target.tag != url || drawable == null) return@runOnUiThread
+                target.setImageDrawable(drawable)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && drawable is AnimatedImageDrawable) {
+                    drawable.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
+                    drawable.start()
+                }
+            }
+        }
+    }
+
     private fun applyAdultModeFromChat(result: com.me2.android.net.BackendChatResult) {
         val adult = result.adultMode ?: return
         sessionStorage.saveAdultUnlocked(adult.unlocked)
         adult.intensity?.let { sessionStorage.saveAdultIntensity(it) }
-    }
-
-    private fun extractAdultKeyword(reply: String): String? {
-        val patterns = listOf(
-            Regex("""palabra clave para modo adulto será:\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)""", RegexOption.IGNORE_CASE),
-            Regex("""palabra clave para modo adulto sera:\s*([A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)""", RegexOption.IGNORE_CASE)
-        )
-        for (re in patterns) {
-            val m = re.find(reply) ?: continue
-            return m.groupValues.getOrNull(1)?.lowercase(Locale.getDefault())
-        }
-        return null
     }
 
     private fun syncPremiumState() {
