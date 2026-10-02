@@ -9,23 +9,6 @@ import kotlin.math.min
 class SessionStorage(context: Context) {
     private val appContext = context.applicationContext
 
-    private val legacyPlain: SharedPreferences =
-        appContext.getSharedPreferences("joi_session", Context.MODE_PRIVATE)
-
-    private val legacySecure: SharedPreferences? =
-        runCatching {
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                appContext,
-                "joi_session_secure",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }.getOrNull()
-
     private val preferences: SharedPreferences =
         runCatching {
             val masterKey = MasterKey.Builder(appContext)
@@ -41,10 +24,6 @@ class SessionStorage(context: Context) {
         }.getOrElse {
             appContext.getSharedPreferences("me2_session", Context.MODE_PRIVATE)
         }
-
-    init {
-        migrateLegacyIfNeeded()
-    }
 
     fun saveUser(session: UserSession) {
         preferences.edit()
@@ -144,27 +123,6 @@ class SessionStorage(context: Context) {
 
     fun loadLastTemperature(): String =
         preferences.getString(KEY_LAST_TEMP, "—°C") ?: "—°C"
-
-    private fun migrateLegacyIfNeeded() {
-        if (preferences.contains(KEY_ID)) return
-        val source = when {
-            legacySecure?.contains(KEY_ID) == true -> legacySecure
-            legacyPlain.contains(KEY_ID) -> legacyPlain
-            else -> return
-        }
-        preferences.edit()
-            .putString(KEY_NAME, source.getString(KEY_NAME, "Usuario"))
-            .putString(KEY_EMAIL, source.getString(KEY_EMAIL, ""))
-            .putString(KEY_ID, source.getString(KEY_ID, null))
-            .putString(KEY_AUTH_TOKEN, source.getString(KEY_AUTH_TOKEN, null))
-            .putString(KEY_PHOTO_URL, source.getString(KEY_PHOTO_URL, null))
-            .putBoolean(KEY_EMAIL_VERIFIED, source.getBoolean(KEY_EMAIL_VERIFIED, false))
-            .putLong(KEY_PREMIUM_UNTIL, source.getLong(KEY_PREMIUM_UNTIL, 0L))
-            .putLong(KEY_USAGE_MINUTES, source.getLong(KEY_USAGE_MINUTES, 0L))
-            .apply()
-        source.edit().clear().apply()
-        if (source !== legacyPlain) legacyPlain.edit().clear().apply()
-    }
 
     companion object {
         private const val KEY_NAME = "name"

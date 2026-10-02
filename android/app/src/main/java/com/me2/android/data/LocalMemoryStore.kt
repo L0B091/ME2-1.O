@@ -3,7 +3,6 @@ package com.me2.android.data
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.util.Locale
 
 data class LocalConversationEntry(
@@ -182,12 +181,10 @@ class LocalMemoryStore(context: Context) {
     private val database = Me2MemoryDatabase.getInstance(appContext)
     private val dao = database.memoryDao()
     private val localVault = LocalVault(appContext)
-    private val legacyRoot = File(appContext.filesDir, "joi_memory")
 
     fun observe(userId: String) = dao.observeByUserId(userId)
 
     fun load(userId: String): LocalMe2Memory {
-        migrateLegacyIfNeeded(userId)
         val record = dao.findByUserId(userId) ?: return LocalMe2Memory(userId = userId)
         return localVault.decrypt(record.ivBase64, record.payloadBase64)
             ?.let { LocalMe2Memory.fromJson(JSONObject(it)) }
@@ -215,13 +212,11 @@ class LocalMemoryStore(context: Context) {
 
     fun migrateUserMemory(fromUserId: String, toUserId: String) {
         if (fromUserId == toUserId) return
-        migrateLegacyIfNeeded(fromUserId)
         if (!isEffectivelyEmpty(toUserId)) return
         val sourceMemory = load(fromUserId)
         if (isEffectivelyEmpty(fromUserId)) return
         save(sourceMemory.copy(userId = toUserId))
         dao.deleteByUserId(fromUserId)
-        legacyFile(fromUserId).takeIf(File::exists)?.delete()
     }
 
     fun isEffectivelyEmpty(userId: String): Boolean {
@@ -323,23 +318,6 @@ class LocalMemoryStore(context: Context) {
 
     private fun nextMessageTime(memory: LocalMe2Memory): Long =
         maxOf(System.currentTimeMillis(), (memory.conversation.lastOrNull()?.timestamp ?: 0L) + 1L, memory.hiddenConversationThrough + 1L)
-
-    private fun migrateLegacyIfNeeded(userId: String) {
-        if (dao.findByUserId(userId) != null) return
-        val file = legacyFile(userId)
-        if (!file.exists()) return
-        runCatching {
-            val legacy = LocalMe2Memory.fromJson(JSONObject(file.readText())).copy(userId = userId, version = 2)
-            save(legacy)
-            file.delete()
-        }
-    }
-
-    private fun legacyFile(userId: String): File {
-        legacyRoot.mkdirs()
-        val safeUserId = userId.lowercase(Locale.US).replace(Regex("[^a-z0-9._-]"), "_")
-        return File(legacyRoot, "$safeUserId.json")
-    }
 
     private fun inferFocus(text: String): String {
         val normalized = text.lowercase(Locale.US)

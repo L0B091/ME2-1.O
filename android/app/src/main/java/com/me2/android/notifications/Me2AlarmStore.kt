@@ -28,10 +28,6 @@ class Me2AlarmStore(context: Context) {
             appContext.getSharedPreferences("me2_alarm_store", Context.MODE_PRIVATE)
         }
 
-    init {
-        migrateLegacyIfNeeded()
-    }
-
     fun upsert(record: StoredAlarmRecord) {
         val alarms = loadAll().associateBy { it.id }.toMutableMap()
         alarms[record.id] = record
@@ -63,36 +59,6 @@ class Me2AlarmStore(context: Context) {
         val array = JSONArray()
         records.forEach { array.put(it.toJson()) }
         preferences.edit().putString(KEY_ALARMS, array.toString()).apply()
-    }
-
-    private fun migrateLegacyIfNeeded() {
-        if (preferences.contains(KEY_ALARMS)) return
-        val legacyCandidates = listOf("joi_alarm_store", "me2_alarm_store_legacy")
-        for (name in legacyCandidates) {
-            val legacy = appContext.getSharedPreferences(name, Context.MODE_PRIVATE)
-            val raw = legacy.getString(KEY_ALARMS, null) ?: continue
-            preferences.edit().putString(KEY_ALARMS, raw).apply()
-            legacy.edit().clear().apply()
-            return
-        }
-        // Encrypted legacy store (pre-rebrand name) may exist via EncryptedSharedPreferences
-        runCatching {
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            val legacySecure = EncryptedSharedPreferences.create(
-                appContext,
-                "joi_alarm_store",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-            val raw = legacySecure.getString(KEY_ALARMS, null) ?: return@runCatching
-            if (!preferences.contains(KEY_ALARMS)) {
-                preferences.edit().putString(KEY_ALARMS, raw).apply()
-                legacySecure.edit().clear().apply()
-            }
-        }
     }
 
     companion object {

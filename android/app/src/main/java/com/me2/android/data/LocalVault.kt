@@ -34,11 +34,10 @@ class LocalVault(context: Context) {
             Log.w(TAG, "AndroidKeyStore unavailable: ${it.javaClass.simpleName}")
         }.getOrNull()
 
-    /** Stable primary alias + legacy pre-rebrand aliases (storage compatibility) for restore. */
+    /** Stable primary alias + package-scoped alias. */
     private val aliases: List<String> = listOf(
         "me2.memory.local",
         "$packageName.memory.local",
-        "com.joi.android.memory.local",
         "com.me2.android.memory.local"
     ).distinct()
 

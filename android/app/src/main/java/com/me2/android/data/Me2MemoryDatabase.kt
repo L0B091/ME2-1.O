@@ -11,9 +11,6 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
-import java.io.File
 
 @Entity(tableName = "me2_memory_records")
 data class Me2MemoryRecordEntity(
@@ -66,38 +63,6 @@ abstract class Me2MemoryDatabase : RoomDatabase() {
 
     companion object {
         private const val DB_NAME = "me2_memory.db"
-        private const val LEGACY_DB_NAME = "joi_memory.db"
-
-        val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS joi_initiative_records " +
-                        "(userId TEXT NOT NULL PRIMARY KEY, payloadBase64 TEXT NOT NULL, ivBase64 TEXT NOT NULL)"
-                )
-            }
-        }
-
-        val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS me2_memory_records (" +
-                        "userId TEXT NOT NULL PRIMARY KEY, payloadBase64 TEXT NOT NULL, " +
-                        "ivBase64 TEXT NOT NULL, schemaVersion INTEGER NOT NULL, updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL(
-                    "INSERT OR IGNORE INTO me2_memory_records (userId, payloadBase64, ivBase64, schemaVersion, updatedAt) " +
-                        "SELECT userId, payloadBase64, ivBase64, schemaVersion, updatedAt FROM joi_memory_records"
-                )
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS me2_initiative_records (" +
-                        "userId TEXT NOT NULL PRIMARY KEY, payloadBase64 TEXT NOT NULL, ivBase64 TEXT NOT NULL)"
-                )
-                db.execSQL(
-                    "INSERT OR IGNORE INTO me2_initiative_records (userId, payloadBase64, ivBase64) " +
-                        "SELECT userId, payloadBase64, ivBase64 FROM joi_initiative_records"
-                )
-            }
-        }
 
         @Volatile
         private var instance: Me2MemoryDatabase? = null
@@ -105,31 +70,17 @@ abstract class Me2MemoryDatabase : RoomDatabase() {
         fun getInstance(context: Context): Me2MemoryDatabase {
             return instance ?: synchronized(this) {
                 instance ?: run {
-                    migrateDbFileIfNeeded(context.applicationContext)
                     Room.databaseBuilder(
                         context.applicationContext,
                         Me2MemoryDatabase::class.java,
                         DB_NAME
                     )
-                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                        // App sin publicar: sin migraciones; un esquema viejo de desarrollo se recrea.
+                        .fallbackToDestructiveMigration()
                         .allowMainThreadQueries()
                         .build()
                         .also { instance = it }
                 }
-            }
-        }
-
-        /** Prefer me2_memory.db; copy the legacy pre-rebrand DB (+ -wal/-shm) once if present. */
-        private fun migrateDbFileIfNeeded(context: Context) {
-            val newDb = context.getDatabasePath(DB_NAME)
-            if (newDb.exists()) return
-            val legacy = context.getDatabasePath(LEGACY_DB_NAME)
-            if (!legacy.exists()) return
-            newDb.parentFile?.mkdirs()
-            runCatching {
-                legacy.copyTo(newDb, overwrite = false)
-                File(legacy.path + "-wal").takeIf { it.exists() }?.copyTo(File(newDb.path + "-wal"), overwrite = false)
-                File(legacy.path + "-shm").takeIf { it.exists() }?.copyTo(File(newDb.path + "-shm"), overwrite = false)
             }
         }
     }

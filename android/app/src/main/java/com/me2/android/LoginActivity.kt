@@ -62,7 +62,6 @@ class LoginActivity : AppCompatActivity() {
             Log.e(TAG, "SessionStorage init failed", firstError)
             runCatching {
                 deleteSharedPreferences("me2_session_secure")
-                deleteSharedPreferences("joi_session_secure")
             }
             SessionStorage(this)
         }

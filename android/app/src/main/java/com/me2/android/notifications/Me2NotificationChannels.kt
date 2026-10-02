@@ -12,10 +12,6 @@ object Me2NotificationChannels {
     const val CHANNEL_MESSAGES = "ME2_MESSAGES"
     const val CHANNEL_ALARMS = "ME2_ALARMS"
 
-    /** Kept for upgrade safety: old installs may still have the pre-rebrand channels registered. */
-    const val LEGACY_CHANNEL_MESSAGES = "JOI_MESSAGES"
-    const val LEGACY_CHANNEL_ALARMS = "JOI_ALARMS"
-
     fun ensure(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -57,34 +53,14 @@ object Me2NotificationChannels {
 
         manager.createNotificationChannel(messageChannel)
         manager.createNotificationChannel(alarmChannel)
-
-        // Upgrade safety: ensure legacy channels still exist so pending alarms posted to them keep working.
-        if (manager.getNotificationChannel(LEGACY_CHANNEL_MESSAGES) == null) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    LEGACY_CHANNEL_MESSAGES,
-                    "ME2 Messages (legacy)",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Canal heredado; nuevos avisos usan ME2_MESSAGES" }
-            )
-        }
-        if (manager.getNotificationChannel(LEGACY_CHANNEL_ALARMS) == null) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    LEGACY_CHANNEL_ALARMS,
-                    "ME2 Alarms (legacy)",
-                    NotificationManager.IMPORTANCE_HIGH
-                ).apply { description = "Canal heredado; nuevas alarmas usan ME2_ALARMS" }
-            )
-        }
     }
 
     fun soundUri(context: Context, resId: Int): Uri =
         Uri.parse("android.resource://${context.packageName}/$resId")
 
     fun resolveChannelId(raw: String?): String = when (raw) {
-        LEGACY_CHANNEL_ALARMS, CHANNEL_ALARMS -> CHANNEL_ALARMS
-        LEGACY_CHANNEL_MESSAGES, CHANNEL_MESSAGES, null, "" -> CHANNEL_MESSAGES
+        CHANNEL_ALARMS -> CHANNEL_ALARMS
+        CHANNEL_MESSAGES, null, "" -> CHANNEL_MESSAGES
         else -> raw
     }
 }
