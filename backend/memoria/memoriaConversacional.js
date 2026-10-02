@@ -9,7 +9,7 @@ const NAMESPACE = "memoria_llm";
 const MAX_HECHOS = 100;
 
 function base(userId) {
-  return { userId, nombre: null, ciudad: null, gustos: [], disgustos: [], hechos: [], actualizado: null };
+  return { userId, nombre: null, ciudad: null, ubicacion: null, gustos: [], disgustos: [], hechos: [], onboarding: { pendiente: null, horaConfirmada: null }, actualizado: null };
 }
 
 function limpiar(valor = "") {
@@ -103,8 +103,22 @@ export function registrar(userId, mensaje) {
   return { cambios, extraido: nuevos, memoria };
 }
 
+// Parche directo de campos (ubicación geocodificada, onboarding, nombre confirmado).
+export function actualizarCampos(userId, parche = {}) {
+  if (!userId) return null;
+  const actual = obtener(userId);
+  const memoria = {
+    ...actual,
+    ...parche,
+    onboarding: { ...(actual.onboarding || {}), ...(parche.onboarding || {}) },
+    actualizado: new Date().toISOString()
+  };
+  storage.writeUserData(NAMESPACE, userId, memoria);
+  return memoria;
+}
+
 export function olvidar(userId) {
   storage.writeUserData(NAMESPACE, userId, base(userId));
 }
 
-export default { extraerHechos, obtener, registrar, olvidar };
+export default { extraerHechos, obtener, registrar, actualizarCampos, olvidar };

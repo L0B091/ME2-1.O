@@ -1,12 +1,17 @@
 // clima.js — Open-Meteo (gratis, sin key). OpenWeather opcional si OPENWEATHER_API_KEY existe.
 import HttpError from "../utils/httpError.js";
 
+// Ubicación por defecto SOLO para desarrollo: se usa únicamente si ME2_DEV_DEFAULT_LOCATION=true.
 export const UBICACION_DEFAULT = Object.freeze({
   ciudad: process.env.ME2_CIUDAD || "San Nicolás de los Arroyos",
   lat: Number(process.env.ME2_LAT || -33.3342),
   lon: Number(process.env.ME2_LON || -60.2108),
   zonaHoraria: process.env.ME2_TZ || "America/Argentina/Buenos_Aires"
 });
+
+export function ubicacionDevHabilitada() {
+  return String(process.env.ME2_DEV_DEFAULT_LOCATION || "").trim().toLowerCase() === "true";
+}
 
 const WMO = {
   0: "despejado", 1: "mayormente despejado", 2: "parcialmente nublado", 3: "nublado",
@@ -23,7 +28,7 @@ async function openMeteo(lat, lon, timeoutMs) {
   url.searchParams.set("current", "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m");
   url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code");
   url.searchParams.set("forecast_days", "2");
-  url.searchParams.set("timezone", UBICACION_DEFAULT.zonaHoraria);
+  url.searchParams.set("timezone", "auto");
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   const data = await res.json().catch(() => null);
   if (!res.ok || !data?.current) throw new HttpError(502, data?.reason || "Open-Meteo no disponible");
@@ -85,9 +90,13 @@ async function openWeather(lat, lon, apiKey, timeoutMs) {
   };
 }
 
-export default async function obtenerClima(lat = UBICACION_DEFAULT.lat, lon = UBICACION_DEFAULT.lon, opciones = {}) {
+export default async function obtenerClima(lat, lon, opciones = {}) {
+  if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
+    throw new HttpError(400, "Ubicación desconocida: se requieren lat/lon");
+  }
+  lat = Number(lat); lon = Number(lon);
   const timeoutMs = opciones.timeoutMs || 8000;
-  const ciudad = opciones.ciudad || (lat === UBICACION_DEFAULT.lat && lon === UBICACION_DEFAULT.lon ? UBICACION_DEFAULT.ciudad : null);
+  const ciudad = opciones.ciudad || null;
   const key = String(process.env.OPENWEATHER_API_KEY || "").trim();
   const proveedores = [
     () => openMeteo(lat, lon, timeoutMs),

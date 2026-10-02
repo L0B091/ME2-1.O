@@ -3,7 +3,7 @@
 // SOLO datos (hora, clima, noticias, agenda, alarmas, memoria, funciones de la app).
 // Sin instrucciones de personalidad ni de estilo: eso vive en el master prompt del modelo.
 import horaApi from "../api/hora.js";
-import obtenerClima, { UBICACION_DEFAULT } from "../api/clima.js";
+import obtenerClima, { UBICACION_DEFAULT, ubicacionDevHabilitada } from "../api/clima.js";
 import noticiasApi from "../api/noticias.js";
 import calendarioApi from "../api/calendario.js";
 import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
@@ -19,16 +19,59 @@ async function cacheado(clave, ttlMs, fn) {
   return v;
 }
 
+function normalizar(t = "") {
+  return String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+// Un titular es de interés si contiene, como palabra completa, algún gusto nombrado por el usuario
+// (o una palabra fuerte ≥4 letras de un gusto compuesto, ej. "Boca" de "Boca Juniors").
+export function interesCoincidente(texto, gustos = []) {
+  const t = ` ${normalizar(texto).replace(/[^a-z0-9ñ]+/g, " ")} `;
+  for (const g of gustos) {
+    const frase = normalizar(g).replace(/[^a-z0-9ñ]+/g, " ").trim();
+    if (frase.length >= 3 && t.includes(` ${frase} `)) return g;
+    const fuertes = frase.split(" ").filter(p => p.length >= 4);
+    const hit = fuertes.find(p => t.includes(` ${p} `));
+    if (hit) return g;
+  }
+  return null;
+}
+
+export async function noticiasDeInteres(gustos = [], opciones = {}) {
+  if (!gustos.length) return { disponible: false, motivo: "sin_intereses_registrados" };
+  const clave = `noticias:${gustos.join("|")}`;
+  const lista = await cacheado(clave, 20 * 60 * 1000, () =>
+    noticiasApi.obtenerNoticias("", gustos.slice(0, 5).map(g => (g.includes(" ") ? `"${g}"` : g)), { timeoutMs: opciones.timeoutMs || 6000, limite: 10 }));
+  return lista
+    .map(n => ({ ...n, interes: interesCoincidente(n.titulo, gustos) }))
+    .filter(n => n.interes)
+    .slice(0, opciones.limite || 3);
+}
+
+// Ubicación del usuario (memoria) o, solo si está habilitado, la de desarrollo.
+export function resolverUbicacion(memoria = {}) {
+  if (memoria?.ubicacion && Number.isFinite(memoria.ubicacion.lat)) return { ...memoria.ubicacion, origen: "usuario" };
+  if (ubicacionDevHabilitada()) return { ...UBICACION_DEFAULT, origen: "dev_default" };
+  return null;
+}
+
 export async function obtenerHerramientas(userId, opciones = {}) {
-  const lat = Number.isFinite(Number(opciones.lat)) ? Number(opciones.lat) : UBICACION_DEFAULT.lat;
-  const lon = Number.isFinite(Number(opciones.lon)) ? Number(opciones.lon) : UBICACION_DEFAULT.lon;
+  const memoria = opciones.memoria || {};
+  const ubicacion = Number.isFinite(Number(opciones.lat)) && Number.isFinite(Number(opciones.lon))
+    ? { lat: Number(opciones.lat), lon: Number(opciones.lon), ciudad: null, zonaHoraria: opciones.zonaHoraria || null, origen: "cliente" }
+    : resolverUbicacion(memoria);
+  const gustos = memoria.gustos || [];
   const [clima, noticias, agenda] = await Promise.allSettled([
-    cacheado(`clima:${lat},${lon}`, 10 * 60 * 1000, () => obtenerClima(lat, lon, { timeoutMs: 6000 })),
-    cacheado(`noticias:${(opciones.temas || []).join(",")}`, 20 * 60 * 1000, () => noticiasApi.obtenerNoticias("", opciones.temas || [], { timeoutMs: 6000, limite: 3 })),
+    ubicacion
+      ? cacheado(`clima:${ubicacion.lat},${ubicacion.lon}`, 10 * 60 * 1000, () => obtenerClima(ubicacion.lat, ubicacion.lon, { timeoutMs: 6000, ciudad: ubicacion.ciudad }))
+      : Promise.reject(new Error("ubicacion_desconocida")),
+    gustos.length ? noticiasDeInteres(gustos) : Promise.reject(new Error("sin_intereses_registrados")),
     calendarioApi.proximosUnificados(userId, 5)
   ]);
+  const zona = opciones.zonaHoraria || ubicacion?.zonaHoraria || null;
   return {
-    hora: horaApi.obtenerHoraActual(opciones.zonaHoraria),
+    ubicacion,
+    hora: { ...horaApi.obtenerHoraActual(zona || undefined), zonaDelUsuario: Boolean(zona) },
     clima: clima.status === "fulfilled" ? clima.value : { disponible: false, motivo: clima.reason?.message || "error" },
     noticias: noticias.status === "fulfilled" ? noticias.value : { disponible: false, motivo: noticias.reason?.message || "error" },
     agenda: agenda.status === "fulfilled" ? agenda.value : { disponible: false, motivo: agenda.reason?.message || "error" },
@@ -54,6 +97,7 @@ export function funcionesApp(userId) {
 }
 
 function lineaClima(c) {
+  if (c?.motivo === "ubicacion_desconocida") return "Clima: no consultado porque la ubicación del usuario es desconocida";
   if (!c || c.disponible === false) return `Clima: NO DISPONIBLE en este momento (${c?.motivo || "sin datos"})`;
   const partes = [`${c.ciudad || "ubicación del usuario"}: ${c.temperatura}°C`, c.descripcion];
   if (Number.isFinite(c.sensacionTermica)) partes.push(`sensación ${c.sensacionTermica}°C`);
@@ -66,10 +110,11 @@ function lineaClima(c) {
 }
 
 function lineasNoticias(n) {
-  if (!Array.isArray(n)) return [`Noticias: NO DISPONIBLES en este momento (${n?.motivo || "sin datos"})`];
-  if (!n.length) return ["Noticias: sin titulares recientes"];
+  if (n?.motivo === "sin_intereses_registrados") return [];
+  if (!Array.isArray(n)) return [`Noticias de interés: NO DISPONIBLES en este momento (${n?.motivo || "sin datos"})`];
+  if (!n.length) return ["Noticias de interés: ningún titular reciente coincide con los gustos del usuario"];
   const fuente = n[0]?.proveedor === "newsapi" ? "NewsAPI" : "Google News Argentina";
-  return [`Noticias de hoy obtenidas por la app en tiempo real (${fuente}):`, ...n.slice(0, 3).map(x => `  • ${x.titulo}${x.fecha ? ` [${x.fecha.slice(0, 10)}]` : ""}`)];
+  return [`Noticias de interés del usuario obtenidas por la app en tiempo real (${fuente}):`, ...n.slice(0, 3).map(x => `  • ${x.titulo}${x.fecha ? ` [${x.fecha.slice(0, 10)}]` : ""}${x.interes ? ` (interés: ${x.interes})` : ""}`)];
 }
 
 function lineasAgenda(a) {
@@ -81,19 +126,25 @@ function lineasAgenda(a) {
 /**
  * Mensaje de sistema neutral: únicamente hechos de contexto.
  */
-export function construirMensajeContexto({ herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [] }) {
+export function construirMensajeContexto({ herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [], onboarding = [] }) {
   const h = herramientas.hora;
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
-  const nombre = memoria?.nombre || datosPerfil?.identidad?.nombre || null;
+  const nombre = memoria?.nombre || null;
   l.push(`Nombre del usuario: ${nombre || "desconocido"}`);
+  const nombreCuenta = datosPerfil?.identidad?.nombre;
+  if (!nombre && nombreCuenta && !String(nombreCuenta).includes("@")) l.push(`Nombre de la cuenta (sin confirmar en la conversación): ${nombreCuenta}`);
+  if (onboarding.length) l.push(...onboarding);
   if (characterName) l.push(`Nombre que el usuario eligió para vos: ${characterName}`);
   if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
   if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
   if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...memoria.hechos.slice(-15).map(x => `  • ${x}`));
-  l.push(`Hora actual: ${h.hora} (${h.zonaHoraria})`);
+  l.push(`Hora actual: ${h.hora} (${h.zonaHoraria}${h.zonaDelUsuario ? "" : ", zona horaria por defecto del servidor; la del usuario aún no se conoce"})`);
   l.push(`Fecha de hoy: ${h.fechaLarga}`);
-  l.push(`Ubicación por defecto del usuario: ${memoria?.ciudad || UBICACION_DEFAULT.ciudad}`);
+  const u = herramientas.ubicacion;
+  l.push(u
+    ? `Ubicación del usuario: ${u.ciudad || `${u.lat},${u.lon}`}${u.provincia ? `, ${u.provincia}` : ""}${u.pais ? `, ${u.pais}` : ""}${u.origen === "dev_default" ? " (ubicación de desarrollo por defecto, NO confirmada)" : ""}`
+    : "Ubicación del usuario: desconocida");
   l.push(lineaClima(herramientas.clima));
   l.push(...lineasNoticias(herramientas.noticias));
   l.push(...lineasAgenda(herramientas.agenda));
@@ -116,4 +167,4 @@ export function historialAMensajes(historial = [], limite = HISTORIAL_MAX) {
   })).filter(m => m.content.trim());
 }
 
-export default { obtenerHerramientas, funcionesApp, construirMensajeContexto, historialAMensajes };
+export default { obtenerHerramientas, funcionesApp, construirMensajeContexto, historialAMensajes, noticiasDeInteres, interesCoincidente, resolverUbicacion };

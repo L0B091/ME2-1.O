@@ -3,6 +3,7 @@
 import obtenerClima from "../api/clima.js";
 import gestorDeAlarmas from "./gestorDeAlarmas.js";
 import notificacionesApi from "../api/notificaciones.js";
+import memoriaConversacional from "../memoria/memoriaConversacional.js";
 
 const VIBRACION_INTERVALO_MS = 600;
 const MENSAJE_INTERVALO_MS = 1500;
@@ -31,7 +32,6 @@ async function push(userID, mensaje) {
   notificacionesApi.notificarAlarma(userID, mensaje);
 }
 
-const BA_DEFAULT = { lat: -33.3342, lon: -60.2108 }; // San Nicolás de los Arroyos
 
 /**
  * Prefer stored user coords when available; otherwise Buenos Aires default.
@@ -39,8 +39,12 @@ const BA_DEFAULT = { lat: -33.3342, lon: -60.2108 }; // San Nicolás de los Arro
  */
 async function obtenerMensajeClimaSeguro(coords = null) {
   try {
-    const lat = Number.isFinite(Number(coords?.lat)) ? Number(coords.lat) : BA_DEFAULT.lat;
-    const lon = Number.isFinite(Number(coords?.lon)) ? Number(coords.lon) : BA_DEFAULT.lon;
+    // Sin ubicación conocida del usuario no se consulta clima (evita datos de otra ciudad).
+    if (!Number.isFinite(Number(coords?.lat)) || !Number.isFinite(Number(coords?.lon))) {
+      return "Buen día. Ya registré tu despertar.";
+    }
+    const lat = Number(coords.lat);
+    const lon = Number(coords.lon);
     const clima = await obtenerClima(lat, lon);
     return Number.isFinite(clima?.temperatura)
       ? `${Math.round(clima.temperatura)}°C, ${clima.descripcion || ""}`.trim()
@@ -94,7 +98,8 @@ function obtenerDefinicionStages() {
 }
 
 async function registrarRespuestaUsuario(userID, alarmId = null) {
-  const mensajeClima = await obtenerMensajeClimaSeguro();
+  const ubicacion = memoriaConversacional.obtener(userID)?.ubicacion || null;
+  const mensajeClima = await obtenerMensajeClimaSeguro(ubicacion);
   await push(userID, `🌤 ${mensajeClima}`);
   gestorDeAlarmas.cerrarAlarma(userID, alarmId);
   return {

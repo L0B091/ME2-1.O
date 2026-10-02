@@ -7,7 +7,8 @@ import orquestadorChat from "./orquestador/orquestadorChat.js";
 import dolphinClient from "./llm/dolphinClient.js";
 import horaApi from "./api/hora.js";
 import relojApi from "./api/reloj.js";
-import climaApi, { UBICACION_DEFAULT } from "./api/clima.js";
+import climaApi, { UBICACION_DEFAULT, ubicacionDevHabilitada } from "./api/clima.js";
+import memoriaConversacional from "./memoria/memoriaConversacional.js";
 import noticiasApi from "./api/noticias.js";
 import calendarioApi from "./api/calendario.js";
 import notificacionesApi from "./api/notificaciones.js";
@@ -92,6 +93,7 @@ function authStatus() {
     newsConfigured: Boolean(String(process.env.NEWS_API_KEY || "").trim()),
     newsProvider: noticiasApi.proveedorNoticias(),
     weatherProvider: "open-meteo / met-norway (sin key)",
+    devDefaultLocation: ubicacionDevHabilitada(),
     googleCalendarConfigured: calendarioApi.adapters.google.disponible(),
     cloudBackupAdapter: backupManager.adaptadorActivo()
   };
@@ -221,14 +223,23 @@ app.post("/api/reloj/:userId/interaccion", requireAuth, (req, res) => {
   res.json({ ok: true, data: { userId, ultimaInteraccionRegistrada: true } });
 });
 
-app.get("/api/clima", handleAsync(async (req, res) => {
-  const lat = req.query.lat != null ? Number(req.query.lat) : UBICACION_DEFAULT.lat;
-  const lon = req.query.lon != null ? Number(req.query.lon) : UBICACION_DEFAULT.lon;
+app.get("/api/clima", optionalAuth, handleAsync(async (req, res) => {
+  let lat = req.query.lat != null ? Number(req.query.lat) : null;
+  let lon = req.query.lon != null ? Number(req.query.lon) : null;
+  let ciudad = null;
+  if (lat == null || lon == null) {
+    const ubicacion = req.auth ? memoriaConversacional.obtener(req.auth.userId)?.ubicacion : null;
+    const dev = !ubicacion && ubicacionDevHabilitada() ? UBICACION_DEFAULT : null;
+    const u = ubicacion || dev;
+    if (!u) return res.status(400).json({ ok: false, disponible: false, motivo: "ubicacion_desconocida" });
+    ({ lat, lon } = u);
+    ciudad = u.ciudad;
+  }
   try {
-    const data = await climaApi(lat, lon);
+    const data = await climaApi(lat, lon, { ciudad });
     res.json({ ok: true, data });
   } catch (error) {
-    res.status(503).json({ ok: false, disponible: false, error: error.message });
+    res.status(error.status === 400 ? 400 : 503).json({ ok: false, disponible: false, error: error.message });
   }
 }));
 

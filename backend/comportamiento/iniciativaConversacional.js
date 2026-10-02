@@ -17,7 +17,7 @@ export const POLITICA_INICIATIVA = Object.freeze({
   minDiasAprendizaje: 7, minHorasObservadasPorDia: 4, horasDescansoAprendido: 8,
   descansoProvisional: Object.freeze({ dormir: "22:00", despertar: "09:00" }),
   prioridades: Object.freeze({
-    ALARMA: 100, EVENTO: 90, TRANSITO: 80, TRANSPORTE: 80, NOTICIA: 70,
+    ALARMA: 100, EVENTO: 90, TRANSITO: 80, TRANSPORTE: 80, CLIMA: 75, NOTICIA: 70,
     EVENTO_SOCIAL: 60, CONVERSACION: 50, RECUERDO: 40, CURIOSIDAD: 30, SOCIAL: 20, EVENTO_INTERNO: 30
   })
 });
@@ -55,10 +55,16 @@ function prepararCandidato(evento, intereses, ahora, politica) {
   if (evento.categoria === "ALARMA") return null;
   const evidencia = String(evento.contexto.evidencia || evento.contexto.descripcion || "");
   const coincidencias = palabras(evidencia).filter(p => intereses.includes(p));
-  if (!interno && !evento.contexto.programadoPorUsuario && coincidencias.length < 2) return null;
+  // Interés nombrado por el usuario: basta una coincidencia fuerte, verificada contra la evidencia.
+  const interesNombrado = typeof evento.contexto.interesUsuario === "string" &&
+    palabras(evento.contexto.interesUsuario).some(p => palabras(evidencia).includes(p));
+  // Fuentes construidas por el servidor desde datos del propio usuario (recuerdo/clima de su ciudad).
+  const fuenteServidor = ["recuerdo", "clima"].includes(evento.contexto.fuenteServidor);
+  if (!interno && !evento.contexto.programadoPorUsuario && !interesNombrado && !fuenteServidor && coincidencias.length < 2) return null;
   if (!evidencia.trim()) return null;
   const referencia = evento.referenciaEvento || evento.id || firma(evento.fuente, evidencia);
-  const clavePrioridad = evento.categoria === "SOCIAL" && !evento.contexto.espontanea ? "EVENTO_SOCIAL" : evento.categoria;
+  const clavePrioridad = evento.categoria === "SOCIAL" && !evento.contexto.espontanea ? "EVENTO_SOCIAL"
+    : evento.contexto.fuenteServidor === "clima" ? "CLIMA" : evento.categoria;
   return {
     id: firma(evento.fuente, `${evento.categoria}:${referencia}`),
     categoria: evento.categoria, motivo: evento.motivo, timestamp: ahora,

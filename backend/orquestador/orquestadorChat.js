@@ -24,6 +24,7 @@ import calendarioApi from "../api/calendario.js";
 import { detectarAlarma } from "../modulos/detectorAlarmas.js";
 import { detectarEvento } from "../modulos/detectorAgenda.js";
 import contextoLLM from "./contextoLLM.js";
+import perfilBasico from "../modulos/onboarding/perfilBasico.js";
 
 const EXPRESION_NEUTRA = Object.freeze({ tono: "neutral", ritmo: "normal", microexpresion: "mirada_atenta", intensidad: "suave" });
 
@@ -163,12 +164,24 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [ACTIONS] alarmas / agenda (deterministas)
   const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor);
 
+  // [ONBOARDING] datos básicos faltantes (uno por vez, como hecho de contexto)
+  let characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({
+    memoriaLocal, datosUsuario: datosUsuario.obtener(userId)
+  });
+  let onboarding = { hechosTurno: [], faltantes: [], siguiente: null };
+  if (persistirEnServidor && userId !== "anonimo") {
+    try {
+      onboarding = await perfilBasico.procesar(userId, mensajeUsuario, { characterName, memoriaLocal });
+      characterName = onboarding.characterName || characterName;
+      memoriaHechos = { ...memoriaHechos, ...onboarding.memoria, hechos: memoriaHechos.hechos };
+    } catch (error) {
+      console.error("Error en onboarding:", error.message);
+    }
+  }
+
   // [CONTEXT] herramientas + memoria + funciones de la app
   const herramientas = await contextoLLM.obtenerHerramientas(userId, {
-    lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria
-  });
-  const characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({
-    memoriaLocal, datosUsuario: datosUsuario.obtener(userId)
+    lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
   });
   const mensajeContexto = contextoLLM.construirMensajeContexto({
     herramientas,
@@ -176,7 +189,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     datosPerfil: datosUsuario.obtener(userId),
     characterName,
     app: contextoLLM.funcionesApp(userId),
-    accionesTurno: acciones,
+    accionesTurno: [...(onboarding.hechosTurno || []), ...acciones],
+    onboarding: perfilBasico.lineasContexto(onboarding),
     extra
   });
   const mensajes = [
@@ -215,6 +229,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     debug: {
       llm: debugLLM,
       contexto: mensajeContexto.content,
+      onboarding: { siguiente: onboarding.siguiente, faltantes: onboarding.faltantes, hechosTurno: onboarding.hechosTurno },
       historialEnviado: mensajes.length - 2,
       memoriaEscritura,
       memoriaHechos,

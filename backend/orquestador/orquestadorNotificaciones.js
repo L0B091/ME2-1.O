@@ -8,6 +8,10 @@ import memoriaConversacional from "../memoria/memoriaConversacional.js";
 import historialConversacion from "../memoria/historialConversacion.js";
 import datosUsuario from "../memoria/datosUsuario.js";
 import contextoLLM from "./contextoLLM.js";
+import relojApi from "../api/reloj.js";
+import calendarioApi from "../api/calendario.js";
+import obtenerClima from "../api/clima.js";
+import crypto from "node:crypto";
 import HttpError from "../utils/httpError.js";
 
 function objeto(value, nombre) {
@@ -99,8 +103,8 @@ export function validarSolicitudIniciativa(body) {
 // Genera el mensaje de iniciativa con el LLM usando solo contexto factual
 // (gustos, noticias, clima, agenda, motivo del evento). Sin plantillas.
 export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId = null) {
-  const herramientas = await contextoLLM.obtenerHerramientas(userId);
   const memoria = userId ? memoriaConversacional.obtener(userId) : {};
+  const herramientas = await contextoLLM.obtenerHerramientas(userId, { memoria });
   const extras = [
     ...(memoriaLocal.persistentMemories || []), ...(memoriaLocal.importantMemories || [])
   ].map(m => m?.text).filter(Boolean);
@@ -122,13 +126,21 @@ export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId
   return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, 12)], { maxTokens: 160 });
 }
 
+function fuenteDe(iniciativa) {
+  if (iniciativa.contexto?.fuenteServidor) return iniciativa.contexto.fuenteServidor;
+  if (iniciativa.fuente === "calendario") return "recordatorio";
+  if (iniciativa.categoria === "NOTICIA") return "noticia";
+  return iniciativa.categoria.toLowerCase();
+}
+
 export async function evaluarAutonomia(body, opciones = {}) {
   const solicitud = validarSolicitudIniciativa(body);
   const ahora = opciones.ahora ?? Date.now();
   const generar = opciones.generar || ((iniciativa, memoria) => generarIniciativaLLM(iniciativa, memoria, solicitud.userId));
   const configurado = opciones.llmConfigurado ?? dolphinClient.estaConfigurado();
+  const memoriaServidor = memoriaConversacional.obtener(solicitud.userId);
+  const gustosServidor = memoriaServidor.gustos || [];
   // Gustos guardados en el servidor también cuentan como intereses
-  const gustosServidor = memoriaConversacional.obtener(solicitud.userId).gustos || [];
   if (gustosServidor.length) {
     solicitud.memoriaLocal = {
       ...solicitud.memoriaLocal,
@@ -138,8 +150,20 @@ export async function evaluarAutonomia(body, opciones = {}) {
       ]
     };
   }
+  // Última interacción conocida por el servidor (historial/reloj) para respetar el timing.
+  const ultimoServidor = Math.max(
+    ...historialConversacion.obtenerHistorial(solicitud.userId, 50).filter(m => m.tipo !== "joi").map(m => Number(m.timestamp) || 0), 0,
+    (() => { const min = relojApi.tiempoDesdeUltimaInteraccion(solicitud.userId); return min == null ? 0 : ahora - min * 60000; })()
+  );
+  if (ultimoServidor > (solicitud.perfilRitmo.ultimaInteraccion || 0)) {
+    solicitud.perfilRitmo = { ...solicitud.perfilRitmo, ultimaInteraccion: Math.min(ultimoServidor, ahora) };
+  }
   const fallosFuentes = [];
-  const eventos = [...solicitud.eventos];
+  // Las marcas de fuente del servidor no se aceptan desde el cliente.
+  const eventos = solicitud.eventos.map(e => {
+    const { fuenteServidor, interesUsuario, ...ctx } = e.contexto || {};
+    return { ...e, contexto: ctx };
+  });
   let decision = evaluarIniciativa({ ...solicitud, ahora, eventos });
   const salir = motivoEspera => ({
     decision: "ESPERAR", motivoEspera, perfilRitmo: decision.perfilRitmo, fallosFuentes
@@ -149,21 +173,61 @@ export async function evaluarAutonomia(body, opciones = {}) {
     return { ...decision, fallosFuentes };
   }
   if (!configurado) return salir("llm_no_configurado");
-  const intereses = interesesDe(solicitud.memoriaLocal).slice(0, 5);
+
+  // Fuente: recuerdos del usuario (memoria del servidor)
+  for (const hecho of (memoriaServidor.hechos || []).slice(-5)) {
+    const fecha = String(hecho).match(/\(dicho el (\d{4}-\d{2}-\d{2})\)/)?.[1];
+    const ts = Math.min(fecha ? Date.parse(`${fecha}T00:00:00-03:00`) : ahora - 60000, ahora - 1000);
+    eventos.push({
+      categoria: "RECUERDO", fuente: "memoria", referenciaEvento: `recuerdo:${crypto.createHash("sha256").update(hecho).digest("hex").slice(0, 16)}`,
+      motivo: "Retomar algo que el usuario contó", timestamp: ts, expiresAt: ts + POLITICA_INICIATIVA.vigenciaContextoMs,
+      contexto: { evidencia: hecho, fuenteServidor: "recuerdo" }
+    });
+  }
+  // Fuente: recordatorios del calendario (próximas 24 h)
+  try {
+    const { eventos: proximos } = await calendarioApi.proximosUnificados(solicitud.userId, 5);
+    for (const ev of proximos) {
+      const t = Date.parse(`${ev.fecha}T${ev.hora}:00-03:00`);
+      if (!Number.isFinite(t) || t - ahora > 24 * 3600e3) continue;
+      eventos.push({
+        categoria: "EVENTO", fuente: "calendario", referenciaEvento: `calendario:${ev.id}`,
+        motivo: "Recordatorio de un evento próximo de la agenda del usuario", timestamp: ahora - 1000, expiresAt: t,
+        contexto: { evidencia: `${ev.fecha} ${ev.hora} — ${ev.descripcion}`, programadoPorUsuario: true }
+      });
+    }
+  } catch { fallosFuentes.push("calendario_no_disponible"); }
+  // Fuente: clima (solo con ubicación conocida del usuario)
+  const ubicacion = contextoLLM.resolverUbicacion(memoriaServidor);
+  if (ubicacion && (opciones.climaConfigurado ?? true)) {
+    try {
+      const c = await (opciones.clima || obtenerClima)(ubicacion.lat, ubicacion.lon, { ciudad: ubicacion.ciudad, timeoutMs: 6000 });
+      const dia = new Date(ahora).toLocaleDateString("en-CA", { timeZone: ubicacion.zonaHoraria || "America/Argentina/Buenos_Aires" });
+      eventos.push({
+        categoria: "EVENTO", fuente: "clima", referenciaEvento: `clima:${ubicacion.ciudad}:${dia}`,
+        motivo: "Reporte del clima de la ciudad del usuario", timestamp: ahora - 1000, expiresAt: ahora + 6 * 3600e3,
+        contexto: { evidencia: `Clima en ${ubicacion.ciudad}: ${c.temperatura}°C, ${c.descripcion || ""}`.trim(), fuenteServidor: "clima" }
+      });
+    } catch { fallosFuentes.push("clima_no_disponible"); }
+  }
+  // Fuente: noticias filtradas por intereses
+  const intereses = gustosServidor.length ? gustosServidor.slice(0, 5) : interesesDe(solicitud.memoriaLocal).slice(0, 5);
   if (intereses.length && (opciones.newsConfigurado ?? true)) {
     try {
-      const noticias = await (opciones.noticias || noticiasApi.obtenerNoticias)("", intereses);
+      const consulta = intereses.map(g => (g.includes(" ") ? `"${g}"` : g));
+      const noticias = await (opciones.noticias || noticiasApi.obtenerNoticias)("", consulta);
       for (const noticia of noticias) {
         const timestamp = Date.parse(noticia.fecha);
         if (!Number.isFinite(timestamp) || timestamp > ahora || timestamp < ahora - POLITICA_INICIATIVA.vigenciaNoticiaMs) continue;
         if (!noticia.link || !noticia.titulo) continue;
         const url = new URL(noticia.link);
         if (!["http:", "https:"].includes(url.protocol)) continue;
+        const interes = gustosServidor.length ? contextoLLM.interesCoincidente(noticia.titulo, gustosServidor) : null;
         eventos.push({
           categoria: "NOTICIA", fuente: noticia.proveedor || "noticias", referenciaEvento: noticia.link,
           motivo: "Una noticia reciente coincide con intereses documentados del usuario",
           timestamp, expiresAt: timestamp + POLITICA_INICIATIVA.vigenciaNoticiaMs,
-          contexto: { evidencia: `${noticia.titulo}. ${noticia.descripcion || ""}`, enlace: noticia.link, fecha: noticia.fecha }
+          contexto: { evidencia: `${noticia.titulo}. ${noticia.descripcion || ""}`, enlace: noticia.link, fecha: noticia.fecha, ...(interes ? { interesUsuario: interes } : {}) }
         });
       }
     } catch (error) {
@@ -186,6 +250,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
     }
     return {
       ...decision, perfilRitmo: vigente.perfilRitmo, fallosFuentes,
+      fuenteElegida: fuenteDe(decision.iniciativa),
       iniciativa: { ...decision.iniciativa, mensaje: resultado.respuesta.trim().slice(0, 240) }
     };
   } catch (error) {
