@@ -134,7 +134,8 @@ export async function generarIniciativaLLM(iniciativa, memoriaLocal = {}, userId
       ...(iniciativa.contexto?.enlace ? [`Enlace: ${iniciativa.contexto.enlace}`] : [])
     ].join("\n")
   };
-  return dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, Number(process.env.ME2_INITIATIVE_HISTORY || 4)), solicitudIniciativa], { maxTokens: 160 });
+  const r = await dolphinClient.chat([contexto, ...contextoLLM.historialAMensajes(historial, Number(process.env.ME2_INITIATIVE_HISTORY || 4)), solicitudIniciativa], { maxTokens: 160 });
+  return { ...r, contexto: contexto.content };
 }
 
 function fuenteDe(iniciativa) {
@@ -270,6 +271,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
     return {
       ...decision, perfilRitmo: vigente.perfilRitmo, fallosFuentes,
       fuenteElegida: fuenteDe(decision.iniciativa),
+      ...(process.env.NODE_ENV === "development" && resultado.contexto ? { debug: { contexto: resultado.contexto } } : {}),
       iniciativa: { ...decision.iniciativa, mensaje: resultado.respuesta.trim().slice(0, 240) }
     };
   } catch (error) {
