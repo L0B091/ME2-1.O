@@ -23,9 +23,12 @@ function config() {
   };
 }
 
+export const ESTADISTICAS = { http_429: 0, http_503: 0, cuotaAgotadaHasta: null };
+
 function endpoint(url) {
   if (/\/chat\/completions$/.test(url)) return url;
-  if (/\/v1$/.test(url)) return `${url}/chat/completions`;
+  // /v1, /v1beta/openai (Gemini), /openai: ya es la base OpenAI-compatible
+  if (/\/(v\d+(beta\d*)?|openai)$/.test(url)) return `${url}/chat/completions`;
   return `${url}/v1/chat/completions`;
 }
 
@@ -41,7 +44,8 @@ export function obtenerDiagnostico() {
     model: c.model || null,
     url: c.url || null,
     configured: estaConfigurado(),
-    hasApiKey: Boolean(c.apiKey)
+    hasApiKey: Boolean(c.apiKey),
+    saturacion: { ...ESTADISTICAS }
   };
 }
 
@@ -52,6 +56,9 @@ export function obtenerDiagnostico() {
 export async function chat(messages, opciones = {}) {
   const c = config();
   if (!estaConfigurado()) return { used: false, respuesta: null, reason: "dolphin_no_configurado" };
+  if (ESTADISTICAS.cuotaAgotadaHasta && Date.now() < ESTADISTICAS.cuotaAgotadaHasta) {
+    return { used: false, respuesta: null, reason: "cuota_agotada", retryMs: ESTADISTICAS.cuotaAgotadaHasta - Date.now() };
+  }
   const headers = { "Content-Type": "application/json" };
   if (c.apiKey) headers.Authorization = `Bearer ${c.apiKey}`;
   const body = {
@@ -62,15 +69,33 @@ export async function chat(messages, opciones = {}) {
   };
   if (Number.isFinite(c.temperature)) body.temperature = c.temperature;
 
-  const res = await fetch(endpoint(c.url), {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(opciones.timeoutMs || c.timeoutMs)
-  });
-  const raw = await res.text();
-  let data = null;
-  try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+  // Reintento con backoff ante saturación (429/503), respetando Retry-After si viene.
+  const intentos = Math.max(1, Number(process.env.DOLPHIN_RETRIES || 3));
+  let res, raw, data;
+  for (let i = 0; i < intentos; i++) {
+    res = await fetch(endpoint(c.url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(opciones.timeoutMs || c.timeoutMs)
+    });
+    raw = await res.text();
+    data = null;
+    try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+    if (res.status !== 429 && res.status !== 503) break;
+    ESTADISTICAS[`http_${res.status}`]++;
+    // Cuota agotada (p. ej. Gemini free tier por día): RetryInfo largo → no reintentar en vano.
+    const retryInfo = String(raw).match(/"retryDelay":\s*"(\d+(?:\.\d+)?)s"/);
+    const sugerida = retryInfo ? Number(retryInfo[1]) * 1000 : Number(res.headers.get("retry-after")) * 1000;
+    if (sugerida > 20000) {
+      ESTADISTICAS.cuotaAgotadaHasta = Date.now() + sugerida;
+      return { used: false, respuesta: null, reason: "cuota_agotada", retryMs: sugerida, detail: String(raw).slice(0, 600) };
+    }
+    if (i === intentos - 1) break;
+    const espera = Math.min(sugerida || 2000 * 2 ** i, 20000);
+    console.warn(`[dolphin] http_${res.status}, reintento ${i + 1} en ${espera} ms`);
+    await new Promise(r => setTimeout(r, espera));
+  }
   if (!res.ok) {
     return { used: false, respuesta: null, reason: `http_${res.status}`, detail: data?.error || raw.slice(0, 300) };
   }
