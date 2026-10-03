@@ -20,7 +20,7 @@ export const PLAN = {
     "Conversación con IA",
     "APIs",
     "Memoria básica",
-    "Personalidad y expresión",
+    "Avatar con clips y expresiones",
     "Respuestas visuales / video"
   ],
   premium: [

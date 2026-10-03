@@ -3,7 +3,7 @@ import registrarActividad from "../../memoria/registrarActividad.js";
 import premiumManager from "../premium/premiumManager.js";
 import usuariosMemoria from "../../memoria/usuariosMemoria.js";
 
-function calcularEnlacePsicologico(userId) {
+function calcularNivelEnlace(userId) {
   const actividad = registrarActividad.obtenerActividad(userId);
   const horas = Array.isArray(actividad?.horasActivas) ? actividad.horasActivas.length : 0;
   return Math.min(100, Math.round((horas / 12) * 100));
@@ -25,7 +25,7 @@ function obtenerBitacora(userId) {
     email: usuarioAuth?.email || usuarioCore?.cuentas?.email || null,
     fotoPerfil: usuarioAuth?.photoUrl || null,
     leyenda: usuarioAuth?.leyenda || usuarioCore?.resumen || "",
-    enlacePsicologico: calcularEnlacePsicologico(userId),
+    nivelEnlace: calcularNivelEnlace(userId),
     estado: obtenerEstado(userId),
     premium,
     widgetSeleccionado: usuarioCore?.configuracion?.widgetSeleccionado || null

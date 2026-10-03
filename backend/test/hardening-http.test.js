@@ -171,6 +171,9 @@ test("bitácora: solo campos de perfil, acotados; premium no se puede escribir d
     assert.equal(me.data.perfil.photoUrl, null);
     assert.ok(!me.data.perfil.premiumUntil || me.data.perfil.premiumUntil < Date.now() + 1e9);
     assert.equal(me.data.token, undefined);
+    const b = await (await req(url, "/api/bitacora/me", { token: u.token })).json();
+    assert.equal(typeof b.data.nivelEnlace, "number");
+    assert.equal(b.data.enlacePsicologico, undefined, "I7: sin nomenclatura psicológica");
     const p = await (await req(url, `/api/premium/${u.id}`, { token: u.token })).json();
     assert.equal(p.data.premiumActivo, false);
   });
