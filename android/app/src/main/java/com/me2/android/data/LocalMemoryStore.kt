@@ -40,7 +40,9 @@ data class LocalMe2Memory(
     val codeMemories: MutableList<LocalAssetMemory> = mutableListOf(),
     val fiscalMemories: MutableList<LocalAssetMemory> = mutableListOf(),
     val updatedAt: Long = System.currentTimeMillis(),
-    val hiddenConversationThrough: Long = 0L
+    val hiddenConversationThrough: Long = 0L,
+    /** Premium local (JSON): {"fiscal": {...}, "proyectos": {...}}. Vive en el teléfono y viaja en el respaldo cifrado. */
+    val premiumLocal: String = "{}"
 ) {
     fun withUpdatedTimestamp() = copy(updatedAt = System.currentTimeMillis())
 
@@ -68,7 +70,13 @@ data class LocalMe2Memory(
         put("importantMemories", Companion.notesToJson(importantMemories))
         put("codeMemories", Companion.assetsToJson(codeMemories))
         put("fiscalMemories", Companion.assetsToJson(fiscalMemories))
+        put("premiumLocal", premiumLocalJson())
     }
+
+    fun premiumLocalJson(): JSONObject = runCatching { JSONObject(premiumLocal) }.getOrDefault(JSONObject())
+
+    /** Momento de la última interacción real (para el hilo de continuidad del respaldo). */
+    fun lastInteractionAt(): Long? = conversation.lastOrNull()?.timestamp
 
     fun toBackendContext(): JSONObject = JSONObject().apply {
         put("source", "android_local_primary")
@@ -108,7 +116,8 @@ data class LocalMe2Memory(
                 codeMemories = jsonArrayToAssets(json.optJSONArray("codeMemories")),
                 fiscalMemories = jsonArrayToAssets(json.optJSONArray("fiscalMemories")),
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
-                hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L)
+                hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L),
+                premiumLocal = json.optJSONObject("premiumLocal")?.toString() ?: "{}"
             )
         }
 
@@ -231,7 +240,8 @@ class LocalMemoryStore(context: Context) {
             memory.persistentMemories.isEmpty() &&
             memory.importantMemories.isEmpty() &&
             memory.codeMemories.isEmpty() &&
-            memory.fiscalMemories.isEmpty()
+            memory.fiscalMemories.isEmpty() &&
+            memory.premiumLocalJson().length() == 0
     }
 
     fun appendUserMessage(userId: String, rawText: String) {
@@ -253,6 +263,14 @@ class LocalMemoryStore(context: Context) {
             fiscalMemories = maybeAppendAsset(memory.fiscalMemories, focus == "fiscal", "fiscal", text)
         )
         save(updated)
+    }
+
+    /** Premium local: guarda el estado nuevo de un módulo (fiscal | proyectos) devuelto por el orquestador. */
+    fun savePremiumModule(userId: String, modulo: String, estado: JSONObject) {
+        if (modulo !in PREMIUM_MODULES) return
+        val memory = load(userId)
+        val local = memory.premiumLocalJson().put(modulo, estado)
+        save(memory.copy(premiumLocal = local.toString()))
     }
 
     /** Premium: append a code memory (scaffold; full monotributista UX is backend/TODO). */
@@ -493,6 +511,7 @@ class LocalMemoryStore(context: Context) {
     }
 
     companion object {
+        val PREMIUM_MODULES = setOf("fiscal", "proyectos")
         private const val CHARACTER_NAME_PROMPT = "¿Qué nombre o nickname querés que tenga?"
     }
 }

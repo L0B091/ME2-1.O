@@ -189,6 +189,8 @@ class Me2BackendClient {
                 put("contexto", JSONObject().apply {
                     put("clienteOficial", "android_nativo")
                     put("memoriaLocal", memory.toBackendContext())
+                    // Premium local (gestor monotributista + proyectos): el orquestador lo transforma y devuelve el estado nuevo.
+                    put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
                 })
             }
@@ -377,6 +379,17 @@ class Me2BackendClient {
             authToken = session.authToken,
             body = JSONObject().put("backup", encryptedBackup)
         )
+    }
+
+    /** Restauración en un teléfono nuevo: el backend deja el hilo de continuidad (cuándo/dónde) para el próximo chat. */
+    fun restoreEncryptedBackup(session: UserSession, device: String?): JSONObject? {
+        val json = request(
+            method = "POST",
+            path = "/api/premium/${session.id}/backup/restore",
+            authToken = session.authToken,
+            body = JSONObject().put("dispositivo", device ?: JSONObject.NULL)
+        )
+        return json.optJSONObject("data")?.optJSONObject("backup")
     }
 
     fun downloadEncryptedBackup(session: UserSession): JSONObject? {

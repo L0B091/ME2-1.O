@@ -1155,6 +1155,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             actions.optJSONObject("evento")?.optJSONObject("evento")?.let(::scheduleReminderFrom)
+            // Premium local: el estado nuevo (fiscal | proyectos) queda en la memoria local del teléfono (y en el respaldo).
+            actions.optJSONObject("premium")?.let { p ->
+                val estado = p.optJSONObject("estado")
+                if (p.optString("persistidoEn") == "telefono" && estado != null) localMemoryStore.savePremiumModule(currentSession.id, p.optString("modulo"), estado)
+            }
             Me2SyncWorker.enqueueIfPending(this)
         }.onFailure { Log.w(TAG, "acciones: ${it.javaClass.simpleName}") }
     }
@@ -1222,6 +1227,11 @@ class MainActivity : AppCompatActivity() {
                 val material = backupMaterial ?: backendClient.fetchBackupMaterial(currentSession)
                 backupMaterial = material
                 val encrypted = premiumBackupCrypto.encrypt(currentSession, memory, material)
+                // Hilo en tiempo y espacio (metadato en claro: solo fecha + zona; la ciudad la completa el backend).
+                encrypted.put("continuidad", JSONObject().apply {
+                    memory.lastInteractionAt()?.let { put("ultimaInteraccionAt", it) }
+                    put("lugar", JSONObject().put("zonaHoraria", java.util.TimeZone.getDefault().id))
+                })
                 backendClient.uploadEncryptedBackup(currentSession, encrypted)
             }.onSuccess {
                 runOnUiThread {
@@ -1247,7 +1257,8 @@ class MainActivity : AppCompatActivity() {
 
         thread {
             runCatching {
-                val payload = backendClient.downloadEncryptedBackup(currentSession)
+                val payload = runCatching { backendClient.restoreEncryptedBackup(currentSession, Build.MODEL) }
+                    .getOrElse { backendClient.downloadEncryptedBackup(currentSession) }
                 val material = backupMaterial ?: backendClient.fetchBackupMaterial(currentSession)
                 backupMaterial = material
                 payload?.let { premiumBackupCrypto.decrypt(currentSession, it, material) }
