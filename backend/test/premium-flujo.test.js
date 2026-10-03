@@ -51,6 +51,7 @@ test("aceptar → sin fecha en Google bloquea; menor rechaza; mayor + confirmaci
 test("palabra clave: solo hash en disco, se entrega una vez, desbloquea solo la sesión", async () => {
   const id = u();
   premiumManager.activarPremium(id, "test-pay", { dev: true });
+  verificacionEdad.guardar(id, "1990-01-15", "test");
   const en = adultMode.habilitarExtension(id);
   assert.match(en.keyword, /^\S+ \S+$/);
   const disco = fs.readFileSync(`${storage.DATA_DIR}/adult_mode/${id}.json`, "utf8");
@@ -77,6 +78,7 @@ test("Mercado Pago mock: pago aprobado activa Premium y deja palabra clave pendi
   const prev = process.env.MERCADO_PAGO_ACCESS_TOKEN;
   delete process.env.MERCADO_PAGO_ACCESS_TOKEN;
   const id = u();
+  verificacionEdad.guardar(id, "1990-01-15", "test");
   storage.writeUserData("mercadopago_mock", "mock-pref-test1", { preferenceId: "mock-pref-test1", userId: id, feature: "Modo Adulto", estado: "pendiente" });
   await assert.rejects(() => mercadoPago.pagarMock("mock-pref-test1", "approved", "otro-usuario"), { status: 403 });
   const r = await mercadoPago.pagarMock("mock-pref-test1", "approved", id);

@@ -1,3 +1,4 @@
+import verificacionEdad from "../../auth/verificacionEdad.js";
 /**
  * Modo Adulto — estado y guardrail (sin textos: el LLM redacta).
  * Gate Premium → palabra clave por usuario (solo hash en disco) → unlock por SESIÓN → intensidad gradual.
@@ -212,6 +213,12 @@ function habilitarExtension(userId) {
   const premium = premiumManager.obtenerEstado(userId);
   if (!premium.premiumActivo) {
     const err = new Error("Premium requerido para Modo Adulto");
+    err.status = 403;
+    throw err;
+  }
+  // Mayoría de edad verificada (fecha de nacimiento de Google), independiente de cómo se llegó a Premium.
+  if (verificacionEdad.evaluar(userId).estado !== "mayor") {
+    const err = new Error("Modo Adulto requiere ser mayor de 18 años (verificación de edad)");
     err.status = 403;
     throw err;
   }

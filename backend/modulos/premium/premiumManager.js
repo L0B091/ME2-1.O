@@ -131,9 +131,27 @@ function registrarCheckout(userId, checkout = {}) {
   return registro;
 }
 
+/** Monto mínimo aceptable: el menor entre el precio actual y los checkouts generados para el usuario. */
+function montoEsperado(userId) {
+  const montos = (obtenerRegistro(userId).historial || [])
+    .filter(h => h?.tipo === "checkout_generado" && Number.isFinite(Number(h.amountARS)))
+    .map(h => Number(h.amountARS));
+  return Math.min(obtenerPrecioPremium(), ...montos);
+}
+
 function activarPremium(userId, paymentId, detail = {}) {
-  const premiumHasta = new Date(Date.now() + PREMIUM_DIAS * 24 * 60 * 60 * 1000).toISOString();
   const registro = obtenerRegistro(userId);
+  const previo = (registro.historial || []).find(h => h?.tipo === "pago_aprobado" && paymentId && h.paymentId === paymentId);
+  if (previo) {
+    // Idempotencia: el mismo pago no extiende Premium otra vez.
+    return { ok: true, yaProcesado: true, premiumActivo: Date.parse(registro.premiumHasta || 0) > Date.now(), premiumHasta: registro.premiumHasta || null, paymentId, status: previo.status, feature: previo.feature };
+  }
+  const ahora = Date.now();
+  const aprobado = Date.parse(detail.aprobadoEn || "");
+  const vigente = Date.parse(registro.premiumHasta || "");
+  // Desde la aprobación del pago (no desde "ahora"); si hay Premium vigente, se acumula.
+  const inicio = Math.max(Number.isFinite(aprobado) ? Math.min(aprobado, ahora) : ahora, Number.isFinite(vigente) && vigente > ahora ? vigente : 0);
+  const premiumHasta = new Date(inicio + PREMIUM_DIAS * 24 * 60 * 60 * 1000).toISOString();
   registro.premiumHasta = premiumHasta;
   registro.historial = [
     ...(registro.historial || []),
@@ -172,6 +190,7 @@ export default {
     };
   },
   registrarCheckout,
+  montoEsperado,
   activarPremium,
   sincronizarPlanUsuario,
   obtenerPrecioPremium

@@ -57,6 +57,9 @@ const healthRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+const paymentRateLimit = rateLimit({
+  windowMs: 60 * 1000, limit: 20, standardHeaders: true, legacyHeaders: false
+});
 // /chat: cada turno es una llamada al LLM → límite por IP (configurable).
 const chatRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -377,18 +380,18 @@ app.get("/api/mercadopago/plan", (req, res) => {
   res.json({ ok: true, data: mercadoPagoApi.explicarPremium(String(req.query.feature || "M/A")) });
 });
 
-app.post("/api/mercadopago/checkout", requireAuth, handleAsync(async (req, res) => {
+app.post("/api/mercadopago/checkout", paymentRateLimit, requireAuth, handleAsync(async (req, res) => {
   const data = await mercadoPagoApi.generarLinkPago(req.auth.userId, req.body?.feature || "M/A");
   res.json({ ok: true, data });
 }));
 
-app.post("/api/mercadopago/verify", requireAuth, handleAsync(async (req, res) => {
+app.post("/api/mercadopago/verify", paymentRateLimit, requireAuth, handleAsync(async (req, res) => {
   const data = await mercadoPagoApi.verificarPago(req.body?.paymentId, req.auth.userId);
   res.json({ ok: Boolean(data?.ok), data });
 }));
 
-app.post("/api/mercadopago/webhook", handleAsync(async (req, res) => {
-  const data = await mercadoPagoApi.procesarWebhook(req.body || {}, req.query || {});
+app.post("/api/mercadopago/webhook", paymentRateLimit, handleAsync(async (req, res) => {
+  const data = await mercadoPagoApi.procesarWebhook(req.body || {}, req.query || {}, req.headers || {});
   res.json({ ok: true, data });
 }));
 
@@ -437,7 +440,7 @@ app.get("/api/mercadopago/mock/checkout/:preferenceId", (req, res) => {
   res.json({ ok: true, mock: true, preferenceId: req.params.preferenceId, pagar: "POST /api/mercadopago/mock/pagar { preferenceId }" });
 });
 
-app.post("/api/mercadopago/mock/pagar", requireAuth, handleAsync(async (req, res) => {
+app.post("/api/mercadopago/mock/pagar", paymentRateLimit, requireAuth, handleAsync(async (req, res) => {
   const data = await mercadoPagoApi.pagarMock(req.body?.preferenceId, req.body?.estado || "approved", req.auth.userId);
   res.json({ ok: true, data });
 }));

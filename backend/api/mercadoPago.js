@@ -5,10 +5,51 @@ import usuariosMemoria from "../memoria/usuariosMemoria.js";
 import HttpError from "../utils/httpError.js";
 import storage from "../utils/jsonStorage.js";
 import flujoPremium from "../modulos/premium/flujoPremium.js";
+import verificacionEdad from "../auth/verificacionEdad.js";
 
-// Sin MERCADO_PAGO_ACCESS_TOKEN: modo simulado (link y pago mock) para desarrollo/pruebas.
+// Sin MERCADO_PAGO_ACCESS_TOKEN: modo simulado (link y pago mock) SOLO fuera de producción.
+// En producción sin token no hay mock: el checkout responde 503 (MERCADO_PAGO_ACCESS_TOKEN no configurado).
 export function modoMock() {
+  if (String(process.env.NODE_ENV || "").trim().toLowerCase() === "production") return false;
   return !String(process.env.MERCADO_PAGO_ACCESS_TOKEN || "").trim();
+}
+const PAGOS_NS = "mercadopago_pagos";
+const MONEDA = "ARS";
+const MP_TIMEOUT_MS = () => Math.max(1000, Number(process.env.MERCADO_PAGO_TIMEOUT_MS) || 10000);
+
+/** Premium incluye el Modo Adulto: el checkout exige mayoría de edad verificada (fecha de Google). */
+export function exigirMayorDeEdad(userId) {
+  const ev = verificacionEdad.evaluar(userId);
+  if (ev.estado === "mayor") return ev;
+  throw new HttpError(403, ev.estado === "menor"
+    ? "Premium no disponible: requiere ser mayor de 18 años"
+    : "Premium requiere verificar la edad con la cuenta de Google (fecha de nacimiento)");
+}
+
+/**
+ * Firma del webhook de Mercado Pago (x-signature: "ts=...,v1=..."; manifest "id:<data.id>;request-id:<x-request-id>;ts:<ts>;").
+ * Con MERCADO_PAGO_WEBHOOK_SECRET es obligatoria. Sin secreto: rechazado en producción, aceptado en dev.
+ */
+export function verificarFirmaWebhook({ headers = {}, query = {}, body = {} } = {}) {
+  const secret = String(process.env.MERCADO_PAGO_WEBHOOK_SECRET || "").trim();
+  if (!secret) {
+    if (String(process.env.NODE_ENV || "").toLowerCase() === "production") {
+      throw new HttpError(401, "Webhook rechazado: MERCADO_PAGO_WEBHOOK_SECRET no configurado");
+    }
+    return { verificado: false, motivo: "sin_secreto_dev" };
+  }
+  const firma = String(headers["x-signature"] || "");
+  const requestId = String(headers["x-request-id"] || "");
+  const partes = Object.fromEntries(firma.split(",").map(p => p.split("=").map(x => x.trim())).filter(p => p.length === 2));
+  const dataId = String(query["data.id"] || body?.data?.id || "");
+  if (!partes.ts || !partes.v1 || !dataId) throw new HttpError(401, "Firma de webhook inválida");
+  const idManifest = /^[a-z0-9]+$/i.test(dataId) ? dataId.toLowerCase() : dataId;
+  const manifest = `id:${idManifest};${requestId ? `request-id:${requestId};` : ""}ts:${partes.ts};`;
+  const esperado = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  const a = Buffer.from(esperado, "hex");
+  const b = Buffer.from(String(partes.v1), "hex");
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) throw new HttpError(401, "Firma de webhook inválida");
+  return { verificado: true };
 }
 const MOCK_NS = "mercadopago_mock";
 function baseUrl() {
@@ -34,6 +75,7 @@ async function mercadoPagoRequest(path, options = {}) {
   }
 
   const response = await fetch(`${API_BASE}${path}`, {
+    signal: AbortSignal.timeout(MP_TIMEOUT_MS()),
     ...options,
     headers: {
       Authorization: "Bearer " + accessToken,
@@ -82,6 +124,7 @@ async function generarLinkPago(userId, feature = "M/A") {
     throw new HttpError(404, "Usuario no encontrado para generar checkout");
   }
 
+  exigirMayorDeEdad(userId);
   const precioARS = premiumManager.obtenerPrecioPremium();
   if (modoMock()) {
     const preferenceId = `mock-pref-${crypto.randomBytes(6).toString("hex")}`;
@@ -168,6 +211,14 @@ async function verificarPago(paymentId, expectedUserId = null) {
     throw new HttpError(403, "El pago no pertenece al usuario autenticado");
   }
 
+  const previo = storage.readUserData(PAGOS_NS, String(paymentId), null);
+  if (previo?.userId) {
+    if (previo.userId !== userId) throw new HttpError(409, "El pago ya fue aplicado a otra cuenta");
+    // Idempotente: un paymentId ya aplicado no vuelve a extender Premium ni a reactivar el Modo Adulto.
+    const estado = premiumManager.obtenerEstado(userId);
+    return { ok: true, yaProcesado: true, paymentId, premiumActivo: estado.premiumActivo, premiumHasta: estado.premiumHasta || null, status: "approved" };
+  }
+
   if (payment.status !== "approved") {
     if (String(paymentId).startsWith("mock-pay-")) storage.writeUserData(MOCK_NS, String(paymentId), { ...payment, procesado: true });
     return {
@@ -178,7 +229,18 @@ async function verificarPago(paymentId, expectedUserId = null) {
     };
   }
 
+  const esMock = String(paymentId).startsWith("mock-pay-");
+  if (!esMock) {
+    const moneda = String(payment.currency_id || "").toUpperCase();
+    const monto = Number(payment.transaction_amount);
+    const esperado = premiumManager.montoEsperado(userId);
+    if (moneda !== MONEDA || !Number.isFinite(monto) || monto + 0.001 < esperado) {
+      throw new HttpError(422, "El pago no corresponde al plan Premium (monto o moneda)");
+    }
+  }
+  storage.writeUserData(PAGOS_NS, String(paymentId), { userId, aplicadoEn: new Date().toISOString() });
   const activated = premiumManager.activarPremium(userId, paymentId, {
+    aprobadoEn: payment.date_approved || null,
     status: payment.status,
     feature: payment?.metadata?.feature || "M/A",
     preferenceId: payment?.order?.id || null
@@ -213,10 +275,11 @@ async function pagarMock(preferenceId, estado = "approved", expectedUserId = nul
     external_reference: pref.userId, metadata: { userId: pref.userId, feature: pref.feature }, order: { id: preferenceId }
   });
   storage.writeUserData(MOCK_NS, preferenceId, { ...pref, estado, paymentId });
-  return procesarWebhook({ type: "payment", data: { id: paymentId } });
+  return verificarPago(paymentId);
 }
 
-async function procesarWebhook(body = {}, query = {}) {
+async function procesarWebhook(body = {}, query = {}, headers = {}) {
+  verificarFirmaWebhook({ headers, query, body });
   const topic = body.type || query.topic || body.topic || "";
   const action = body.action || "";
   const paymentId = body?.data?.id || query["data.id"] || query.id || null;
@@ -234,6 +297,8 @@ async function procesarWebhook(body = {}, query = {}) {
 
 export default {
   modoMock,
+  exigirMayorDeEdad,
+  verificarFirmaWebhook,
   pagarMock,
   explicarPremium,
   generarLinkPago,
