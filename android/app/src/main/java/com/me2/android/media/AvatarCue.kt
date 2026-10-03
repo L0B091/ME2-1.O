@@ -9,7 +9,7 @@ data class AudiovisualCue(val categoria: String, val subcategoria: String? = nul
 object AvatarCueMapper {
     fun fromCue(cue: AudiovisualCue?): MediaRequest? {
         cue ?: return null
-        val cat = MediaCategoria.fromCarpeta(cue.categoria) ?: return null
+        val cat = MediaCategoria.fromCarpeta(cue.categoria)?.takeIf { it != MediaCategoria.PRESENTACION } ?: return null
         val intensidad = cue.intensidad?.let { v -> MediaIntensidad.entries.firstOrNull { it.name == MediaNameParser.normalizar(v) } }
         return MediaRequest(cat, cue.subcategoria?.ifBlank { null }, intensidad)
     }

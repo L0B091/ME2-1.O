@@ -42,7 +42,8 @@ object MediaSelector {
         previousId: String? = null,
         random: Random = Random.Default
     ): MediaSelection? {
-        val validos = recursos.filter { permisos.permite(it) && it.tipo in req.tipos }
+        // 00_PRESENTACION es exclusiva del primer contacto (secuenciaPresentacion): nunca en loop, reacción ni fallback.
+        val validos = recursos.filter { permisos.permite(it) && it.tipo in req.tipos && (it.categoria != MediaCategoria.PRESENTACION || req.categoria == MediaCategoria.PRESENTACION) }
         val deCat = validos.filter { it.categoria == req.categoria }
         val niveles = mutableListOf<List<MediaResource>>()
         val sub = req.subcategoria?.let(MediaNameParser::normalizar)

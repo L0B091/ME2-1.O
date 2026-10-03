@@ -891,11 +891,11 @@ class MainActivity : AppCompatActivity() {
             setChatInputEnabled(true)
             return
         }
-        val conversationEmpty = runCatching {
-            localMemoryStore.load(currentSession.id).conversation.isEmpty()
-        }.getOrDefault(true)
-        if (!conversationEmpty) {
-            sessionStorage.setPresentationIntroCompleted(true)
+        val memory = runCatching { localMemoryStore.load(currentSession.id) }.getOrNull()
+        if (!com.me2.android.media.PresentationGate.shouldPlay(
+                currentSession.isDemo, sessionStorage.isPresentationIntroCompleted(),
+                memory?.presentationCompletedAt ?: 0L, memory?.conversation?.isEmpty() ?: true)) {
+            markPresentationSeen()
             setChatInputEnabled(true)
             return
         }
@@ -926,9 +926,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Flag persistido en prefs (commit) y en la memoria local (respaldo cifrado). */
+    private fun markPresentationSeen() {
+        sessionStorage.setPresentationIntroCompleted(true)
+        runCatching { localMemoryStore.markPresentationCompleted(currentSession.id) }
+    }
+
     private fun onPresentationSequenceCompleted() {
         presentationSequenceActive = false
-        sessionStorage.setPresentationIntroCompleted(true)
+        markPresentationSeen()
         setChatInputEnabled(true)
         runCatching { initiativeStore.observeInteraction(currentSession.id) }
         schedulePostPresentationSilence()
@@ -1285,6 +1291,16 @@ class MainActivity : AppCompatActivity() {
 
                         memory != null -> {
                             localMemoryStore.replace(memory.copy(userId = currentSession.id))
+                            // Teléfono nuevo: si el respaldo trae relación previa, la presentación no vuelve a sonar.
+                            if (com.me2.android.media.PresentationGate.alreadySeen(memory.presentationCompletedAt, memory.conversation.isEmpty())) {
+                                markPresentationSeen()
+                                if (presentationSequenceActive) {
+                                    presentationSequenceActive = false
+                                    avatarMode = AvatarState.LOOP_NEUTRAL
+                                    setChatInputEnabled(true)
+                                    fallbackToLoopNeutral(forceReload = true)
+                                }
+                            }
                             startedFromEmptyLocalMemory = false
                             hydrateConversation()
                             if (!silent) {

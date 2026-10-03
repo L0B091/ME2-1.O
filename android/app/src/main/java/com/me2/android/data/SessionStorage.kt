@@ -108,7 +108,8 @@ class SessionStorage(context: Context) {
 
 
     fun setPresentationIntroCompleted(completed: Boolean) {
-        preferences.edit().putBoolean(KEY_PRESENTATION_INTRO, completed).apply()
+        // commit(): el "ya vio la presentación" debe estar en disco aunque el proceso muera enseguida.
+        preferences.edit().putBoolean(KEY_PRESENTATION_INTRO, completed).commit()
     }
 
     fun isPresentationIntroCompleted(): Boolean =

@@ -44,7 +44,9 @@ data class LocalMe2Memory(
     val updatedAt: Long = System.currentTimeMillis(),
     val hiddenConversationThrough: Long = 0L,
     /** Premium local (JSON): {"fiscal": {...}, "proyectos": {...}}. Vive en el teléfono y viaja en el respaldo cifrado. */
-    val premiumLocal: String = "{}"
+    val premiumLocal: String = "{}",
+    /** Presentación (00_PRESENTACION) ya vista: viaja en el respaldo para que no se repita tras reinstalar/restaurar. */
+    val presentationCompletedAt: Long = 0L
 ) {
     fun withUpdatedTimestamp() = copy(updatedAt = System.currentTimeMillis())
 
@@ -74,6 +76,7 @@ data class LocalMe2Memory(
         put("codeMemories", Companion.assetsToJson(codeMemories))
         put("fiscalMemories", Companion.assetsToJson(fiscalMemories))
         put("premiumLocal", premiumLocalJson())
+        if (presentationCompletedAt > 0L) put("presentationCompletedAt", presentationCompletedAt)
     }
 
     fun premiumLocalJson(): JSONObject = runCatching { JSONObject(premiumLocal) }.getOrDefault(JSONObject())
@@ -120,7 +123,8 @@ data class LocalMe2Memory(
                 fiscalMemories = jsonArrayToAssets(json.optJSONArray("fiscalMemories")),
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
                 hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L),
-                premiumLocal = json.optJSONObject("premiumLocal")?.toString() ?: "{}"
+                premiumLocal = json.optJSONObject("premiumLocal")?.toString() ?: "{}",
+                presentationCompletedAt = json.optLong("presentationCompletedAt", 0L)
             )
         }
 
@@ -267,6 +271,12 @@ class LocalMemoryStore(context: Context) {
             fiscalMemories = maybeAppendAsset(memory.fiscalMemories, focus == "fiscal", "fiscal", text)
         )
         save(updated)
+    }
+
+    fun markPresentationCompleted(userId: String, at: Long = System.currentTimeMillis()) {
+        val memory = load(userId)
+        if (memory.presentationCompletedAt > 0L) return
+        save(memory.copy(presentationCompletedAt = at))
     }
 
     /** Sin red: marca el último mensaje del usuario como pendiente (queda guardado, no se pierde ni se reenvía solo). */
