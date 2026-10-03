@@ -540,6 +540,11 @@ class MainActivity : AppCompatActivity() {
         val backendReady = backendClient.isConfigured() && backendClient.isOnline(this)
         // Demo opens without Google. If backend is up, still hit /chat so LLM can be tested.
         // If backend is down, keep a local demo reply (no crash).
+        // Sin red (también en demo): frase offline del banco + mensaje marcado pendiente.
+        if (!backendClient.isOnline(this)) {
+            replyOffline()
+            return
+        }
         if (currentSession.isDemo && !backendReady) {
             appendAssistantReply(
                 getString(R.string.demo_chat_notice),
