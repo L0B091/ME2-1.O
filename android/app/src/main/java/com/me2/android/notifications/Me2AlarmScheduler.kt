@@ -204,7 +204,7 @@ class Me2AlarmScheduler(
     }
 
     /**
-     * Con red: texto del backend/usuario. Sin red: banco offline (BORRADOR editable en assets/offline) con
+     * Con red: texto del backend/usuario. Sin red: banco offline (aprobado, editable en assets/offline) con
      * placeholders del usuario y su pista audiovisual, que viaja en el intent para el clip del avatar al abrir el Chat.
      */
     private fun notifyStage(record: StoredAlarmRecord, spec: AlarmDispatchStageSpec) {
