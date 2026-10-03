@@ -101,9 +101,12 @@ data class AlarmEventResult(
     val alarm: AlarmRecord?
 )
 
-class Me2BackendClient {
+class Me2BackendClient internal constructor(baseUrlOverride: String?) {
+    constructor() : this(null)
+
     val googleWebClientId: String = ApiConfig.googleWebClientId.ifBlank { BuildConfig.GOOGLE_WEB_CLIENT_ID.trim() }
-    private val baseUrl: String = ApiConfig.backendBaseUrl.ifBlank { BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/') }
+    private val baseUrl: String = baseUrlOverride?.trimEnd('/')
+        ?: ApiConfig.backendBaseUrl.ifBlank { BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/') }
     private val betaPremiumMillis = 4102444800000L
 
     /** Solo rutas del propio backend (B3): una URL absoluta de otro origen se descarta. */

@@ -86,7 +86,7 @@
     <string name="login_preview_demo">Ver UI (demo)</string>
     <string name="login_preview_demo_hint">Temporal — sin Google, solo para mirar la interfaz.</string>
     <string name="login_preview_demo_toast">Entraste en vista previa. Chat real y sync piden Google + backend.</string>
-    <string name="demo_chat_notice">Modo demo local: el backend no está disponible ahora. Cuando corra (cd backend &amp;&amp; npm start), el chat usa el LLM.</string>
+    <string name="demo_chat_notice">No pude conectarme con el servidor. Probá de nuevo en un rato.</string>
     <string name="demo_session_plan">DEMO (TEMPORAL)</string>
 
     <string name="enlace_psicologico">ENLACE PSICOLÓGICO</string>

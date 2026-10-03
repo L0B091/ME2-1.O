@@ -655,6 +655,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (currentSession.isDemo && !backendReady) {
+            Log.w(TAG, "chat demo sin backend: configurado=${backendClient.isConfigured()}")
             appendAssistantReply(
                 getString(R.string.demo_chat_notice),
                 "DEMO",
@@ -715,12 +716,16 @@ class MainActivity : AppCompatActivity() {
                     // El link de pago llega dentro del texto del LLM (clickeable en la burbuja); la palabra
                     // clave del modo adulto no se guarda en el teléfono (el backend solo guarda su hash).
                 }
-            }.onFailure {
+            }.onFailure { error ->
+                // Nunca ocultar el error real detrás del aviso del demo.
+                Log.e(TAG, "chat: falló el envío al backend (${error.javaClass.simpleName})", error)
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
                     if (currentSession.isDemo) {
+                        // En debug se agrega el tipo de error (diagnóstico en el teléfono real, sin adb).
+                        val detalle = if (BuildConfig.DEBUG) " [${error.javaClass.simpleName}: ${error.message.orEmpty().take(90)}]" else ""
                         appendAssistantReply(
-                            getString(R.string.demo_chat_notice),
+                            getString(R.string.demo_chat_notice) + detalle,
                             "DEMO",
                             "DEMO_LOOP",
                             typewriter = true
