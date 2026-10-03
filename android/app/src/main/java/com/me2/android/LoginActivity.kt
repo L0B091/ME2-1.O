@@ -14,7 +14,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.Scope
 import com.me2.android.config.ApiConfig
-import com.me2.android.data.LocalMemoryStore
+import com.me2.android.data.UserIdMigration
 import com.me2.android.data.SessionStorage
 import com.me2.android.data.UserSession
 import com.me2.android.databinding.ActivityLoginBinding
@@ -177,16 +177,19 @@ class LoginActivity : AppCompatActivity() {
                 val session = UserSession(
                     displayName = auth.displayName.ifBlank { fallbackSession.displayName },
                     email = auth.email.ifBlank { fallbackSession.email },
-                    id = auth.userId.ifBlank { fallbackSession.id },
+                    // Siempre el userId del backend (Me2AuthContract exige que venga): las rutas /api/.../:userId lo validan.
+                    id = auth.userId,
                     authToken = auth.token,
                     photoUrl = auth.photoUrl ?: fallbackSession.photoUrl,
                     emailVerified = auth.emailVerified,
                     premiumUntilMillis = 0L
                 )
+                val previousId = sessionStorage.loadUser()?.takeUnless { it.isDemo }?.id
                 runOnUiThread {
                     sessionStorage.saveUserCommit(session)
                     setAuthBusy(false)
-                    LocalMemoryStore(this).migrateUserMemory(fallbackSession.id, session.id)
+                    UserIdMigration.migrate(this, fallbackSession.id, session.id)
+                    UserIdMigration.migrate(this, previousId, session.id)
                     openMain(demoPreview = false)
                 }
             }.onFailure { error ->

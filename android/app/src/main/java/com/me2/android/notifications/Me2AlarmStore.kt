@@ -49,6 +49,16 @@ class Me2AlarmStore(context: Context) {
         change(current).also(::upsert)
     }
 
+    /** Reasigna las alarmas de un userId viejo (p. ej. el id de Google) al userId del backend. */
+    fun migrateUser(fromUserId: String, toUserId: String): Int = synchronized(LOCK) {
+        if (fromUserId.isBlank() || toUserId.isBlank() || fromUserId == toUserId) return 0
+        val all = loadAll()
+        val moved = all.count { it.userId == fromUserId }
+        if (moved == 0) return 0
+        saveAll(all.map { if (it.userId == fromUserId) it.copy(userId = toUserId) else it })
+        moved
+    }
+
     fun pendingSync(): List<StoredAlarmRecord> = loadAll().filter { it.syncState != StoredAlarmRecord.SYNC_OK }
 
     private fun loadAll(): List<StoredAlarmRecord> {

@@ -38,6 +38,15 @@ class Me2InitiativeStore internal constructor(
         }
     }
 
+    /** Copia el estado de iniciativa de un userId viejo al userId del backend (si el destino está vacío). */
+    fun migrateUser(fromUserId: String, toUserId: String): Boolean = synchronized(lock) {
+        if (fromUserId.isBlank() || toUserId.isBlank() || fromUserId == toUserId) return@synchronized false
+        if (dao.findByUserId(toUserId) != null) return@synchronized false
+        val source = dao.findByUserId(fromUserId) ?: return@synchronized false
+        dao.upsert(source.copy(userId = toUserId))
+        true
+    }
+
     fun isEnabled(userId: String): Boolean = snapshot(userId).optBoolean("enabled", true)
 
     fun setEnabled(userId: String, enabled: Boolean) = update(userId) {

@@ -38,6 +38,7 @@ import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.me2.android.config.ApiConfig
 import com.me2.android.data.ChatMessage
 import com.me2.android.data.LocalMemoryStore
+import com.me2.android.data.UserIdMigration
 import com.me2.android.data.PremiumBackupCrypto
 import com.me2.android.data.SessionStorage
 import com.me2.android.data.UserSession
@@ -223,6 +224,7 @@ class MainActivity : AppCompatActivity() {
             setupToolbar()
             setupChat()
             setupBitacora(currentSession)
+            reconcileBackendUserId()
             binding.videoContainer.clipToOutline = true
             runCatching { setupVideo() }.onFailure { Log.e(TAG, "setupVideo failed", it) }
 
@@ -1220,6 +1222,26 @@ class MainActivity : AppCompatActivity() {
                         appendAssistantReply(reply, "AWAKE", "CLIMA")
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Sesiones guardadas por versiones anteriores tienen como id el de la cuenta de Google (no el del backend) y
+     * todas las rutas /api/.../:userId responden 403. Se consulta /api/auth/me y se migra lo local al userId real.
+     */
+    private fun reconcileBackendUserId() {
+        val session = currentSession
+        val token = session.authToken
+        if (session.isDemo || token.isNullOrBlank() || !backendClient.isConfigured()) return
+        thread {
+            val backendId = runCatching { backendClient.fetchAuthenticatedUserId(token) }.getOrNull() ?: return@thread
+            if (backendId == session.id) return@thread
+            UserIdMigration.migrate(this, session.id, backendId)
+            runOnUiThread {
+                if (currentSession.id != session.id) return@runOnUiThread
+                updateCurrentSession(currentSession.copy(id = backendId))
+                runCatching { hydrateConversation() }
             }
         }
     }

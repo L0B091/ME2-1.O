@@ -136,17 +136,12 @@ class Me2BackendClient {
             path = "/api/auth/google",
             body = JSONObject().put("idToken", idToken).apply { serverAuthCode?.let { put("serverAuthCode", it) } }
         )
-        val data = json.optJSONObject("data") ?: json
-        val profile = data.optJSONObject("profile") ?: JSONObject()
-        return BackendAuthResult(
-            token = data.getString("token"),
-            userId = profile.optString("userId", data.optString("userId")),
-            email = profile.optString("email"),
-            displayName = profile.optString("displayName", "Usuario"),
-            photoUrl = profile.optString("photoUrl").ifBlank { null },
-            emailVerified = profile.optBoolean("emailVerified", false)
-        )
+        return Me2AuthContract.parseGoogleAuth(json)
     }
+
+    /** userId autenticado según el backend (para corregir sesiones guardadas con el id de Google). */
+    fun fetchAuthenticatedUserId(authToken: String): String? =
+        Me2AuthContract.parseAuthMeUserId(request(method = "GET", path = "/api/auth/me", authToken = authToken))
 
     fun registerLocal(email: String, password: String, displayName: String): BackendAuthResult {
         val json = request(
