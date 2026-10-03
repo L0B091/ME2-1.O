@@ -95,6 +95,7 @@ class MainActivity : AppCompatActivity() {
     private val fullConversation = mutableListOf<ChatMessage>()
     private val visibleConversation = mutableListOf<ChatMessage>()
     private val backendClient = Me2BackendClient()
+    private var networkMonitor: com.me2.android.net.NetworkStatusMonitor? = null
     private val premiumBackupCrypto = PremiumBackupCrypto()
 
     private var player: ExoPlayer? = null
@@ -275,6 +276,21 @@ class MainActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!::binding.isInitialized) return
+        // Barra superior con el estado real de red: ACTIVE ↔ OFFLINE (mismo estilo, solo cambia el texto).
+        val monitor = networkMonitor ?: com.me2.android.net.NetworkStatusMonitor(this) { online ->
+            if (::binding.isInitialized) binding.syncStatusText.setText(com.me2.android.net.NetworkStatusMonitor.labelFor(online))
+        }.also { networkMonitor = it }
+        monitor.start()
+    }
+
+    override fun onStop() {
+        networkMonitor?.stop()
+        super.onStop()
     }
 
     override fun onResume() {

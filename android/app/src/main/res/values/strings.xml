@@ -18,6 +18,7 @@
     <string name="premium_cta">MODO PREMIUM</string>
     <string name="send">Enviar</string>
     <string name="autosync_active">AUTO-SYNC // ACTIVE</string>
+    <string name="autosync_offline">AUTO-SYNC // OFFLINE</string>
     <string name="me2_data_stream">ME2 // DATA_STREAM</string>
     <string name="message_hint">ESCRIBIR MENSAJE...</string>
     <string name="nodo_prefix">NODO_ID //</string>
