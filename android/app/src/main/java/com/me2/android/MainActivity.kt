@@ -576,6 +576,9 @@ class MainActivity : AppCompatActivity() {
                     applyAdultModeFromChat(result)
                     adultUnlockedNow = result.adultMode?.unlocked == true
                     applyChatActions(result.actions)
+                    result.memoryFacts?.let { facts ->
+                        runCatching { localMemoryStore.applyBackendFacts(currentSession.id, facts.gustos, facts.disgustos, facts.ubicacion) }
+                    }
                     runCatching { localMemoryStore.clearPendingMessages(currentSession.id) }
                     result.weatherLabel?.let { label ->
                         runCatching {

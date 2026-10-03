@@ -1,3 +1,4 @@
+import { normalizarUbicacion } from "./orquestadorChat.js";
 import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
 import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import { evaluarIniciativa, interesesDe, palabras, CATEGORIAS, POLITICA_INICIATIVA } from "../comportamiento/iniciativaConversacional.js";
@@ -314,7 +315,16 @@ export async function evaluarAutonomia(body, opciones = {}) {
   const ahora = opciones.ahora ?? Date.now();
   const generar = opciones.generar || ((iniciativa, memoria) => generarIniciativaLLM(iniciativa, memoria, solicitud.userId));
   const configurado = opciones.llmConfigurado ?? dolphinClient.estaConfigurado();
-  const memoriaServidor = memoriaConversacional.obtener(solicitud.userId);
+  // Cliente con memoria local primaria (Android): sus gustos/ubicación viajan en memoriaLocal y se suman a lo del servidor.
+  const memoriaGuardada = memoriaConversacional.obtener(solicitud.userId);
+  const gustosLocales = Array.isArray(solicitud.memoriaLocal?.gustos)
+    ? solicitud.memoriaLocal.gustos.filter(g => typeof g === "string" && g.trim().length >= 2 && g.length <= 60).map(g => g.trim().toLowerCase()).slice(-30)
+    : [];
+  const memoriaServidor = {
+    ...memoriaGuardada,
+    gustos: [...new Set([...(memoriaGuardada.gustos || []), ...gustosLocales])],
+    ubicacion: memoriaGuardada.ubicacion || normalizarUbicacion(solicitud.memoriaLocal?.ubicacion)
+  };
   if (!(solicitud.memoriaLocal.recentConversation || []).length) {
     solicitud.memoriaLocal = {
       ...solicitud.memoriaLocal,

@@ -55,7 +55,15 @@ data class BackendChatResult(
     /** Clima actual para el widget (p. ej. "23°C"), si el backend lo tiene. */
     val weatherLabel: String? = null,
     /** Acciones deterministas del turno (alarma creada/cancelada en el teléfono, evento agendado). */
-    val actions: JSONObject? = null
+    val actions: JSONObject? = null,
+    /** Gustos/ubicación extraídos por el backend para guardar en la memoria local primaria. */
+    val memoryFacts: MemoryFacts? = null
+)
+
+data class MemoryFacts(
+    val gustos: List<String>,
+    val disgustos: List<String>,
+    val ubicacion: com.me2.android.data.LocalLocation?
 )
 
 data class PremiumStatusResult(
@@ -187,6 +195,11 @@ class Me2BackendClient {
                     // Premium local (gestor monotributista + proyectos): el orquestador lo transforma y devuelve el estado nuevo.
                     put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
+                    // Herramientas (clima/hora): zona del teléfono + coordenadas conocidas de la memoria local.
+                    put("zonaHoraria", memory.location?.timeZone ?: TimeZone.getDefault().id)
+                    memory.location?.let { loc ->
+                        if (loc.lat != null && loc.lon != null) { put("lat", loc.lat); put("lon", loc.lon) }
+                    }
                 })
             }
         )
@@ -229,8 +242,20 @@ class Me2BackendClient {
             reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null },
             audiovisual = parseAudiovisual(json.optJSONObject("audiovisual")),
             weatherLabel = parseWeatherLabel(json.optJSONObject("clima")),
-            actions = json.optJSONObject("acciones")
+            actions = json.optJSONObject("acciones"),
+            memoryFacts = parseMemoryFacts(json.optJSONObject("memoriaLocalDelta"))
         )
+    }
+
+    /** Hechos estructurados para la memoria local primaria (gustos/disgustos/ubicación). */
+    internal fun parseMemoryFacts(o: JSONObject?): MemoryFacts? {
+        o ?: return null
+        val strings = { key: String ->
+            val a = o.optJSONArray(key)
+            if (a == null) emptyList() else (0 until a.length()).mapNotNull { a.optString(it).trim().takeIf { s -> s.isNotEmpty() } }
+        }
+        val facts = MemoryFacts(strings("gustos"), strings("disgustos"), com.me2.android.data.LocalLocation.fromJson(o.optJSONObject("ubicacion")))
+        return facts.takeUnless { it.gustos.isEmpty() && it.disgustos.isEmpty() && it.ubicacion == null }
     }
 
     internal fun parseAudiovisual(o: JSONObject?): com.me2.android.media.AudiovisualCue? {

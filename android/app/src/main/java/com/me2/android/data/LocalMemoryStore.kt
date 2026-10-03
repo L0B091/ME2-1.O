@@ -29,6 +29,33 @@ data class LocalAssetMemory(
     val timestamp: Long
 )
 
+/** Ubicación del usuario (ciudad geocodificada por el backend o informada por el teléfono). */
+data class LocalLocation(
+    val city: String?,
+    val lat: Double?,
+    val lon: Double?,
+    val timeZone: String?
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        city?.let { put("ciudad", it) }
+        lat?.let { put("lat", it) }
+        lon?.let { put("lon", it) }
+        timeZone?.let { put("zonaHoraria", it) }
+    }
+
+    companion object {
+        fun fromJson(json: JSONObject?): LocalLocation? {
+            if (json == null) return null
+            val lat = json.optDouble("lat").takeIf { !it.isNaN() && it in -90.0..90.0 }
+            val lon = json.optDouble("lon").takeIf { !it.isNaN() && it in -180.0..180.0 }
+            val city = json.optString("ciudad").trim().takeIf { it.isNotEmpty() && it != "null" }?.take(80)
+            val tz = json.optString("zonaHoraria").trim().takeIf { it.isNotEmpty() && it != "null" }?.take(64)
+            if (city == null && (lat == null || lon == null)) return null
+            return LocalLocation(city, lat, lon, tz)
+        }
+    }
+}
+
 data class LocalMe2Memory(
     val version: Int = 2,
     val userId: String,
@@ -46,7 +73,12 @@ data class LocalMe2Memory(
     /** Premium local (JSON): {"fiscal": {...}, "proyectos": {...}}. Vive en el teléfono y viaja en el respaldo cifrado. */
     val premiumLocal: String = "{}",
     /** Presentación (00_PRESENTACION) ya vista: viaja en el respaldo para que no se repita tras reinstalar/restaurar. */
-    val presentationCompletedAt: Long = 0L
+    val presentationCompletedAt: Long = 0L,
+    /** Gustos/intereses del usuario (los extrae el backend del mensaje y el teléfono los guarda): habilitan noticias. */
+    val interests: List<String> = emptyList(),
+    val dislikes: List<String> = emptyList(),
+    /** Ubicación (habilita clima en el chat, el widget y las iniciativas). */
+    val location: LocalLocation? = null
 ) {
     fun withUpdatedTimestamp() = copy(updatedAt = System.currentTimeMillis())
 
@@ -77,6 +109,18 @@ data class LocalMe2Memory(
         put("fiscalMemories", Companion.assetsToJson(fiscalMemories))
         put("premiumLocal", premiumLocalJson())
         if (presentationCompletedAt > 0L) put("presentationCompletedAt", presentationCompletedAt)
+        put("interests", JSONArray(interests))
+        put("dislikes", JSONArray(dislikes))
+        location?.let { put("location", it.toJson()) }
+    }
+
+    /** Aplica los hechos estructurados que devolvió el backend (gustos nuevos, disgustos, ubicación geocodificada). */
+    fun withBackendFacts(gustos: List<String>, disgustos: List<String>, ubicacion: LocalLocation?): LocalMe2Memory {
+        val cleanDislikes = (dislikes.filterNot { it in gustos } + disgustos).map { it.trim().lowercase(Locale.ROOT) }
+            .filter { it.length in 2..60 }.distinct().takeLast(MAX_INTERESTS)
+        val cleanInterests = (interests.filterNot { it in disgustos } + gustos).map { it.trim().lowercase(Locale.ROOT) }
+            .filter { it.length in 2..60 && it !in cleanDislikes }.distinct().takeLast(MAX_INTERESTS)
+        return copy(interests = cleanInterests, dislikes = cleanDislikes, location = ubicacion ?: location)
     }
 
     fun premiumLocalJson(): JSONObject = runCatching { JSONObject(premiumLocal) }.getOrDefault(JSONObject())
@@ -105,6 +149,9 @@ data class LocalMe2Memory(
         put("importantMemories", Companion.notesToJson(importantMemories.takeLast(8)))
         put("codeMemories", Companion.assetsToJson(codeMemories.takeLast(8)))
         put("fiscalMemories", Companion.assetsToJson(fiscalMemories.takeLast(8)))
+        put("gustos", JSONArray(interests.takeLast(MAX_INTERESTS)))
+        put("disgustos", JSONArray(dislikes.takeLast(MAX_INTERESTS)))
+        location?.let { put("ubicacion", it.toJson()) }
     }
 
     companion object {
@@ -124,8 +171,18 @@ data class LocalMe2Memory(
                 updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
                 hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L),
                 premiumLocal = json.optJSONObject("premiumLocal")?.toString() ?: "{}",
-                presentationCompletedAt = json.optLong("presentationCompletedAt", 0L)
+                presentationCompletedAt = json.optLong("presentationCompletedAt", 0L),
+                interests = jsonArrayToStrings(json.optJSONArray("interests")),
+                dislikes = jsonArrayToStrings(json.optJSONArray("dislikes")),
+                location = LocalLocation.fromJson(json.optJSONObject("location"))
             )
+        }
+
+        const val MAX_INTERESTS = 30
+
+        internal fun jsonArrayToStrings(array: JSONArray?): List<String> {
+            if (array == null) return emptyList()
+            return (0 until array.length()).mapNotNull { array.optString(it).trim().takeIf { s -> s.isNotEmpty() } }
         }
 
         internal fun notesToJson(notes: List<LocalMemoryNote>): JSONArray = JSONArray().apply {
@@ -238,6 +295,11 @@ class LocalMemoryStore(context: Context) {
         if (isEffectivelyEmpty(fromUserId)) return
         save(sourceMemory.copy(userId = toUserId))
         dao.deleteByUserId(fromUserId)
+    }
+
+    fun applyBackendFacts(userId: String, gustos: List<String>, disgustos: List<String>, ubicacion: LocalLocation?) {
+        if (gustos.isEmpty() && disgustos.isEmpty() && ubicacion == null) return
+        save(load(userId).withBackendFacts(gustos, disgustos, ubicacion).withUpdatedTimestamp())
     }
 
     fun isEffectivelyEmpty(userId: String): Boolean {

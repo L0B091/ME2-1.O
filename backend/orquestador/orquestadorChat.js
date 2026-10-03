@@ -12,6 +12,7 @@ import historialConversacion from "../memoria/historialConversacion.js";
 import writeBackEngine from "../memoria/writebackengine.js";
 import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
 import memoriaConversacional from "../memoria/memoriaConversacional.js";
+import { geocodificar } from "../api/geocoding.js";
 import datosUsuario from "../memoria/datosUsuario.js";
 import dolphinClient from "../llm/dolphinClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
@@ -37,6 +38,46 @@ import continuidad from "../memoria/continuidad.js";
 
 const EXPRESION_NEUTRA = Object.freeze({ tono: "neutral", ritmo: "normal", microexpresion: "mirada_atenta", intensidad: "suave" });
 
+const MAX_GUSTOS_LOCAL = 30;
+function listaTextos(v, max = MAX_GUSTOS_LOCAL) {
+  return Array.isArray(v)
+    ? [...new Set(v.filter(x => typeof x === "string").map(x => x.trim().toLowerCase()).filter(x => x.length >= 2 && x.length <= 60))].slice(-max)
+    : [];
+}
+
+export function normalizarUbicacion(u) {
+  if (!u || typeof u !== "object") return null;
+  const lat = Number(u.lat);
+  const lon = Number(u.lon);
+  const coords = Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+  const ciudad = typeof u.ciudad === "string" && u.ciudad.trim() ? u.ciudad.trim().slice(0, 80) : null;
+  const zonaHoraria = typeof u.zonaHoraria === "string" && /^[A-Za-z_]+(\/[A-Za-z0-9_+-]+)*$/.test(u.zonaHoraria) ? u.zonaHoraria : null;
+  if (!coords) return null; // el clima necesita coordenadas; una ciudad sin geocodificar no sirve
+  return { ciudad, lat, lon, zonaHoraria };
+}
+
+/**
+ * Hechos estructurados para un cliente con memoria local primaria (Android): el backend NO los persiste; los extrae
+ * del mensaje (gustos, disgustos, ciudad geocodificada) y los devuelve para que el teléfono los guarde.
+ */
+let geocodificarImpl = geocodificar;
+/** Solo tests: reemplaza el geocodificador (sin red). */
+export function _setGeocodificar(fn) { geocodificarImpl = typeof fn === "function" ? fn : geocodificar; }
+
+async function hechosParaMemoriaLocal(mensaje, memoriaLocal) {
+  const geo = geocodificarImpl;
+  const ex = memoriaConversacional.extraerHechos(mensaje);
+  const delta = { gustos: listaTextos(ex.gustos), disgustos: listaTextos(ex.disgustos), ubicacion: null };
+  const actual = memoriaLocal?.ubicacion;
+  if (ex.ciudad && (!actual?.ciudad || actual.ciudad.toLowerCase() !== ex.ciudad.toLowerCase())) {
+    try {
+      const g = await geo(ex.ciudad, { timeoutMs: 5000 });
+      if (g) delta.ubicacion = normalizarUbicacion(g);
+    } catch { /* sin geocodificación: la ubicación sigue igual */ }
+  }
+  return delta;
+}
+
 function normalizarMemoriaLocal(memoriaLocal = {}) {
   if (!memoriaLocal || typeof memoriaLocal !== "object") return null;
   const recentConversation = Array.isArray(memoriaLocal.recentConversation)
@@ -49,7 +90,10 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
     characterName: memoriaLocal.characterName || null,
     recentConversation,
     persistentMemories: Array.isArray(memoriaLocal.persistentMemories) ? memoriaLocal.persistentMemories : [],
-    importantMemories: Array.isArray(memoriaLocal.importantMemories) ? memoriaLocal.importantMemories : []
+    importantMemories: Array.isArray(memoriaLocal.importantMemories) ? memoriaLocal.importantMemories : [],
+    gustos: listaTextos(memoriaLocal.gustos),
+    disgustos: listaTextos(memoriaLocal.disgustos),
+    ubicacion: normalizarUbicacion(memoriaLocal.ubicacion)
   };
 }
 
@@ -149,12 +193,23 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       memoriaEscritura.writeBack = { guardado: false, error: error.message };
     }
   }
+  let memoriaLocalDelta = null;
   if (memoriaLocal) {
+    if (!persistirEnServidor) {
+      memoriaLocalDelta = await hechosParaMemoriaLocal(mensajeUsuario, memoriaLocal);
+    }
+    const disgustos = listaTextos([...(memoriaLocal.disgustos || []), ...(memoriaLocalDelta?.disgustos || [])]);
+    const gustos = listaTextos([...(memoriaHechos.gustos || []), ...memoriaLocal.gustos, ...(memoriaLocalDelta?.gustos || [])])
+      .filter(g => !disgustos.includes(g));
     memoriaHechos = {
       ...memoriaHechos,
+      gustos,
+      disgustos: listaTextos([...(memoriaHechos.disgustos || []), ...disgustos]),
+      ubicacion: memoriaLocalDelta?.ubicacion || memoriaLocal.ubicacion || memoriaHechos.ubicacion || null,
       hechos: [...(memoriaHechos.hechos || []), ...memoriaLocal.persistentMemories.map(m => m?.text).filter(Boolean),
         ...memoriaLocal.importantMemories.map(m => m?.text).filter(Boolean)]
     };
+    if (memoriaHechos.ubicacion && !memoriaHechos.ciudad) memoriaHechos.ciudad = memoriaHechos.ubicacion.ciudad || null;
   }
 
   // Premium + modo adulto: solo estado/gate como HECHOS (el LLM redacta oferta, rechazo, link y palabra clave)
@@ -297,6 +352,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     premium,
     adultMode: adultResult?.adult || null,
     checkout,
+    memoriaLocalDelta: memoriaLocalDelta && (memoriaLocalDelta.gustos.length || memoriaLocalDelta.disgustos.length || memoriaLocalDelta.ubicacion)
+      ? memoriaLocalDelta : null,
     acciones: premiumLocalRes
       ? { ...accionesResultado, premium: { modulo: premiumLocalRes.modulo, operacion: premiumLocalRes.resultado?.op, ok: premiumLocalRes.resultado?.ok !== false, persistidoEn: premiumLocalRes.persistidoEn, estado: premiumLocalRes.persistidoEn === "telefono" ? premiumLocalRes.estado : undefined } }
       : accionesResultado,
