@@ -337,7 +337,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
   // Última interacción conocida por el servidor (historial/reloj) para respetar el timing.
   const ultimoServidor = Math.max(
     ...historialConversacion.obtenerHistorial(solicitud.userId, 50).filter(m => m.tipo === "usuario").map(m => Number(m.timestamp) || 0), 0,
-    (() => { const min = relojApi.tiempoDesdeUltimaInteraccion(solicitud.userId); return min == null ? 0 : ahora - min * 60000; })()
+    (() => { const min = relojApi.tiempoDesdeUltimaInteraccion(solicitud.userId); return min == null ? 0 : Date.now() - min * 60000; })()
   );
   if (ultimoServidor > (solicitud.perfilRitmo.ultimaInteraccion || 0)) {
     solicitud.perfilRitmo = { ...solicitud.perfilRitmo, ultimaInteraccion: Math.min(ultimoServidor, ahora) };
