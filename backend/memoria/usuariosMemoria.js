@@ -61,6 +61,17 @@ function guardarUsuario(email, userData = {}) {
   return merged;
 }
 
+/** Reemplaza el registro del email SIN fusionar con el existente (id nuevo si no se pasa uno). */
+function reemplazarUsuario(email, userData = {}) {
+  const normalizedEmail = normalizeEmail(email || userData.email);
+  if (!normalizedEmail) return null;
+  const users = readUsers();
+  const nuevo = normalizeUser(normalizedEmail, { ...userData, email: normalizedEmail, updatedAt: new Date().toISOString() });
+  users[normalizedEmail] = nuevo;
+  writeUsers(users);
+  return nuevo;
+}
+
 function obtenerUsuario(email) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) return null;
@@ -110,6 +121,7 @@ function obtenerOMaterializarBackupMaterial(userId) {
 
 export default {
   guardarUsuario,
+  reemplazarUsuario,
   obtenerUsuario,
   obtenerUsuarioPorGoogleId,
   obtenerUsuarioPorId,

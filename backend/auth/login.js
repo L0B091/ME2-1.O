@@ -146,7 +146,9 @@ function validarToken(token) {
   }
 
   const usuario = usuariosMemoria.obtenerUsuario(sesion.email);
-  if (!usuario) return null;
+  // El token pertenece a un usuario concreto: si el registro del email fue reemplazado (p. ej. una cuenta local
+  // previa descartada al vincular Google), los tokens viejos dejan de valer.
+  if (!usuario || (sesion.userId && sesion.userId !== usuario.id)) return null;
 
   return {
     userId: usuario.id,
@@ -179,7 +181,13 @@ function cerrarSesion(token) {
   return existed ? { ok: true, mensaje: "Sesión cerrada" } : { ok: false, error: "Token inválido" };
 }
 
+/** Login local (email + contraseña): solo desarrollo/pruebas. Producción: Google es el único método. */
+export function localAuthEnabled() {
+  return String(process.env.LOCAL_AUTH_ENABLED || "").trim().toLowerCase() === "true";
+}
+
 export default {
+  localAuthEnabled,
   registrarUsuario,
   loginUsuario,
   iniciarSesionParaUsuario,

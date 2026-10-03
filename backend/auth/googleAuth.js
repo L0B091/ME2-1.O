@@ -38,26 +38,54 @@ async function verificarIdToken(idToken) {
   return payload;
 }
 
-function sincronizarPerfil(payload) {
+function emailVerificado(payload = {}) {
+  return payload.email_verified === true || String(payload.email_verified).toLowerCase() === "true";
+}
+
+/**
+ * Vincula la identidad de Google con el registro de usuario.
+ * - Exige email_verified (sin eso el email no prueba titularidad).
+ * - Solo se reutiliza un registro que ya pertenece a ESTE googleId. Un registro previo con el mismo email creado por
+ *   login local (sin googleId) NO se fusiona: se reemplaza por uno nuevo (id nuevo, sin contraseña), para evitar el
+ *   pre-secuestro de cuenta (alguien registra el email ajeno con contraseña antes del primer login con Google).
+ * - Nunca se conservan passwordHash/passwordSalt en una cuenta Google.
+ */
+export function sincronizarPerfil(payload) {
+  if (!emailVerificado(payload)) {
+    throw new HttpError(403, "El email de la cuenta de Google no está verificado");
+  }
   const email = usuariosMemoria.normalizeEmail(payload.email);
   const existentePorGoogleId = usuariosMemoria.obtenerUsuarioPorGoogleId(payload.sub);
   const existentePorEmail = usuariosMemoria.obtenerUsuario(email);
-  const base = existentePorGoogleId || existentePorEmail || {};
-
-  const usuario = usuariosMemoria.guardarUsuario(email, {
-    ...base,
+  if (existentePorEmail?.googleId && existentePorEmail.googleId !== payload.sub) {
+    throw new HttpError(409, "El email ya está vinculado a otra cuenta de Google");
+  }
+  const propio = existentePorGoogleId || (existentePorEmail?.googleId === payload.sub ? existentePorEmail : null);
+  const perfilGoogle = {
     email,
     googleId: payload.sub,
     tipoLogin: "google",
-    displayName: payload.name || base.displayName || payload.email,
-    photoUrl: payload.picture || base.photoUrl || null,
-    emailVerified: Boolean(payload.email_verified)
-  });
+    passwordHash: null,
+    passwordSalt: null,
+    displayName: payload.name || propio?.displayName || payload.email,
+    photoUrl: payload.picture || propio?.photoUrl || null,
+    emailVerified: true
+  };
+
+  let usuario;
+  if (propio) {
+    usuario = usuariosMemoria.guardarUsuario(email, { ...propio, ...perfilGoogle });
+  } else {
+    if (existentePorEmail) {
+      console.warn("[googleAuth] registro local previo con el mismo email descartado (no se fusiona con Google)");
+    }
+    usuario = usuariosMemoria.reemplazarUsuario(email, perfilGoogle);
+  }
 
   datosUsuario.actualizar(usuario.id, {
     identidad: {
       nombre: payload.name || usuario.displayName,
-      apodo: base.displayName || payload.given_name || payload.name || null
+      apodo: propio?.displayName || payload.given_name || payload.name || null
     },
     cuentas: {
       email,

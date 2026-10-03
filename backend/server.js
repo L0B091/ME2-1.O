@@ -1,4 +1,6 @@
 import express from "express";
+import path from "path";
+import { pathToFileURL } from "url";
 import cors from "cors";
 import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
@@ -155,7 +157,15 @@ app.get("/health", healthRateLimit, (req, res) => {
   });
 });
 
-app.post("/api/auth/register", authRateLimit, handleAsync(async (req, res) => {
+// Login local: deshabilitado salvo LOCAL_AUTH_ENABLED=true (dev). Google es el único método de producción.
+function localAuthGate(_req, res, next) {
+  if (!login.localAuthEnabled()) {
+    return res.status(404).json({ ok: false, error: "Login local deshabilitado: usá Google" });
+  }
+  return next();
+}
+
+app.post("/api/auth/register", authRateLimit, localAuthGate, handleAsync(async (req, res) => {
   const { email, password, displayName } = req.body || {};
   const resultado = login.registrarUsuario(email, password, { displayName });
   if (!resultado.ok) {
@@ -175,7 +185,7 @@ app.post("/api/auth/register", authRateLimit, handleAsync(async (req, res) => {
   return res.status(201).json({ ok: true, ...resultado });
 }));
 
-app.post("/api/auth/login", authRateLimit, handleAsync(async (req, res) => {
+app.post("/api/auth/login", authRateLimit, localAuthGate, handleAsync(async (req, res) => {
   const { email, password } = req.body || {};
   const resultado = login.loginUsuario(email, password);
   if (!resultado.ok) {
@@ -615,13 +625,23 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 ME2 corriendo en http://localhost:${server.address().port}`);
-  // Server-side alarm tick (Android remains primary executor for notifications)
-  try {
-    orquestadorNotificaciones.iniciar(60_000);
-    console.log("⏰ orquestadorNotificaciones tick iniciado (60s)");
-  } catch (error) {
-    console.error("No se pudo iniciar orquestadorNotificaciones:", error?.message || error);
-  }
-});
+export function iniciarServidor(port = PORT) {
+  const server = app.listen(port, () => {
+    console.log(`🚀 ME2 corriendo en http://localhost:${server.address().port}`);
+    // Server-side alarm tick (Android remains primary executor for notifications)
+    try {
+      orquestadorNotificaciones.iniciar(60_000);
+      console.log("⏰ orquestadorNotificaciones tick iniciado (60s)");
+    } catch (error) {
+      console.error("No se pudo iniciar orquestadorNotificaciones:", error?.message || error);
+    }
+  });
+  return server;
+}
+
+export default app;
+
+// `node server.js` levanta el servidor; importarlo (tests) solo expone la app.
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  iniciarServidor();
+}
