@@ -19,6 +19,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="false"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize" />
         <receiver
             android:name=".notifications.Me2AlarmReceiver"
@@ -59,6 +60,7 @@
         <activity
             android:name=".LoginActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
