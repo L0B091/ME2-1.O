@@ -57,6 +57,13 @@ const healthRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false
 });
+// /chat: cada turno es una llamada al LLM → límite por IP (configurable).
+const chatRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: Math.max(1, Number(process.env.ME2_CHAT_RATE_LIMIT) || 30),
+  standardHeaders: true,
+  legacyHeaders: false
+});
 const initiativeRateLimit = rateLimit({
   windowMs: 60 * 1000, limit: 6, standardHeaders: true, legacyHeaders: false
 });
@@ -576,7 +583,7 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, identida
   return res.json({ ok: true, data });
 }));
 
-app.post("/chat", optionalAuth, identidadObligatoria, handleAsync(async (req, res) => {
+app.post("/chat", chatRateLimit, optionalAuth, identidadObligatoria, handleAsync(async (req, res) => {
   const { mensaje, contexto } = req.body || {};
   if (!mensaje || typeof mensaje !== "string") {
     return res.status(400).json({ ok: false, error: "Mensaje inválido" });
