@@ -215,7 +215,7 @@ class Me2AlarmScheduler(
     internal fun offlineContent(record: StoredAlarmRecord, spec: AlarmDispatchStageSpec): Pair<AlarmDispatchStageSpec, com.me2.android.media.AudiovisualCue?> {
         if (isOnline()) return spec to null
         val categoria = if (record.kind == StoredAlarmRecord.KIND_REMINDER) OfflinePhraseBank.RECORDATORIO else OfflinePhraseBank.alarmCategory(spec.stage)
-        val nombre = runCatching { SessionStorage(context).loadUser()?.displayName?.trim()?.substringBefore(' ') }.getOrNull()
+        val nombre = runCatching { SessionStorage(context).loadUser()?.greetingName }.getOrNull()
         val phrase = OfflinePhrases(context).pick(categoria, mapOf("nombre" to nombre, "titulo" to record.title, "hora" to record.hour))
             ?: return spec to null
         return spec.copy(message = phrase.text) to phrase.cue

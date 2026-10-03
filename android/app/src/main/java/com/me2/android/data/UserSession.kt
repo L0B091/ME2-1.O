@@ -17,6 +17,10 @@ data class UserSession(
     val isDemo: Boolean
         get() = id == DEMO_USER_ID
 
+    /** Nombre para saludos offline: primer nombre real; nunca el rótulo de la sesión demo ("Vista previa"). */
+    val greetingName: String?
+        get() = if (isDemo) null else displayName.trim().substringBefore(' ').ifBlank { null }
+
     companion object {
         const val DEMO_USER_ID = "demo-preview-local"
 

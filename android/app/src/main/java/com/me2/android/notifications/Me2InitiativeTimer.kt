@@ -87,7 +87,7 @@ class Me2InitiativeTimer(
     }
 
     private fun deliverOfflinePhrase(userId: String, now: Long) {
-        val nombre = runCatching { SessionStorage(app).loadUser()?.displayName?.trim()?.substringBefore(' ') }.getOrNull()
+        val nombre = runCatching { SessionStorage(app).loadUser()?.greetingName }.getOrNull()
         val phrase = OfflinePhrases(app).pick(OfflinePhraseBank.INICIO, mapOf("nombre" to nombre)) ?: return
         deliver(userId, offlineInitiative(phrase, now))
     }

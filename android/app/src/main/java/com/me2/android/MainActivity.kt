@@ -543,7 +543,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun appendSilenceCheckIn() {
         if (backendClient.isConfigured() && backendClient.isOnline(this)) return
-        val nombre = currentSession.displayName.trim().substringBefore(' ').ifBlank { null }
+        val nombre = currentSession.greetingName
         val phrase = runCatching {
             com.me2.android.offline.OfflinePhrases(this).pick(com.me2.android.offline.OfflinePhraseBank.INICIO, mapOf("nombre" to nombre))
         }.getOrNull() ?: return
@@ -646,7 +646,7 @@ class MainActivity : AppCompatActivity() {
             pick = { cat, vars -> com.me2.android.offline.OfflinePhrases(this).pick(cat, vars) },
             markPending = { localMemoryStore.markLastUserMessagePending(userId) }
         ).respond(
-            nombre = currentSession.displayName.trim().substringBefore(' ').ifBlank { null },
+            nombre = currentSession.greetingName,
             fallbackText = getString(R.string.offline_memory_notice)
         )
         appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue)
