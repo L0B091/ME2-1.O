@@ -108,17 +108,15 @@ class Me2BackendClient {
     private val baseUrl: String = ApiConfig.backendBaseUrl.ifBlank { BuildConfig.BACKEND_BASE_URL.trim().trimEnd('/') }
     private val betaPremiumMillis = 4102444800000L
 
-    fun absoluteUrl(path: String?): String? = when {
-        path.isNullOrBlank() -> null
-        path.startsWith("http") -> path
-        else -> "$baseUrl$path"
-    }
+    /** Solo rutas del propio backend (B3): una URL absoluta de otro origen se descarta. */
+    fun absoluteUrl(path: String?): String? = BackendUrlPolicy.resolve(baseUrl, path)
 
     /** Descarga autenticada (medios del chat protegidos por sesión). */
     fun fetchBytes(url: String, authToken: String?): ByteArray {
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000; readTimeout = 20_000
-            authToken?.let { setRequestProperty("Authorization", "Bearer $it") }
+            // El token de sesión solo viaja al origen del backend.
+            authToken?.takeIf { BackendUrlPolicy.mayAttachToken(baseUrl, url) }?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         try {
             if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
@@ -188,7 +186,6 @@ class Me2BackendClient {
             authToken = session.authToken,
             body = JSONObject().apply {
                 put("mensaje", message)
-                put("userId", session.id)
                 put("contexto", JSONObject().apply {
                     put("clienteOficial", "android_nativo")
                     put("memoriaLocal", memory.toBackendContext())
@@ -292,7 +289,7 @@ class Me2BackendClient {
             path = "/api/iniciativas/evaluar",
             authToken = session.authToken,
             body = JSONObject().apply {
-                put("userId", session.id)
+                // Sin userId: la identidad la decide el backend a partir del token.
                 put("memoriaLocal", memory.toBackendContext())
                 put("registro", state.optJSONArray("registro") ?: JSONArray())
                 put("perfilRitmo", profile)

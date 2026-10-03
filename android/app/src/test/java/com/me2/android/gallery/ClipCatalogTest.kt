@@ -42,10 +42,9 @@ class ClipCatalogTest {
     @Test
     fun apiConfigStubsDoNotCrashWhenEmpty() {
         // Empty placeholders must be safe; readiness flags are boolean only.
-        assertFalse(ApiConfig.openRouterApiKey.contains(" "))
         ApiConfig.readinessSummary()
         ApiConfig.isGoogleAuthReady()
         ApiConfig.isMercadoPagoReady()
-        ApiConfig.isOpenRouterReady()
+        assertFalse(ApiConfig.readinessSummary().contains("sk-"))
     }
 }

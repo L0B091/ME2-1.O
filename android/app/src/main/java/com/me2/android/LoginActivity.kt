@@ -67,7 +67,12 @@ class LoginActivity : AppCompatActivity() {
             SessionStorage(this)
         }
 
-        val existing = runCatching { sessionStorage.loadUser() }.getOrNull()
+        var existing = runCatching { sessionStorage.loadUser() }.getOrNull()
+        if (existing?.isDemo == true && !ApiConfig.demoLoginEnabled) {
+            // Release: el camino demo está apagado; una sesión demo previa no se reutiliza.
+            runCatching { sessionStorage.clear() }
+            existing = null
+        }
         if (existing != null) {
             if (!wasMainLaunchUnstable()) {
                 openMain(demoPreview = existing.isDemo)
@@ -128,6 +133,10 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun setupPreviewDemo() {
+        if (!ApiConfig.demoLoginEnabled) {
+            binding.previewDemoButton.visibility = View.GONE
+            return
+        }
         binding.previewDemoButton.visibility = View.VISIBLE
         binding.previewDemoButton.setOnClickListener {
             val demo = UserSession.demoPreview()

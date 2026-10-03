@@ -39,17 +39,14 @@ val mercadoPagoUrl = firstNonBlank(
     "https://www.mercadopago.com.ar/"
 )
 
-// TODO(openrouter): prefer backend proxy; Android field is a future direct-client stub only.
-val openRouterApiKey = firstNonBlank(
-    findProperty("ME2_OPENROUTER_API_KEY") as String?,
-    System.getenv("ME2_ANDROID_OPENROUTER_API_KEY")
-)
+// LLM keys (OpenRouter/Groq/Dolphin) viven SOLO en el backend: nunca se compilan en el APK.
 
-val openRouterModel = firstNonBlank(
-    findProperty("ME2_OPENROUTER_MODEL") as String?,
-    System.getenv("ME2_ANDROID_OPENROUTER_MODEL"),
-    "openrouter/auto"
-)
+// Login demo ("Ver UI (demo)"): solo builds debug (ME2_DEMO_LOGIN=false lo apaga también en debug). Release: siempre off.
+val demoLoginDebug = firstNonBlank(
+    findProperty("ME2_DEMO_LOGIN") as String?,
+    System.getenv("ME2_DEMO_LOGIN"),
+    "true"
+).toBoolean()
 
 plugins {
     id("com.android.application")
@@ -74,12 +71,15 @@ android {
         buildConfigField("String", "BACKEND_BASE_URL", backendBaseUrl.gradleQuoted())
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", googleWebClientId.gradleQuoted())
         buildConfigField("boolean", "ENABLE_GOOGLE_AUTH", enableGoogleAuth.toString())
-        buildConfigField("String", "OPENROUTER_API_KEY", openRouterApiKey.gradleQuoted())
-        buildConfigField("String", "OPENROUTER_MODEL", openRouterModel.gradleQuoted())
+        buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
     }
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "DEMO_LOGIN_ENABLED", demoLoginDebug.toString())
+        }
         release {
+            buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
