@@ -1,6 +1,7 @@
 package com.me2.android
 
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.lifecycle.lifecycleScope
 import android.Manifest
@@ -551,14 +552,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun maybeAskSilenceCheckIn() {
-        if (!::currentSession.isInitialized) return
-        if (!initiativeStore.isEnabled(currentSession.id)) return
-        if (!initiativeStore.shouldAskCheckIn(currentSession.id)) return
-        initiativeStore.markCheckInAsked(currentSession.id)
-        appendSilenceCheckIn()
-        // After check-in without response, arm 1h countdown toward server eval.
-        initiativeStore.markPostSilenceEvalArmed(currentSession.id)
-        initiativeScheduler.schedulePostSilenceEval()
+        if (!::currentSession.isInitialized || !::initiativeStore.isInitialized) return
+        val userId = currentSession.id
+        // Consultas Room del check-in (cada 30 s) en Dispatchers.IO; la frase se agrega en el hilo principal como antes.
+        lifecycleScope.launch {
+            val ask = withContext(Dispatchers.IO) {
+                runCatching {
+                    initiativeStore.isEnabled(userId) && initiativeStore.shouldAskCheckIn(userId) &&
+                        initiativeStore.markCheckInAsked(userId).let { true }
+                }.getOrDefault(false)
+            }
+            if (!ask || userId != currentSession.id) return@launch
+            appendSilenceCheckIn()
+            // After check-in without response, arm 1h countdown toward server eval.
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    initiativeStore.markPostSilenceEvalArmed(userId)
+                    initiativeScheduler.schedulePostSilenceEval()
+                }
+            }
+        }
     }
 
     /**

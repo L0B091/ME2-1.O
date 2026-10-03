@@ -8,7 +8,7 @@ class MediaHistory(context: Context) {
 
     fun record(clipId: String) {
         val v1 = clipId.takeIf { it.startsWith("me2:") }?.substringAfterLast('/')?.substringBeforeLast('.')?.uppercase()
-        prefs.edit().putString(KEY_CLIP, clipId).apply { if (v1 != null) putString(KEY_ID, v1) }.commit()
+        prefs.edit().putString(KEY_CLIP, clipId).apply { if (v1 != null) putString(KEY_ID, v1) }.apply()  // escritura asíncrona: se llama en cada fin de clip (hilo principal)
     }
 
     /** id V1 (p. ej. "NEUTRAL_002") del último recurso de la biblioteca. */
