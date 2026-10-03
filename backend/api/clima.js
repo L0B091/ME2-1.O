@@ -90,6 +90,52 @@ async function openWeather(lat, lon, apiKey, timeoutMs) {
   };
 }
 
+// WeatherAPI.com (por si WEATHER_API_KEY es de ese proveedor).
+async function weatherApiCom(lat, lon, apiKey, timeoutMs) {
+  const url = new URL("https://api.weatherapi.com/v1/current.json");
+  for (const [k, v] of Object.entries({ key: apiKey, q: `${lat},${lon}`, lang: "es" })) url.searchParams.set(k, String(v));
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !Number.isFinite(data?.current?.temp_c)) throw new HttpError(res.status || 502, data?.error?.message || "WeatherAPI no disponible");
+  return {
+    proveedor: "weatherapi", temperatura: data.current.temp_c, sensacionTermica: data.current.feelslike_c,
+    humedad: data.current.humidity, vientoKmh: data.current.wind_kph, descripcion: data.current.condition?.text || null
+  };
+}
+
+/** Keys de clima: WEATHER_API_KEY / OPENWEATHER_API_KEY; admite varias separadas por salto de línea, coma o espacio. */
+function climaKeys() {
+  const raw = [process.env.WEATHER_API_KEY, process.env.OPENWEATHER_API_KEY].filter(Boolean).join("\n");
+  return [...new Set(raw.split(/[\s,;]+/).map(k => k.trim()).filter(Boolean))];
+}
+const CON_KEY = { openweather: openWeather, weatherapi: weatherApiCom };
+let deteccionClima = null; // { proveedor, keyIndex } — la key nunca se expone
+
+function ocultar(texto, keys) {
+  return keys.reduce((t, k) => t.split(k).join("***"), String(texto));
+}
+
+/** Detecta con llamadas reales qué key/proveedor funciona (OpenWeather, luego WeatherAPI). Nunca expone la key. */
+export async function detectarProveedorClima({ forzar = false, timeoutMs = 8000 } = {}) {
+  const keys = climaKeys();
+  if (!keys.length) return { configurado: false, proveedor: null };
+  if (deteccionClima && !forzar) return deteccionClima;
+  const intentos = [];
+  for (const [keyIndex, key] of keys.entries()) {
+    for (const nombre of ["openweather", "weatherapi"]) {
+      try {
+        const r = await CON_KEY[nombre](UBICACION_DEFAULT.lat, UBICACION_DEFAULT.lon, key, timeoutMs);
+        deteccionClima = { configurado: true, keys: keys.length, keyIndex, proveedor: nombre, ok: true, temperaturaPrueba: r.temperatura, intentos };
+        return deteccionClima;
+      } catch (error) {
+        intentos.push({ keyIndex, proveedor: nombre, status: error.status || null, error: ocultar(error.message, keys).slice(0, 120) });
+      }
+    }
+  }
+  deteccionClima = { configurado: true, keys: keys.length, proveedor: null, ok: false, intentos };
+  return deteccionClima;
+}
+
 export default async function obtenerClima(lat, lon, opciones = {}) {
   if (!Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) {
     throw new HttpError(400, "Ubicación desconocida: se requieren lat/lon");
@@ -97,11 +143,17 @@ export default async function obtenerClima(lat, lon, opciones = {}) {
   lat = Number(lat); lon = Number(lon);
   const timeoutMs = opciones.timeoutMs || 8000;
   const ciudad = opciones.ciudad || null;
-  const key = String(process.env.OPENWEATHER_API_KEY || "").trim();
+  const keys = climaKeys();
+  // Open-Meteo primero (pronóstico hoy/mañana + zona horaria); la key (OpenWeather/WeatherAPI) es el respaldo; MET Norway último.
+  const conKey = keys.length ? [async () => {
+    const det = await detectarProveedorClima({ timeoutMs });
+    if (!det.proveedor) throw new HttpError(503, "key de clima inválida");
+    return CON_KEY[det.proveedor](lat, lon, keys[det.keyIndex], timeoutMs);
+  }] : [];
   const proveedores = [
     () => openMeteo(lat, lon, timeoutMs),
-    () => metNorway(lat, lon, timeoutMs),
-    ...(key ? [() => openWeather(lat, lon, key, timeoutMs)] : [])
+    ...conKey,
+    () => metNorway(lat, lon, timeoutMs)
   ];
   const errores = [];
   for (const proveedor of proveedores) {

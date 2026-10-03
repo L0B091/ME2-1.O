@@ -1,4 +1,4 @@
-// noticias.js — NewsAPI si NEWS_API_KEY existe; si no, Google News RSS (gratis, sin key).
+// noticias.js — NEWS_API_KEY: se detecta el proveedor (NewsAPI o GNews) con 1 llamada; si falla, Google News RSS (gratis, sin key).
 import HttpError from "../utils/httpError.js";
 
 function decodificar(s = "") {
@@ -43,13 +43,13 @@ async function googleNewsRss(consulta, timeoutMs, limite) {
 }
 
 async function newsApi(ciudad, categorias, apiKey, timeoutMs, limite) {
-  const url = new URL("https://newsapi.org/v2/top-headlines");
+  // Con intereses/ciudad: /everything en español (top-headlines country=ar suele venir vacío); sin consulta: titulares AR.
+  const consulta = categorias.length > 0 ? categorias.join(" OR ") : ciudad;
+  const url = new URL(consulta ? "https://newsapi.org/v2/everything" : "https://newsapi.org/v2/top-headlines");
   url.searchParams.set("pageSize", String(limite));
-  url.searchParams.set("language", "es");
-  url.searchParams.set("country", "ar");
   url.searchParams.set("apiKey", apiKey);
-  if (categorias.length > 0) url.searchParams.set("q", categorias.join(" OR "));
-  else if (ciudad) url.searchParams.set("q", ciudad);
+  if (consulta) { url.searchParams.set("q", consulta); url.searchParams.set("language", "es"); url.searchParams.set("sortBy", "publishedAt"); }
+  else url.searchParams.set("country", "ar");
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   const data = await res.json().catch(() => null);
   if (!res.ok || data?.status === "error") throw new HttpError(res.status || 502, data?.message || "NewsAPI no disponible");
@@ -59,16 +59,56 @@ async function newsApi(ciudad, categorias, apiKey, timeoutMs, limite) {
   }));
 }
 
+async function gnews(ciudad, categorias, apiKey, timeoutMs, limite) {
+  const consulta = categorias.length ? categorias.join(" OR ") : ciudad;
+  const url = new URL(consulta ? "https://gnews.io/api/v4/search" : "https://gnews.io/api/v4/top-headlines");
+  if (consulta) url.searchParams.set("q", consulta);
+  for (const [k, v] of Object.entries({ lang: "es", country: "ar", max: String(limite), apikey: apiKey })) url.searchParams.set(k, v);
+  const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || data?.errors) throw new HttpError(res.status || 502, [].concat(data?.errors || "GNews no disponible").join(" "));
+  return (data?.articles || []).map(a => ({
+    titulo: a.title, descripcion: a.description, link: a.url, fecha: a.publishedAt,
+    fuente: a?.source?.name || null, imagen: a.image || null, proveedor: "gnews"
+  }));
+}
+
+const PROVEEDORES_KEY = { newsapi: newsApi, gnews };
+let deteccion = null; // { proveedor, status } — memo por proceso
+
+/** Prueba la key contra NewsAPI y luego GNews (1 llamada cada uno como máximo). Nunca expone la key. */
+export async function detectarProveedorNoticias({ forzar = false, timeoutMs = 8000 } = {}) {
+  const apiKey = String(process.env.NEWS_API_KEY || "").trim();
+  if (!apiKey) return { configurado: false, proveedor: null };
+  if (deteccion && !forzar) return deteccion;
+  const forzado = String(process.env.NEWS_PROVIDER || "").trim().toLowerCase();
+  const intentos = [];
+  for (const nombre of (PROVEEDORES_KEY[forzado] ? [forzado] : ["newsapi", "gnews"])) {
+    try {
+      const r = await PROVEEDORES_KEY[nombre]("", [], apiKey, timeoutMs, 1);
+      deteccion = { configurado: true, proveedor: nombre, ok: true, articulos: r.length, intentos };
+      return deteccion;
+    } catch (error) {
+      intentos.push({ proveedor: nombre, status: error.status || null, error: String(error.message).replace(apiKey, "***").slice(0, 120) });
+    }
+  }
+  deteccion = { configurado: true, proveedor: null, ok: false, intentos };
+  return deteccion;
+}
+
 export async function obtenerNoticias(ciudad = "", categorias = [], opciones = {}) {
   const timeoutMs = opciones.timeoutMs || 8000;
   const limite = opciones.limite || 5;
   const apiKey = String(process.env.NEWS_API_KEY || "").trim();
   if (apiKey) {
     try {
-      const r = await newsApi(ciudad, categorias, apiKey, timeoutMs, limite);
-      if (r.length) return r;
+      const det = await detectarProveedorNoticias({ timeoutMs });
+      if (det.proveedor) {
+        const r = await PROVEEDORES_KEY[det.proveedor](ciudad, categorias, apiKey, timeoutMs, limite);
+        if (r.length) return r;
+      }
     } catch (error) {
-      console.error("[noticias] NewsAPI falló, uso RSS:", error.message);
+      console.error("[noticias] proveedor con key falló, uso RSS:", String(error.message).replace(apiKey, "***"));
     }
   }
   const consulta = categorias.length ? categorias.join(" OR ") : ciudad;
@@ -76,7 +116,8 @@ export async function obtenerNoticias(ciudad = "", categorias = [], opciones = {
 }
 
 export function proveedorNoticias() {
-  return String(process.env.NEWS_API_KEY || "").trim() ? "newsapi" : "google-news-rss";
+  if (!String(process.env.NEWS_API_KEY || "").trim()) return "google-news-rss";
+  return deteccion?.proveedor || (deteccion ? "google-news-rss" : "pendiente-deteccion");
 }
 
 export function generarMensajePush(noticia) {
@@ -84,4 +125,4 @@ export function generarMensajePush(noticia) {
   return `${noticia.titulo}${noticia.descripcion ? ` - ${noticia.descripcion}` : ""}`;
 }
 
-export default { obtenerNoticias, generarMensajePush, proveedorNoticias };
+export default { obtenerNoticias, generarMensajePush, proveedorNoticias, detectarProveedorNoticias };
