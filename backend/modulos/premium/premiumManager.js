@@ -25,16 +25,20 @@ export const PLAN = {
   ],
   premium: [
     "Todo lo incluido en Free",
-    "Modo Desarrollador",
-    "Memoria y almacenamiento de código",
-    "Gestión de proyectos y archivos",
-    "Gestor Fiscal",
-    "Almacenamiento de comprobantes",
-    "Copia cifrada del respaldo local de memoria Android",
-    "Restauración del respaldo local en otro teléfono",
-    "Modo Adulto (chat + avatar en cámara, con palabra clave y intensidad gradual)"
+    "Respaldo de memoria en la nube (cifrado) y restauración en un teléfono nuevo, retomando el hilo en tiempo y lugar",
+    "Gestor de material para monotributista (facturas, gastos, categoría, vencimientos y notas, por chat)",
+    "Memoria dedicada para proyectos de programación (mini-repo por proyecto con versiones, diff y restauración, por chat)",
+    "Modo Adulto (18+, palabra clave por sesión, galería dedicada de clips y GIFs)"
   ]
 };
+
+/** Alcance COMPLETO de Premium como HECHOS para el LLM (la primera vez que el usuario pregunta/pide Premium). */
+export const ALCANCE_PREMIUM = [
+  "1) Respaldo de memoria en la nube: copia cifrada en el teléfono antes de subirla (el servidor no puede leerla) de toda la memoria local (conversación, recuerdos, datos fiscales y proyectos). En un teléfono nuevo se restaura y el avatar retoma el hilo: sabe cuándo y en qué lugar fue la última charla.",
+  "2) Gestor de material para monotributista: por chat registra facturas emitidas y recibidas (monto, fecha, cliente/concepto), la categoría de monotributo, vencimientos (monotributo, IIBB, etc.) y notas; responde cuánto facturó en el mes y en 12 meses, qué vence y qué está vencido. Todo queda guardado en el teléfono.",
+  "3) Memoria dedicada para proyectos de programación: un mini-repositorio por proyecto dentro de la app; por chat guarda archivos (bloques de código), hace snapshots/versiones, muestra diferencias (diff) entre versiones y restaura una versión anterior. Guardado en el teléfono.",
+  "4) Modo Adulto: solo 18+ verificado; se habilita por sesión con una palabra clave privada; incluye una galería dedicada de clips del avatar y GIFs adultos (nunca fuera del modo adulto)."
+];
 
 function obtenerRegistro(userId) {
   return storage.readUserData(NAMESPACE, userId, {
@@ -157,6 +161,7 @@ function activarPremium(userId, paymentId, detail = {}) {
 
 export default {
   PLAN,
+  ALCANCE_PREMIUM,
   explicarPlan,
   obtenerEstado,
   obtenerMateriales(userId) {

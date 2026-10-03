@@ -15,6 +15,7 @@ import notificacionesApi from "./api/notificaciones.js";
 import mercadoPagoApi from "./api/mercadoPago.js";
 import premiumManager from "./modulos/premium/premiumManager.js";
 import backupManager from "./modulos/premium/backupManager.js";
+import premiumLocal from "./modulos/premium/premiumLocal.js";
 import adultMode from "./modulos/premium/adultMode.js";
 import gestorDeAlarmas from "./modulos/gestorDeAlarmas.js";
 import protocoloDespertador from "./modulos/protocoloDespertador.js";
@@ -458,6 +459,26 @@ app.put("/api/premium/:userId/backup", requireAuth, handleAsync(async (req, res)
   const backup = req.body?.backup || {};
   res.json({ ok: true, data: await backupManager.guardarBackup(userId, backup) });
 }));
+
+// Restauración en un teléfono nuevo: devuelve el respaldo cifrado y deja el hilo de continuidad (cuándo/dónde fue la
+// última interacción) para el primer chat posterior.
+app.post("/api/premium/:userId/backup/restore", requireAuth, handleAsync(async (req, res) => {
+  const userId = ensureOwnUser(req);
+  const premium = premiumManager.obtenerEstado(userId);
+  if (!premium.premiumActivo) {
+    return res.status(403).json({ ok: false, error: "Premium requerido para restaurar respaldo" });
+  }
+  res.json({ ok: true, data: await backupManager.restaurarBackup(userId, { dispositivo: req.body?.dispositivo || null }) });
+}));
+
+// Estado de los módulos Premium locales cuando NO hay teléfono (simulación / web). En Android viven en el teléfono.
+app.get("/api/premium/:userId/local/:modulo", requireAuth, (req, res) => {
+  const userId = ensureOwnUser(req);
+  ensurePremium(userId, "módulos Premium");
+  const data = premiumLocal.obtenerEstadoServidor(userId, req.params.modulo);
+  if (!data) return res.status(404).json({ ok: false, error: "Módulo inexistente" });
+  res.json({ ok: true, data });
+});
 
 app.get("/api/memoria/codigo/:userId", requireAuth, (req, res) => {
   const userId = ensureOwnUser(req);

@@ -17,6 +17,8 @@ import dolphinClient from "../llm/dolphinClient.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import flujoPremium from "../modulos/premium/flujoPremium.js";
+import premiumLocal from "../modulos/premium/premiumLocal.js";
+import backupManager from "../modulos/premium/backupManager.js";
 import selectorMedia from "../modulos/media/selectorMedia.js";
 import reaccionAudiovisual from "../modulos/media/reaccionAudiovisual.js";
 import reacciones from "../modulos/interaccion/reacciones.js";
@@ -170,6 +172,21 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     console.error("Error en flujoPremium:", error.message);
   }
   premium = premiumManager.obtenerEstado(userId);
+
+  // [PREMIUM LOCAL] gestor fiscal (monotributo) + proyectos de programación: datos en el teléfono (o JSON del backend sin teléfono)
+  let premiumLocalRes = null;
+  try {
+    premiumLocalRes = premiumLocal.procesar(userId, mensajeUsuario, {
+      premiumActivo: premium.premiumActivo, local: contexto.premiumLocal, enTelefono: !persistirEnServidor
+    });
+    if (premiumLocalRes) extra.push(...premiumLocalRes.lineas);
+  } catch (error) {
+    console.error("Error en premiumLocal:", error.message);
+  }
+  // [CONTINUIDAD] primer chat tras restaurar el respaldo en un teléfono nuevo: cuándo y dónde fue la última interacción
+  if (premium.premiumActivo && userId !== "anonimo") {
+    try { extra.push(...await backupManager.lineasContinuidad(userId)); } catch (error) { console.error("Error en continuidad:", error.message); }
+  }
   let adultResult = { evento: "sin_cambios", adult: null, video: null, pedidoAdulto: false };
   try {
     adultResult = await adultMode.procesarEnChat(userId, mensajeUsuario, { premium });
@@ -280,7 +297,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     premium,
     adultMode: adultResult?.adult || null,
     checkout,
-    acciones: accionesResultado,
+    acciones: premiumLocalRes
+      ? { ...accionesResultado, premium: { modulo: premiumLocalRes.modulo, operacion: premiumLocalRes.resultado?.op, ok: premiumLocalRes.resultado?.ok !== false, persistidoEn: premiumLocalRes.persistidoEn, estado: premiumLocalRes.persistidoEn === "telefono" ? premiumLocalRes.estado : undefined } }
+      : accionesResultado,
     debug: {
       llm: debugLLM,
       contexto: mensajeContexto.content,

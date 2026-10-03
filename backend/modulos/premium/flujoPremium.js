@@ -2,7 +2,9 @@
 // intento bloqueado → oferta → (no: se respeta) | (sí: verificación de edad Google + confirmación 18+)
 // → link de Mercado Pago → pago verificado → Premium activo + palabra clave a entregar una vez.
 import storage from "../../utils/jsonStorage.js";
-import premiumManager, { PLAN } from "./premiumManager.js";
+import premiumManager, { PLAN, ALCANCE_PREMIUM } from "./premiumManager.js";
+import gestorFiscal from "./gestorFiscal.js";
+import gestorProyectos from "./gestorProyectos.js";
 import adultMode from "./adultMode.js";
 import verificacionEdad from "../../auth/verificacionEdad.js";
 
@@ -12,9 +14,11 @@ const VIGENCIA_OFERTA_MS = 30 * 60000;
 const FUNCIONES = [
   [/\b(modo adulto|contenido adulto|modo \+18)\b/i, "Modo Adulto"],
   [/\b(gestor fiscal|comprobantes?|factura(s|ción)?|monotributo|contador)\b/i, "Gestor Fiscal"],
-  [/\b(gestor de c[oó]digo|memoria de c[oó]digo|guard(a|á|ar) (este |mi )?c[oó]digo|modo desarrollador)\b/i, "Gestor de código"],
-  [/\b(respaldo (en la )?nube|backup|copia de seguridad|restaurar (mi )?memoria)\b/i, "Respaldo en la nube"]
+  [/\b(gestor de c[oó]digo|memoria de c[oó]digo|guard(a|á|ar) (este |mi )?c[oó]digo|modo desarrollador|proyectos? de programaci[oó]n|mini.?repo)/i, "Proyectos de programación"],
+  [/\b(respaldo (en la )?nube|backup|copia de seguridad|restaurar (mi )?memoria)\b/i, "Respaldo en la nube"],
+  [/\bpremium\b/i, "Premium"]
 ];
+const PREGUNTA = /\?|\bqu[eé] (es|incluye|tiene|trae|ofrece|hay)|\bc[oó]mo (funciona|es)|\bcu[aá]nto (sale|cuesta|vale)|\bcontame|\bexplic/i;
 const INTENCION = /\b(quiero|quisiera|activ|us(a|á|ar)|abr(i|í|ir)|habilit|pas(a|á|ame)|pon(e|é)|hac(e|é)|guard|necesito|prend|entr(ar|emos)|dame)\w*/i;
 const SI = /^\s*(s[ií]+|dale|ok(ey)?|bueno|de una|obvio|me suscribo|suscrib\w*|vamos|claro|acepto)(?=[\s,.!¡]|$)/i;
 const NO = /^\s*(no+\b|nah|paso|ahora no|despu[eé]s|otro d[ií]a|m[aá]s adelante|no gracias|no quiero)/i;
@@ -36,16 +40,28 @@ function guardar(userId, estado, cambios = {}, ahora = Date.now()) {
 // Función Premium que el usuario intenta usar (o null). Un pedido íntimo/erótico cuenta como Modo Adulto.
 export function detectarIntento(mensaje = "") {
   if (adultMode.mensajeCruzaLimiteIntimo(mensaje)) return "Modo Adulto";
-  if (!INTENCION.test(mensaje)) return null;
+  // Pedido concreto a un gestor Premium (registrar factura, snapshot de proyecto…) cuenta como intento.
+  if (gestorProyectos.esPedido(mensaje)) return "Proyectos de programación";
+  if (gestorFiscal.esPedido(mensaje)) return "Gestor Fiscal";
+  if (!INTENCION.test(mensaje) && !PREGUNTA.test(mensaje)) return null;
   for (const [re, f] of FUNCIONES) if (re.test(mensaje)) return f;
   return null;
 }
 
-function lineasOferta(feature) {
+// Primera vez que el usuario pregunta/pide Premium: el LLM recibe el alcance COMPLETO para explicarlo todo.
+function lineasAlcance(primeraVez) {
+  return primeraVez
+    ? ["Alcance de Premium (primera vez que el usuario pregunta: explicarle TODO lo que incluye, con tus palabras):", ...ALCANCE_PREMIUM.map(x => `  ${x}`)]
+    : [`Alcance de Premium: ${PLAN.premium.slice(1).join("; ")}.`];
+}
+
+function lineasOferta(feature, primeraVez = false) {
   const plan = premiumManager.explicarPlan(feature);
   return [
-    `Premium: el usuario intentó usar "${feature}", que es función Premium; está BLOQUEADA (plan Free).`,
-    `Alcance de Premium: ${PLAN.premium.slice(1).join("; ")}.`,
+    feature === "Premium"
+      ? "Premium: el usuario pregunta por Premium o lo pide; hoy tiene plan Free."
+      : `Premium: el usuario intentó usar "${feature}", que es función Premium; está BLOQUEADA (plan Free).`,
+    ...lineasAlcance(primeraVez),
     `Precio: ARS ${plan.precioARS ?? premiumManager.obtenerPrecioPremium()} por ${plan.duracionDias ?? 30} días, sin renovación automática, pago por Mercado Pago. La app suma mejoras todos los meses.`,
     "Paso pendiente del flujo Premium: preguntarle si quiere suscribirse."
   ];
@@ -87,6 +103,10 @@ export async function procesar(userId, mensaje, { premium, generarLink, ahora = 
           "Regla de privacidad del modo adulto: solo se habilita cuando el usuario escribe esa palabra clave; sin ella no hay contenido erótico; vale solo para la sesión actual."
         ]
       };
+    }
+    if (!f.alcanceExplicado && /\bpremium\b/i.test(mensaje) && (PREGUNTA.test(mensaje) || INTENCION.test(mensaje))) {
+      guardar(userId, f.estado, { alcanceExplicado: ahora }, ahora);
+      return { estado: f.estado, link: null, evento: "alcance_explicado", lineas: ["Premium: el usuario ya tiene Premium ACTIVO y pregunta qué incluye.", ...lineasAlcance(true)] };
     }
     return { lineas: [], estado: f.estado, link: null, evento: null };
   }
@@ -134,8 +154,9 @@ export async function procesar(userId, mensaje, { premium, generarLink, ahora = 
     return { estado: f.estado, link: f.link, evento: intento ? "pago_pendiente" : null, lineas: [`Premium: pago pendiente de confirmación; link de Mercado Pago ya enviado: ${f.link.url}`] };
   }
   if (intento) {
-    guardar(userId, "ofrecido", { feature: intento }, ahora);
-    return { estado: "ofrecido", link: null, evento: "oferta", lineas: lineasOferta(intento) };
+    const primeraVez = !f.alcanceExplicado;
+    guardar(userId, "ofrecido", { feature: intento, ...(primeraVez ? { alcanceExplicado: ahora } : {}) }, ahora);
+    return { estado: "ofrecido", link: null, evento: "oferta", lineas: lineasOferta(intento, primeraVez) };
   }
   return { lineas: [], estado: f.estado, link: null, evento: null };
 }

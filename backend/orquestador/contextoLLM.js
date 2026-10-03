@@ -88,9 +88,9 @@ export function funcionesApp(userId) {
     lineas: [
       `Plan del usuario: ${premium.premiumActivo ? "Premium activo" : "Free"} (Premium cuesta ARS ${Number(process.env.PREMIUM_PRICE_ARS || 3000)} por 30 días, pago por Mercado Pago)`,
       `Modo adulto: requiere Premium y verificación 18+; estado: ${adulto?.unlocked ? "activo en esta sesión" : adulto?.hasKeyword ? "apagado (se activa solo con la palabra clave del usuario, por sesión)" : "inactivo"}`,
-      "Gestor de código: Premium (guardar y buscar archivos de código del usuario)",
-      "Gestor fiscal: Premium (comprobantes, estado y envío al contador)",
-      "Respaldo en la nube: Premium (copia cifrada de la memoria local del teléfono y restauración en otro teléfono)",
+      "Proyectos de programación: Premium (mini-repo por proyecto en el teléfono: archivos, versiones, diff y restauración por chat)",
+      "Gestor para monotributista: Premium (facturas, categoría, vencimientos y notas por chat, guardado en el teléfono)",
+      "Respaldo en la nube: Premium (copia cifrada de la memoria local del teléfono y restauración en otro teléfono, retomando cuándo y dónde fue la última charla)",
       "Alarmas, clima, noticias, calendario y hora: disponibles en Free"
     ]
   };

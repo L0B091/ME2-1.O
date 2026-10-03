@@ -55,6 +55,11 @@ function tiempoDesdeUltimaInteraccion(usuarioID) {
   return Math.floor(diferenciaMs / 60000);
 }
 
+/** Fecha de la última interacción persistida (Date) o null. */
+function obtenerUltimaInteraccion(usuarioID) {
+  return memoriaUsuarios.get(String(usuarioID || "anonimo"))?.ultimaInteraccion || null;
+}
+
 function formatearFecha(fechaObj) {
   return horaAPI.formatearFecha(fechaObj);
 }
@@ -63,5 +68,6 @@ export default {
   obtenerHoraActual,
   formatearFecha,
   guardarUltimaInteraccion,
-  tiempoDesdeUltimaInteraccion
+  tiempoDesdeUltimaInteraccion,
+  obtenerUltimaInteraccion
 };

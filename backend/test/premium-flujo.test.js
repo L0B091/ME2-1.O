@@ -87,7 +87,7 @@ test("Mercado Pago mock: pago aprobado activa Premium y deja palabra clave pendi
 });
 
 test("intentos Premium detectados (no confunde charla común)", () => {
-  assert.equal(flujoPremium.detectarIntento("quiero guardar mi código"), "Gestor de código");
+  assert.equal(flujoPremium.detectarIntento("quiero guardar mi código"), "Proyectos de programación");
   assert.equal(flujoPremium.detectarIntento("activá el respaldo en la nube"), "Respaldo en la nube");
   assert.equal(flujoPremium.detectarIntento("me gusta el código limpio"), null);
   assert.equal(flujoPremium.detectarIntento("hola, ¿cómo andás?"), null);
