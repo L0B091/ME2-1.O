@@ -47,4 +47,12 @@ class ClipCatalogTest {
         ApiConfig.isMercadoPagoReady()
         assertFalse(ApiConfig.readinessSummary().contains("sk-"))
     }
+
+    /** B12: sin clips no hay crash; con uno solo se repite; con varios no repite el anterior. */
+    @Test
+    fun clipPickerToleratesEmptyLibrary() {
+        assertEquals(null, ClipPicker.pickRandom(emptyList<String>(), null))
+        assertEquals("a", ClipPicker.pickRandom(listOf("a"), "a"))
+        repeat(20) { assertEquals("b", ClipPicker.pickRandom(listOf("a", "b"), "a")) }
+    }
 }

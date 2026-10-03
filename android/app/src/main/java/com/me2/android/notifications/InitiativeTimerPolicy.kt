@@ -27,10 +27,12 @@ object InitiativeTimerPolicy {
 
     fun onDue(
         now: Long, online: Boolean, rest: RestWindow, offlineRetries: Int, intervalMs: Long,
-        hasCachedMessage: Boolean, tz: TimeZone = TimeZone.getDefault()
+        hasCachedMessage: Boolean, tz: TimeZone = TimeZone.getDefault(), inForeground: Boolean = false
     ): Action = when {
         rest.contains(now, tz) -> Action.DeferTo(rest.nextActive(now, tz))
         online -> Action.RunOnline
+        // B11: con la app en primer plano no se entrega nada offline (el usuario ya está en el chat): se espera.
+        inForeground -> Action.DeferTo(rest.nextActive(now + intervalMs, tz))
         hasCachedMessage -> Action.DeliverCached
         offlineRetries + 1 >= MAX_OFFLINE_RETRIES -> Action.DeliverOfflinePhrase
         else -> Action.RetryAt(rest.nextActive(now + intervalMs, tz), offlineRetries + 1)

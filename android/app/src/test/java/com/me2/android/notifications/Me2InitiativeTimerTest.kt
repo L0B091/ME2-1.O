@@ -53,6 +53,9 @@ class Me2InitiativeTimerTest {
         assertEquals(Action.RetryAt(at(13), 1), InitiativeTimerPolicy.onDue(at(12), false, rest, 0, h, false))
         assertEquals(Action.RetryAt(at(8, day = 4), 1), InitiativeTimerPolicy.onDue(at(23, 30), false, rest, 0, h, false))
         assertEquals(Action.DeliverOfflinePhrase, InitiativeTimerPolicy.onDue(at(12), false, rest, 2, h, false))
+        // B11: en primer plano y sin red no se entrega nada offline; se espera al próximo intervalo.
+        assertEquals(Action.DeferTo(at(13)), InitiativeTimerPolicy.onDue(at(12), false, rest, 2, h, true, inForeground = true))
+        assertEquals(Action.RunOnline, InitiativeTimerPolicy.onDue(at(12), true, rest, 0, h, false, inForeground = true))
         assertEquals(InitiativeTimerPolicy.DEFAULT_INTERVAL_MS, InitiativeTimerPolicy.estimateInterval(listOf(1L, 2L)))
         assertEquals(2 * h, InitiativeTimerPolicy.estimateInterval(listOf(0L, 2 * h, 4 * h, 6 * h)))
         assertEquals(4 * h, InitiativeTimerPolicy.estimateInterval(listOf(0L, 10 * h, 20 * h, 30 * h)))

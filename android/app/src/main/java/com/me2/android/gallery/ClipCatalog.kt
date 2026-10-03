@@ -12,24 +12,24 @@ import java.io.File
  * TODO(gallery-ui): wire a RecyclerView/grid to [listAll] when the gallery screen ships.
  * Until then MainActivity uses [listByMood] for avatar playback (offline-first).
  */
-class ClipCatalog(context: Context) : GalleryRepository {
+class ClipCatalog(context: Context) {
     private val appContext = context.applicationContext
     private val packageName = appContext.packageName
     private val assetsRoot = ASSETS_VIDEOS_ROOT
     private val filesRoot = File(appContext.filesDir, FILES_GALLERY_ROOT)
 
-    override fun ensureDirs() {
+    fun ensureDirs() {
         MOODS.forEach { mood ->
             File(filesRoot, mood).mkdirs()
         }
     }
 
-    override fun runtimeGalleryRoot(): File = filesRoot
+    fun runtimeGalleryRoot(): File = filesRoot
 
-    override fun listAll(): List<GalleryClip> =
+    fun listAll(): List<GalleryClip> =
         MOODS.flatMap { listByMood(it) }
 
-    override fun listByMood(mood: String): List<GalleryClip> {
+    fun listByMood(mood: String): List<GalleryClip> {
         val normalized = normalizeMood(mood)
         val fromFiles = scanFilesDir(normalized)
         if (fromFiles.isNotEmpty()) return fromFiles
@@ -38,10 +38,10 @@ class ClipCatalog(context: Context) : GalleryRepository {
         return demoMediaClips(normalized)
     }
 
-    override fun findById(id: String): GalleryClip? =
+    fun findById(id: String): GalleryClip? =
         listAll().firstOrNull { it.id == id }
 
-    override fun playbackUri(clip: GalleryClip): Uri = clip.uri
+    fun playbackUri(clip: GalleryClip): Uri = clip.uri
 
     fun nextClip(gallery: List<GalleryClip>, previousId: String?): GalleryClip? {
         if (gallery.isEmpty()) return null

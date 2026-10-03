@@ -27,7 +27,12 @@ class Me2InitiativeTimer(
     private val clock: () -> Long = System::currentTimeMillis,
     private val isOnline: () -> Boolean = { runCatching { Me2BackendClient().let { it.isConfigured() && it.isOnline(context) } }.getOrDefault(false) },
     private val runOnline: (Context) -> Unit = ::enqueueOnlineEvaluation,
-    private val store: Me2InitiativeStore = Me2InitiativeStore(context)
+    private val store: Me2InitiativeStore = Me2InitiativeStore(context),
+    private val isForeground: () -> Boolean = {
+        runCatching {
+            androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+        }.getOrDefault(false)
+    }
 ) {
     private val app = context.applicationContext
 
@@ -58,7 +63,8 @@ class Me2InitiativeTimer(
         val interval = t.optLong("intervalMs", InitiativeTimerPolicy.DEFAULT_INTERVAL_MS)
         val retries = t.optInt("offlineRetries", 0)
         val now = clock()
-        val action = InitiativeTimerPolicy.onDue(now, isOnline(), restWindow(userId), retries, interval, store.cachedOfflineInitiative(userId, now) != null)
+        val action = InitiativeTimerPolicy.onDue(now, isOnline(), restWindow(userId), retries, interval, store.cachedOfflineInitiative(userId, now) != null,
+            inForeground = isForeground())
         when (action) {
             is InitiativeTimerPolicy.Action.DeferTo -> { store.saveTimer(userId, action.atMillis, interval, retries); setAlarm(userId, action.atMillis) }
             is InitiativeTimerPolicy.Action.RetryAt -> { store.saveTimer(userId, action.atMillis, interval, action.offlineRetries); setAlarm(userId, action.atMillis) }

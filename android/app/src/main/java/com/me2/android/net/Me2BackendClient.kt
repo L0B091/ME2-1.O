@@ -148,32 +148,6 @@ class Me2BackendClient {
     /** userId autenticado según el backend (para corregir sesiones guardadas con el id de Google). */
     fun fetchAuthenticatedUserId(authToken: String): String? =
         Me2AuthContract.parseAuthMeUserId(request(method = "GET", path = "/api/auth/me", authToken = authToken))
-
-    fun registerLocal(email: String, password: String, displayName: String): BackendAuthResult {
-        val json = request(
-            method = "POST",
-            path = "/api/auth/register",
-            body = JSONObject().apply {
-                put("email", email)
-                put("password", password)
-                put("displayName", displayName)
-            }
-        )
-        return parseLocalAuthResult(json)
-    }
-
-    fun loginLocal(email: String, password: String): BackendAuthResult {
-        val json = request(
-            method = "POST",
-            path = "/api/auth/login",
-            body = JSONObject().apply {
-                put("email", email)
-                put("password", password)
-            }
-        )
-        return parseLocalAuthResult(json)
-    }
-
     fun sendChat(
         session: UserSession,
         memory: LocalMe2Memory,
@@ -308,49 +282,6 @@ class Me2BackendClient {
         )
         return json.getJSONObject("data")
     }
-
-    data class MercadoPagoCheckoutResult(
-        val initPoint: String,
-        val sandboxInitPoint: String?,
-        val preferenceId: String?
-    )
-
-    fun createMercadoPagoCheckout(session: UserSession): MercadoPagoCheckoutResult {
-        val json = request(
-            method = "POST",
-            path = "/api/mercadopago/checkout",
-            authToken = session.authToken,
-            body = JSONObject().apply {
-                put("userId", session.id)
-            }
-        )
-        val data = json.optJSONObject("data") ?: json
-        val initPoint = data.optString("init_point").ifBlank {
-            data.optString("sandbox_init_point")
-        }
-        check(initPoint.isNotBlank()) { "Checkout de Mercado Pago no configurado en el backend." }
-        return MercadoPagoCheckoutResult(
-            initPoint = initPoint,
-            sandboxInitPoint = data.optString("sandbox_init_point").ifBlank { null },
-            preferenceId = data.optString("id").ifBlank { data.optString("preferenceId").ifBlank { null } }
-        )
-    }
-
-    fun verifyMercadoPagoPayment(session: UserSession, preferenceId: String? = null): PremiumStatusResult {
-        runCatching {
-            request(
-                method = "POST",
-                path = "/api/mercadopago/verify",
-                authToken = session.authToken,
-                body = JSONObject().apply {
-                    put("userId", session.id)
-                    if (!preferenceId.isNullOrBlank()) put("preferenceId", preferenceId)
-                }
-            )
-        }
-        return fetchPremiumStatus(session)
-    }
-
     fun fetchPremiumStatus(session: UserSession): PremiumStatusResult {
         val json = request(
             method = "GET",
@@ -447,22 +378,6 @@ class Me2BackendClient {
         return parseAlarmRecord(json.optJSONObject("data"))
             ?: throw IllegalStateException("Alarma inválida")
     }
-
-    fun updateAlarm(session: UserSession, alarmId: String, hour: String, title: String, message: String): AlarmRecord {
-        val json = request(
-            method = "PATCH",
-            path = "/api/alarmas/${session.id}/$alarmId",
-            authToken = session.authToken,
-            body = JSONObject().apply {
-                put("hora", hour)
-                put("titulo", title)
-                put("mensaje", message)
-            }
-        )
-        return parseAlarmRecord(json.optJSONObject("data"))
-            ?: throw IllegalStateException("No se pudo actualizar la alarma")
-    }
-
     fun cancelAlarm(session: UserSession, alarmId: String) {
         request(
             method = "DELETE",
@@ -489,19 +404,6 @@ class Me2BackendClient {
             alarm = parseAlarmRecord(data.optJSONObject("alarma"))
         )
     }
-
-    private fun parseLocalAuthResult(json: JSONObject): BackendAuthResult {
-        val profile = json.optJSONObject("perfil") ?: JSONObject()
-        return BackendAuthResult(
-            token = json.getString("token"),
-            userId = profile.optString("userId"),
-            email = profile.optString("email"),
-            displayName = profile.optString("displayName", profile.optString("email", "Usuario")),
-            photoUrl = profile.optString("photoUrl").ifBlank { null },
-            emailVerified = true
-        )
-    }
-
     private fun parseAlarmList(array: JSONArray?): List<AlarmRecord> {
         if (array == null) return emptyList()
         val result = mutableListOf<AlarmRecord>()

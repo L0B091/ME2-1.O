@@ -9,6 +9,13 @@ class SessionStorage(context: Context) {
     private val preferences: SharedPreferences =
         SecurePreferences.open(appContext, "me2_session_secure", listOf("me2_session"))
 
+    init {
+        // El estado del modo adulto vive solo en el servidor: se borran las claves que versiones previas guardaban.
+        if (LEGACY_ADULT_KEYS.any { preferences.contains(it) }) {
+            preferences.edit().apply { LEGACY_ADULT_KEYS.forEach { remove(it) } }.apply()
+        }
+    }
+
     fun saveUser(session: UserSession) {
         preferences.edit()
             .putString(KEY_NAME, session.displayName)
@@ -65,26 +72,6 @@ class SessionStorage(context: Context) {
     fun linkPercentage(session: UserSession): Double =
         com.me2.android.ui.LinkProgress.percent(session.usageMinutes)
 
-    fun saveAdultKeyword(keyword: String?) {
-        preferences.edit().putString(KEY_ADULT_KEYWORD, keyword).apply()
-    }
-
-    fun loadAdultKeyword(): String? =
-        preferences.getString(KEY_ADULT_KEYWORD, null)?.takeIf { it.isNotBlank() }
-
-    fun saveAdultUnlocked(unlocked: Boolean) {
-        preferences.edit().putBoolean(KEY_ADULT_UNLOCKED, unlocked).apply()
-    }
-
-    fun isAdultUnlocked(): Boolean = preferences.getBoolean(KEY_ADULT_UNLOCKED, false)
-
-    fun saveAdultIntensity(intensity: String) {
-        preferences.edit().putString(KEY_ADULT_INTENSITY, intensity).apply()
-    }
-
-    fun loadAdultIntensity(): String =
-        preferences.getString(KEY_ADULT_INTENSITY, "none") ?: "none"
-
     fun setHomeWidgetEnabled(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_HOME_WIDGET, enabled).apply()
     }
@@ -108,6 +95,7 @@ class SessionStorage(context: Context) {
         preferences.getString(KEY_LAST_TEMP, "—°C") ?: "—°C"
 
     companion object {
+        val LEGACY_ADULT_KEYS = listOf("adult_keyword", "adult_unlocked", "adult_intensity")
         private const val KEY_NAME = "name"
         private const val KEY_EMAIL = "email"
         private const val KEY_ID = "id"
@@ -116,9 +104,6 @@ class SessionStorage(context: Context) {
         private const val KEY_EMAIL_VERIFIED = "email_verified"
         private const val KEY_PREMIUM_UNTIL = "premium_until"
         private const val KEY_USAGE_MINUTES = "usage_minutes"
-        private const val KEY_ADULT_KEYWORD = "adult_keyword"
-        private const val KEY_ADULT_UNLOCKED = "adult_unlocked"
-        private const val KEY_ADULT_INTENSITY = "adult_intensity"
         private const val KEY_HOME_WIDGET = "home_widget_enabled"
         private const val KEY_LAST_TEMP = "last_known_temp"
         private const val KEY_PRESENTATION_INTRO = "presentation_intro_completed"

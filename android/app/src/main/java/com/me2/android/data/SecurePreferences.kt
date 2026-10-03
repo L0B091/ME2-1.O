@@ -16,7 +16,8 @@ import java.io.File
  */
 object SecurePreferences {
     private const val TAG = "Me2SecurePrefs"
-    private val memoryStores = mutableMapOf<String, InMemorySharedPreferences>()
+    // Por instancia de Application (en tests cada Application nueva arranca vacía, como el disco).
+    private val memoryStores = java.util.WeakHashMap<Context, MutableMap<String, InMemorySharedPreferences>>()
 
     /** true si el último `open` de [name] tuvo que usar el almacén en memoria. */
     @Volatile var lastOpenWasVolatile: Boolean = false
@@ -33,7 +34,9 @@ object SecurePreferences {
         lastOpenWasVolatile = encrypted == null
         if (encrypted != null) return encrypted
         Log.w(TAG, "Keystore no disponible: almacén volátil en memoria (sin fallback en claro)")
-        return synchronized(memoryStores) { memoryStores.getOrPut(name) { InMemorySharedPreferences() } }
+        return synchronized(memoryStores) {
+            memoryStores.getOrPut(appContext) { mutableMapOf() }.getOrPut(name) { InMemorySharedPreferences() }
+        }
     }
 
     private fun create(appContext: Context, name: String): SharedPreferences {

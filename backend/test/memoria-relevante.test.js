@@ -26,3 +26,10 @@ test("M4: el mensaje actual no se duplica en el historial enviado al LLM", async
   });
   assert.equal(r.debug.historialEnviado, 1, "solo el mensaje previo del asistente");
 });
+
+test("B8: el video base es fijo (sin selectorVideo legacy) y el clip lo decide la biblioteca V1", async () => {
+  const r = await orquestadorChat("hola", { userId: `b8-${crypto.randomBytes(4).toString("hex")}`,
+    memoriaLocal: { source: "android_local_primary", persistentMemories: [], importantMemories: [], recentConversation: [] } });
+  assert.equal(r.video.mediaId, "NEUTRAL_001");
+  assert.equal(r.video.loop, true);
+});

@@ -26,7 +26,7 @@ How to add videos later
 A) Bundle in the next APK: copy files into the matching mood folder under assets/videos/, rebuild.
 B) Drop-in without rebuild: push/copy into the app's filesDir/gallery/{mood}/ (adb, future gallery UI, or sync).
 
-ClipCatalog / GalleryRepository list these automatically; MainActivity avatar playback uses the same API.
+ClipCatalog lists these automatically; MainActivity avatar playback uses the same API.
 Gallery UI can be added later without rewriting ExoPlayer wiring.
 
 Audio product rule

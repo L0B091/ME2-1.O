@@ -78,6 +78,7 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "Me2Main"
+        private const val AVATAR_VOLUME = 1f
         /** Post-presentation wait before silence check-in (product: ~45–60s). */
         private const val POST_PRESENTATION_SILENCE_MS = 50_000L
     }
@@ -585,7 +586,6 @@ class MainActivity : AppCompatActivity() {
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
-                    applyAdultModeFromChat(result)
                     adultUnlockedNow = result.adultMode?.unlocked == true
                     applyChatActions(result.actions)
                     result.memoryFacts?.let { facts ->
@@ -727,13 +727,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
-
-    private fun applyAdultModeFromChat(result: com.me2.android.net.BackendChatResult) {
-        val adult = result.adultMode ?: return
-        sessionStorage.saveAdultUnlocked(adult.unlocked)
-        adult.intensity?.let { sessionStorage.saveAdultIntensity(it) }
-    }
-
     private fun syncPremiumState() {
         if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
             return
@@ -749,10 +742,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     updateCurrentSession(updatedSession)
                     backupMaterial = premium.backupMaterial
-                    premium.adultMode?.let { adult ->
-                        sessionStorage.saveAdultUnlocked(adult.unlocked)
-                        adult.intensity?.let { sessionStorage.saveAdultIntensity(it) }
-                    }
+                    // Estado adulto: solo server-side (no se persiste en el teléfono).
                     if (updatedSession.isPremium && startedFromEmptyLocalMemory) {
                         restorePremiumBackup(silent = true)
                     }
@@ -779,73 +769,6 @@ class MainActivity : AppCompatActivity() {
             runCatching { Me2SyncWorker.enqueueIfPending(this) }
         }
     }
-
-    private fun scheduleTestAlarm() {
-        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
-            Toast.makeText(this, getString(R.string.alarm_requires_backend), Toast.LENGTH_SHORT).show()
-            return
-        }
-        ensureNotificationPermission()
-        if (!alarmScheduler.canScheduleExactAlarms()) {
-            alarmScheduler.exactAlarmPermissionIntent()?.let(::startActivity)
-            Toast.makeText(this, getString(R.string.exact_alarm_permission_needed), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val nextMinute = Calendar.getInstance().apply {
-            add(Calendar.MINUTE, 1)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }
-        val hour = SimpleDateFormat("HH:mm", Locale.getDefault()).format(nextMinute.time)
-
-        thread {
-            runCatching {
-                val alarm = backendClient.createAlarm(
-                    currentSession,
-                    hour = hour,
-                    title = getString(R.string.alarm_protocol_title),
-                    message = getString(R.string.alarm_protocol_message)
-                )
-                alarmScheduler.schedule(alarm)
-            }.onSuccess {
-                runOnUiThread {
-                    Toast.makeText(this, "${getString(R.string.alarm_test_scheduled)} $hour", Toast.LENGTH_SHORT).show()
-                }
-            }.onFailure { error ->
-                runOnUiThread {
-                    Toast.makeText(this, error.message ?: getString(R.string.alarm_requires_backend), Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    private fun cancelNextAlarm() {
-        val nextAlarm = alarmScheduler.peekNextAlarm(currentSession.id)
-        if (nextAlarm == null) {
-            Toast.makeText(this, getString(R.string.alarm_none_active), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        alarmScheduler.cancel(nextAlarm.id)
-        notificationCoordinator.cancelAlarmNotifications(nextAlarm.id)
-
-        if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
-            Toast.makeText(this, getString(R.string.alarm_cancelled), Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        thread {
-            runCatching {
-                backendClient.cancelAlarm(currentSession, nextAlarm.id)
-            }.onSuccess {
-                runOnUiThread {
-                    Toast.makeText(this, getString(R.string.alarm_cancelled), Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
     private fun ensureNotificationPermission() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
@@ -1073,7 +996,7 @@ class MainActivity : AppCompatActivity() {
                 currentRequest?.let { playAvatarRequest(it) } ?: fallbackToLoopNeutral(forceReload = true)
             avatarMode == AvatarState.LOOP_NEUTRAL -> {
                 val exoPlayer = player ?: return
-                playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipId))
+                pickNextClip(currentAvatarGallery, currentAvatarClipId)?.let { playAvatarClip(exoPlayer, it) }
             }
             else -> fallbackToLoopNeutral(forceReload = true)
         }
@@ -1093,9 +1016,9 @@ class MainActivity : AppCompatActivity() {
         val gallery = currentAvatarGallery.ifEmpty { loopNeutralGallery }
         val fallback = gallery.firstOrNull() ?: loopNeutralGallery.firstOrNull() ?: return
         val desiredClip = when {
-            forceReload -> pickNextClip(gallery, currentAvatarClipId)
-            currentAvatarClipId == null -> pickNextClip(gallery, lastAvatarClipId)
-            !galleryContainsCurrentClip(gallery) -> pickNextClip(gallery, currentAvatarClipId)
+            forceReload -> pickNextClip(gallery, currentAvatarClipId) ?: fallback
+            currentAvatarClipId == null -> pickNextClip(gallery, lastAvatarClipId) ?: fallback
+            !galleryContainsCurrentClip(gallery) -> pickNextClip(gallery, currentAvatarClipId) ?: fallback
             else -> gallery.firstOrNull { it.id == currentAvatarClipId } ?: fallback
         }
         if (!forceReload && desiredClip.id == currentAvatarClipId) {
@@ -1109,8 +1032,9 @@ class MainActivity : AppCompatActivity() {
         lastAvatarClipId = currentAvatarClipId
         currentAvatarClipId = clip.id
         runCatching { mediaHistory.record(clip.id) }
-        // Voice only on welcome/presentacion; mute spoken risk on other moods if tagged.
-        exoPlayer.volume = if (clip.carriesVoice || clip.mood == ClipCatalog.MOOD_PRESENTACION) 1f else 1f
+        // Volumen completo en todos los clips: la voz solo existe en la presentación y el resto lleva sonido
+        // ambiente/onomatopeyas (regla de producto), así que no hay nada que silenciar por categoría.
+        exoPlayer.volume = AVATAR_VOLUME
         exoPlayer.setMediaItem(MediaItem.fromUri(clipCatalog.playbackUri(clip)))
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
@@ -1125,10 +1049,11 @@ class MainActivity : AppCompatActivity() {
         return com.me2.android.gallery.ClipPicker.pickRandom(gallery, gallery.firstOrNull { it.id == prev })
     }
 
-    private fun pickNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip =
+    /** null si no hay ningún clip (biblioteca vacía): el avatar queda quieto en vez de cerrar la app (B12). */
+    private fun pickNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip? =
         resolveNextClip(gallery, previousClipId)
             ?: resolveNextClip(loopNeutralGallery, previousClipId)
-            ?: error("ClipCatalog has no demo clips; res/raw fallbacks missing")
+            ?: null.also { Log.w(TAG, "Sin clips disponibles para el avatar") }
 
     private fun openInitiative(intent: Intent) {
         val userId = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_USER_ID)

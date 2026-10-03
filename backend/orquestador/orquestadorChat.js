@@ -23,7 +23,6 @@ import reaccionAudiovisual from "../modulos/media/reaccionAudiovisual.js";
 import reacciones from "../modulos/interaccion/reacciones.js";
 import formatoAdulto from "../modulos/media/formatoAdulto.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
-import selectorVideo from "../modulos/video/selectorVideo.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
 import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
 import calendarioApi from "../api/calendario.js";
@@ -156,6 +155,11 @@ function ejecutarAcciones(userId, mensaje, persistir) {
   }
   return { acciones, resultado };
 }
+
+const VIDEO_BASE = Object.freeze({
+  categoria: "calida", etiqueta: "calida", assetPath: "ME2_MEDIA/01_LOOP_NEUTRAL/NEUTRAL_001.mp4",
+  assetName: "NEUTRAL_001.mp4", mediaId: "NEUTRAL_001", loop: true
+});
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   const userId = contexto.userId || "anonimo";
@@ -334,7 +338,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     historialConversacion.registrarMensaje(userId, respuesta || `[GIF: ${(media.tags || []).join(", ")}]`, "asistente");
   }
 
-  const video = selectorVideo.seleccionarVideo({ adultMode: adultResult?.adult }, EXPRESION_NEUTRA);
+  // B8: sin selectorVideo legacy (su salida era constante): video base neutro; el clip concreto lo decide la
+  // biblioteca audiovisual V1 (reaccionAudiovisual) y el cliente.
+  const video = { ...VIDEO_BASE };
   const videoFinal = adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video;
   // Texto + clip siempre; GIF opcional solo en modo adulto (catálogo adulto con gating estricto).
   const { clip } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
