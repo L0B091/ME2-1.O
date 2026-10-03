@@ -147,8 +147,8 @@ data class LocalMe2Memory(
         })
         put("persistentMemories", Companion.notesToJson(persistentMemories.takeLast(12)))
         put("importantMemories", Companion.notesToJson(importantMemories.takeLast(8)))
-        put("codeMemories", Companion.assetsToJson(codeMemories.takeLast(8)))
-        put("fiscalMemories", Companion.assetsToJson(fiscalMemories.takeLast(8)))
+        // codeMemories/fiscalMemories NO viajan en cada turno (el backend no las usa en el chat; el Premium local
+        // va aparte en `premiumLocal`): menos datos sensibles y menos tokens.
         put("gustos", JSONArray(interests.takeLast(MAX_INTERESTS)))
         put("disgustos", JSONArray(dislikes.takeLast(MAX_INTERESTS)))
         location?.let { put("ubicacion", it.toJson()) }

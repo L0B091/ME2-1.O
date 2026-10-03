@@ -141,7 +141,27 @@ function lineasEstado(estadoEmocional, pendientes = []) {
   return l;
 }
 
-export function construirMensajeContexto({ herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [], onboarding = [], estadoEmocional = null, pendientes = [] }) {
+const MAX_HECHOS_CONTEXTO = 12;
+const RECIENTES_SIEMPRE = 4;
+const tokens = t => new Set(String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+  .split(/[^a-z0-9ñ]+/).filter(w => w.length > 3));
+
+/**
+ * Memoria relevante para el turno: los más recientes siempre + los que comparten palabras con el mensaje,
+ * hasta MAX_HECHOS_CONTEXTO (en el orden original). Evita mandar toda la memoria en cada turno.
+ */
+export function seleccionarHechos(hechos = [], mensaje = "", max = MAX_HECHOS_CONTEXTO) {
+  const lista = hechos.filter(Boolean);
+  if (lista.length <= max) return lista;
+  const recientes = new Set(lista.slice(-RECIENTES_SIEMPRE).map((_, i) => lista.length - RECIENTES_SIEMPRE + i));
+  const claves = tokens(mensaje);
+  const puntaje = lista.map((h, i) => ({ i, p: [...tokens(h)].filter(w => claves.has(w)).length }));
+  const relevantes = puntaje.filter(x => !recientes.has(x.i) && x.p > 0).sort((a, b) => b.p - a.p || b.i - a.i)
+    .slice(0, max - recientes.size).map(x => x.i);
+  return [...new Set([...relevantes, ...recientes])].sort((a, b) => a - b).map(i => lista[i]);
+}
+
+export function construirMensajeContexto({ mensaje = "", herramientas, memoria, datosPerfil, characterName, app, accionesTurno = [], extra = [], onboarding = [], estadoEmocional = null, pendientes = [] }) {
   const h = herramientas.hora;
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
@@ -153,7 +173,7 @@ export function construirMensajeContexto({ herramientas, memoria, datosPerfil, c
   if (characterName) l.push(`Nombre que el usuario eligió para vos: ${characterName}`);
   if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
   if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
-  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...memoria.hechos.slice(-15).map(x => `  • ${x}`));
+  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...seleccionarHechos(memoria.hechos, mensaje).map(x => `  • ${x}`));
   l.push(...lineasEstado(estadoEmocional, pendientes));
   l.push(`Hora actual: ${h.hora} (${h.zonaHoraria}${h.zonaDelUsuario ? "" : ", zona horaria por defecto del servidor; la del usuario aún no se conoce"})`);
   l.push(`Fecha de hoy: ${h.fechaLarga}`);

@@ -35,4 +35,17 @@ class LocalFactsTest {
         assertNull(LocalLocation.fromJson(JSONObject("""{"ciudad":"Rosario"}""")).let { it?.lat })
         assertNull(Me2BackendClient().parseMemoryFacts(JSONObject("{}")))
     }
+
+    /** M3: memorias de código y fiscales no viajan en cada turno del chat. */
+    @Test fun contextoDelChatNoIncluyeMemoriasDeCodigoNiFiscales() {
+        val m = LocalMe2Memory(
+            userId = "u",
+            codeMemories = mutableListOf(LocalAssetMemory("main.kt", "código", 1L)),
+            fiscalMemories = mutableListOf(LocalAssetMemory("factura", "monotributo", 1L))
+        )
+        val ctx = m.toBackendContext()
+        assertFalse(ctx.has("codeMemories"))
+        assertFalse(ctx.has("fiscalMemories"))
+        assertTrue(m.toJson().has("codeMemories"))
+    }
 }

@@ -6,11 +6,8 @@
 * la respuesta del LLM vuelve al usuario sin modificar.
 */
 
-import procesadorEntrada from "../motor/procesadorEntrada.js";
-import { obtenerUsuario } from "../memoria/usuarioMemoria.js";
 import historialConversacion from "../memoria/historialConversacion.js";
-import writeBackEngine from "../memoria/writebackengine.js";
-import memoriaOrquestador from "../memoria/memoriaOrquestador.js";
+import registrarActividad from "../memoria/registrarActividad.js";
 import memoriaConversacional from "../memoria/memoriaConversacional.js";
 import { geocodificar } from "../api/geocoding.js";
 import datosUsuario from "../memoria/datosUsuario.js";
@@ -76,6 +73,17 @@ async function hechosParaMemoriaLocal(mensaje, memoriaLocal) {
     } catch { /* sin geocodificación: la ubicación sigue igual */ }
   }
   return delta;
+}
+
+/**
+ * El cliente guarda el mensaje del usuario antes de enviarlo, así que puede llegar también como último elemento del
+ * historial: se quita para no duplicarlo (el mensaje actual va una sola vez, como {role:"user"} al final).
+ */
+export function quitarMensajeActual(historial = [], mensaje = "") {
+  const ultimo = historial[historial.length - 1];
+  const norm = t => String(t || "").trim().toLowerCase();
+  if (ultimo && ultimo.tipo === "usuario" && norm(ultimo.mensaje) === norm(mensaje)) return historial.slice(0, -1);
+  return historial;
 }
 
 function normalizarMemoriaLocal(memoriaLocal = {}) {
@@ -156,9 +164,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   const persistirEnServidor = !memoriaLocal || memoriaLocal.source !== "android_local_primary";
 
   // [MEMORY] historial previo (antes de registrar este mensaje)
-  const historialPrevio = memoriaLocal?.recentConversation?.length
+  const historialPrevio = quitarMensajeActual(memoriaLocal?.recentConversation?.length
     ? memoriaLocal.recentConversation
-    : historialConversacion.obtenerHistorial(userId, 40);
+    : historialConversacion.obtenerHistorial(userId, 40), mensajeUsuario);
 
   // Nombre del personaje (dato, sin respuesta armada)
   const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(mensajeUsuario, { memoriaLocal });
@@ -166,16 +174,14 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     preferenciaNombre.guardarNombrePersonaje(userId, nombrePersonajeDetectado);
   }
 
-  let memoriaUsuario = null;
-  try { memoriaUsuario = obtenerUsuario(userId); } catch { memoriaUsuario = null; }
-  const entradaProcesada = procesadorEntrada.procesarEntrada(userId, mensajeUsuario, historialPrevio);
-
-  // Memoria del sistema (registra el mensaje del usuario en el historial)
-  let memoriaSistema = null;
-  try {
-    memoriaSistema = await memoriaOrquestador.ejecutar({ userId, mensaje: mensajeUsuario, entradaProcesada, persistirEnServidor });
-  } catch (error) {
-    console.error("Error en memoriaOrquestador:", error.message);
+  // Actividad (bitácora) + historial del mensaje del usuario (solo clientes sin memoria local primaria).
+  if (persistirEnServidor && userId !== "anonimo") {
+    try {
+      registrarActividad.registrarActividad(userId, new Date());
+      historialConversacion.registrarMensaje(userId, mensajeUsuario, "usuario");
+    } catch (error) {
+      console.error("Error registrando actividad/historial:", error.message);
+    }
   }
 
   // Hechos del usuario (nombre, gustos, cosas que contó) — persistidos
@@ -187,11 +193,6 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     memoriaEscritura = { hechos: r.extraido, cambios: r.cambios };
     estadoEmocional.registrar(userId, mensajeUsuario);
     continuidad.registrar(userId, mensajeUsuario);
-    try {
-      memoriaEscritura.writeBack = writeBackEngine.evaluarWriteBack({ userId, mensaje: mensajeUsuario, entradaProcesada });
-    } catch (error) {
-      memoriaEscritura.writeBack = { guardado: false, error: error.message };
-    }
   }
   let memoriaLocalDelta = null;
   if (memoriaLocal) {
@@ -279,6 +280,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
   });
   const mensajeContexto = contextoLLM.construirMensajeContexto({
+    mensaje: mensajeUsuario,
     herramientas,
     memoria: memoriaHechos,
     datosPerfil: datosUsuario.obtener(userId),
@@ -363,9 +365,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       onboarding: { siguiente: onboarding.siguiente, faltantes: onboarding.faltantes, hechosTurno: onboarding.hechosTurno },
       historialEnviado: mensajes.length - 2,
       memoriaEscritura,
-      memoriaHechos,
-      memoriaSistema: memoriaSistema ? Object.keys(memoriaSistema) : null,
-      memoriaUsuario: memoriaUsuario ? true : false
+      memoriaHechos
     }
   };
 }
