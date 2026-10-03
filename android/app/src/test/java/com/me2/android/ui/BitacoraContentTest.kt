@@ -11,11 +11,22 @@ class BitacoraContentTest {
         val c = BitacoraContent.build("Emanuel", "usuario@gmail.com", "user-1", "Nova", 630)
         assertEquals("EMANUEL", c.userName)
         assertEquals("AVATAR // NOVA", c.avatarLine)
-        assertTrue(c.nodeLine.matches(Regex("NODO_ID // \\d{2}-\\d{2}-\\d{2}-\\d")))
+        assertTrue(c.dateLine.matches(Regex("\\d{2}/\\d{2}/\\d{4}")))
         assertEquals("MAIL // usuario@gmail.com", c.mailLine)
         assertEquals("10.5%", c.linkLabel)
         assertEquals(105, c.linkProgressTenths)
         c.allTexts().forEach { assertFalse(it, prohibidas.containsMatchIn(it)) }
+    }
+
+    @Test fun dateLineIsLocalDdMmYyyy() {
+        // 2026-10-03T01:30Z = 02/10/2026 22:30 en Buenos Aires (UTC-3).
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        val ba = java.util.TimeZone.getTimeZone("America/Argentina/Buenos_Aires")
+        val d = java.util.Date(java.util.Calendar.getInstance(utc).apply { clear(); set(2026, 9, 3, 1, 30) }.timeInMillis)
+        assertEquals("03/10/2026", BitacoraContent.formatDate(d, utc))
+        assertEquals("02/10/2026", BitacoraContent.formatDate(d, ba))
+        assertEquals("02/10/2026", BitacoraContent.build("E", "u@x.com", "u", null, 0, now = d, timeZone = ba).dateLine)
+        assertFalse(BitacoraContent.build("E", "u@x.com", "u", null, 0).allTexts().any { it.contains("NODO_ID") })
     }
 
     @Test fun avatarLineHiddenWhenUnknown() {

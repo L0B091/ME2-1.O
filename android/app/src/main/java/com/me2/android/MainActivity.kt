@@ -319,6 +319,12 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupToolbar() {
         binding.drawerLayout.setScrimColor(ContextCompat.getColor(this, R.color.me2_drawer_scrim))
+        // La fecha de la bitácora se recalcula cada vez que se abre el drawer (botón o deslizamiento).
+        binding.drawerLayout.addDrawerListener(object : androidx.drawerlayout.widget.DrawerLayout.SimpleDrawerListener() {
+            override fun onDrawerOpened(drawerView: View) {
+                runCatching { renderBitacoraTexts(sessionStorage.loadUser() ?: currentSession) }
+            }
+        })
         binding.bitacoraButton.setOnClickListener {
             runCatching { renderBitacoraTexts(sessionStorage.loadUser() ?: currentSession) }
             binding.drawerLayout.openDrawer(GravityCompat.START)
@@ -374,14 +380,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Bitácora: nombre, AVATAR // nombre (si se conoce), NODO_ID, MAIL y enlace con un decimal. Sin plan/premium. */
+    /** Bitácora: nombre, AVATAR // nombre (si se conoce), fecha local dd/MM/yyyy, MAIL y enlace con un decimal. Sin plan/premium. */
     private fun renderBitacoraTexts(session: UserSession) {
         val avatarName = runCatching { localMemoryStore.load(session.id).characterName }.getOrNull()
         val content = BitacoraContent.build(session.displayName, session.email, session.id, avatarName, session.usageMinutes)
         binding.userNameText.text = content.userName
         binding.avatarNameText.text = content.avatarLine.orEmpty()
         binding.avatarNameText.visibility = if (content.avatarLine == null) View.GONE else View.VISIBLE
-        binding.nodeIdText.text = content.nodeLine
+        binding.nodeIdText.text = content.dateLine
         binding.mailText.text = content.mailLine
         binding.linkText.text = content.linkLabel
         binding.linkProgressBar.progress = content.linkProgressTenths

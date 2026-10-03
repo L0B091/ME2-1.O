@@ -1,31 +1,42 @@
 package com.me2.android.ui
 
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /** Textos de la bitácora (sin plan/premium/free/demo). Puro para test. */
 data class BitacoraContent(
     val userName: String,
     val avatarLine: String?,
-    val nodeLine: String,
+    /** Fecha local del dispositivo (dd/MM/yyyy); reemplaza la antigua línea NODO_ID. */
+    val dateLine: String,
     val mailLine: String,
     val linkLabel: String,
     val linkProgressTenths: Int
 ) {
-    fun allTexts(): List<String> = listOfNotNull(userName, avatarLine, nodeLine, mailLine, linkLabel)
+    fun allTexts(): List<String> = listOfNotNull(userName, avatarLine, dateLine, mailLine, linkLabel)
 
     companion object {
-        fun build(displayName: String?, email: String, userId: String, avatarName: String?, usageMinutes: Long): BitacoraContent {
+        fun build(
+            displayName: String?, email: String, userId: String, avatarName: String?, usageMinutes: Long,
+            now: Date = Date(), timeZone: TimeZone = TimeZone.getDefault()
+        ): BitacoraContent {
             val pct = LinkProgress.percent(usageMinutes)
             val name = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: email.substringBefore('@')
             return BitacoraContent(
                 userName = name.uppercase(Locale.getDefault()),
                 avatarLine = avatarName?.trim()?.takeIf { it.isNotEmpty() }?.let { "AVATAR // ${it.uppercase(Locale.getDefault())}" },
-                nodeLine = "NODO_ID // ${nodeId(userId)}",
+                dateLine = formatDate(now, timeZone),
                 mailLine = "MAIL // $email",
                 linkLabel = LinkProgress.label(pct),
                 linkProgressTenths = LinkProgress.progressTenths(pct)
             )
         }
+
+        /** Fecha local dd/MM/yyyy (zona del dispositivo). */
+        fun formatDate(now: Date, timeZone: TimeZone = TimeZone.getDefault()): String =
+            SimpleDateFormat("dd/MM/yyyy", Locale.ROOT).apply { this.timeZone = timeZone }.format(now)
 
         /** Id estable y corto derivado del userId (formato 00-00-00-0). */
         fun nodeId(userId: String): String {
