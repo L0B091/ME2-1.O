@@ -124,9 +124,18 @@ function ejecutarAcciones(userId, mensaje, persistir) {
     acciones.push(`Alarma CANCELADA en el teléfono${pedidoAlarma.hora ? ` (${pedidoAlarma.hora})` : " (la próxima)"}.`);
     return { acciones, resultado };
   }
-  // Anónimo (dev/demo): solo acciones que viven en el teléfono; nada se guarda en el servidor bajo "anonimo".
+  // Anónimo (dev/demo): todo vive en el teléfono; nada se guarda en el servidor bajo "anonimo" (sería compartido).
+  // Las alarmas con hora ya salieron arriba como crear_local; acá: hora no entendida y recordatorios de agenda,
+  // que el teléfono guarda y arma localmente (scheduleReminderFrom) igual que un evento del servidor.
   if (userId === "anonimo") {
-    if (pedidoAlarma || detectarEvento(mensaje)) acciones.push("Modo demo sin cuenta: esta acción no se pudo guardar; no se creó nada.");
+    if (pedidoAlarma?.accion === "crear" && !pedidoAlarma.hora) {
+      acciones.push("El usuario pidió una alarma pero no se entendió la hora; no se creó ninguna alarma.");
+    }
+    const eventoLocal = !pedidoAlarma ? detectarEvento(mensaje) : null;
+    if (eventoLocal) {
+      resultado.evento = { exito: true, local: true, evento: eventoLocal };
+      acciones.push(`Recordatorio GUARDADO en el teléfono: ${eventoLocal.fecha} ${eventoLocal.hora} — ${eventoLocal.descripcion}; suena aunque no haya conexión.`);
+    }
     return { acciones, resultado };
   }
   if (pedidoAlarma?.accion === "crear" && pedidoAlarma.hora && persistir !== false) {

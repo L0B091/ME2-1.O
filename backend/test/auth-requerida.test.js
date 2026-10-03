@@ -79,3 +79,22 @@ test("anónimo (dev): no lee memoria ni historial del servidor ni persiste accio
   assert.equal(gestorDeAlarmas.obtenerAlarmasPorUsuario("anonimo").length, antes);
   assert.equal(r.acciones.alarma?.accion, "crear_local", "la alarma del demo vive solo en el teléfono");
 });
+
+test("anónimo (demo del teléfono): recordatorios y alarmas viven en el teléfono, sin 'no se pudo guardar'", async () => {
+  const { default: orquestadorChat } = await import("../orquestador/orquestadorChat.js");
+  const { default: calendarioApi } = await import("../api/calendario.js");
+  const memoriaLocal = { source: "android_local_primary", recentConversation: [] };
+  const antes = JSON.stringify(calendarioApi.obtenerEventosProximos("anonimo", 0));
+  const rec = await orquestadorChat("recordame mañana a las 9 ir al medico", { userId: "anonimo", memoriaLocal });
+  assert.equal(rec.acciones.evento?.local, true);
+  assert.equal(rec.acciones.evento.evento.hora, "09:00");
+  assert.equal(rec.acciones.evento.evento.descripcion, "ir al medico");
+  assert.ok(/Recordatorio GUARDADO en el teléfono/.test(rec.debug.contexto));
+  assert.equal(JSON.stringify(calendarioApi.obtenerEventosProximos("anonimo", 0)), antes, "nada en el calendario del servidor");
+  const alarma = await orquestadorChat("despertame a las 7:30", { userId: "anonimo", memoriaLocal });
+  assert.equal(alarma.acciones.alarma?.accion, "crear_local");
+  const sinHora = await orquestadorChat("poné una alarma en un rato", { userId: "anonimo", memoriaLocal });
+  assert.equal(sinHora.acciones.alarma, null);
+  assert.ok(/no se entendió la hora/.test(sinHora.debug.contexto));
+  for (const r of [rec, alarma, sinHora]) assert.ok(!/Modo demo sin cuenta|no se pudo guardar/.test(r.debug.contexto));
+});

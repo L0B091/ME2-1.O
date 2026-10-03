@@ -171,16 +171,28 @@ class Me2AlarmScheduler(
 
     private fun setExact(record: StoredAlarmRecord, stage: Int, atMillis: Long) {
         val pi = broadcastIntent(record.id, record.userId, stage)
-        when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms() ->
-                alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
-            // Despertador: setAlarmClock (exento de Doze, ícono de alarma). Recordatorios: exacta permitida en reposo.
-            record.kind == StoredAlarmRecord.KIND_ALARM ->
-                alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(atMillis, null), pi)
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
-                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
-            else -> @Suppress("DEPRECATION") alarmManager.setExact(AlarmManager.RTC_WAKEUP, atMillis, pi)
+        val exactAllowed = runCatching { canScheduleExactAlarms() }.getOrDefault(false)
+        try {
+            when {
+                !exactAllowed -> setInexact(atMillis, pi)
+                // Despertador: setAlarmClock (exento de Doze, ícono de alarma). Recordatorios: exacta permitida en reposo.
+                record.kind == StoredAlarmRecord.KIND_ALARM ->
+                    alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(atMillis, null), pi)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
+                else -> @Suppress("DEPRECATION") alarmManager.setExact(AlarmManager.RTC_WAKEUP, atMillis, pi)
+            }
+        } catch (e: SecurityException) {
+            // Android 12-14: el permiso de alarmas exactas se puede revocar entre el chequeo y el armado → inexacta.
+            Log.w(TAG, "alarma exacta denegada (${record.id}); se arma inexacta")
+            setInexact(atMillis, pi)
         }
+    }
+
+    /** Fallback sin permiso de alarmas exactas: dispara en reposo (Doze) con una ventana corta del sistema. */
+    private fun setInexact(atMillis: Long, pi: PendingIntent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
+        else alarmManager.set(AlarmManager.RTC_WAKEUP, atMillis, pi)
     }
 
     private fun cancelPendingIntent(alarmId: String) {
