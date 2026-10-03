@@ -34,7 +34,7 @@ export const PLAN = {
 
 /** Alcance COMPLETO de Premium como HECHOS para el LLM (la primera vez que el usuario pregunta/pide Premium). */
 export const ALCANCE_PREMIUM = [
-  "1) Respaldo de memoria en la nube: copia cifrada en el teléfono antes de subirla (el servidor no puede leerla) de toda la memoria local (conversación, recuerdos, datos fiscales y proyectos). En un teléfono nuevo se restaura y el avatar retoma el hilo: sabe cuándo y en qué lugar fue la última charla.",
+  "1) Respaldo de memoria en la nube: copia cifrada en el teléfono antes de subirla (AES-GCM con una clave derivada de tu cuenta; el servidor guarda solo el contenido cifrado, aunque no es cifrado de extremo a extremo) de toda la memoria local (conversación, recuerdos, datos fiscales y proyectos). En un teléfono nuevo se restaura y el avatar retoma el hilo: sabe cuándo y en qué lugar fue la última charla.",
   "2) Gestor de material para monotributista: por chat registra facturas emitidas y recibidas (monto, fecha, cliente/concepto), la categoría de monotributo, vencimientos (monotributo, IIBB, etc.) y notas; responde cuánto facturó en el mes y en 12 meses, qué vence y qué está vencido. Todo queda guardado en el teléfono.",
   "3) Memoria dedicada para proyectos de programación: un mini-repositorio por proyecto dentro de la app; por chat guarda archivos (bloques de código), hace snapshots/versiones, muestra diferencias (diff) entre versiones y restaura una versión anterior. Guardado en el teléfono.",
   "4) Modo Adulto: solo 18+ verificado; se habilita por sesión con una palabra clave privada; incluye una galería dedicada de clips del avatar y GIFs adultos (nunca fuera del modo adulto)."

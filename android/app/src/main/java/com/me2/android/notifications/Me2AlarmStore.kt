@@ -2,8 +2,7 @@ package com.me2.android.notifications
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import com.me2.android.data.SecurePreferences
 import com.me2.android.net.AlarmDispatchStage
 import com.me2.android.net.AlarmRecord
 import org.json.JSONArray
@@ -13,20 +12,7 @@ class Me2AlarmStore(context: Context) {
     private val appContext = context.applicationContext
 
     private val preferences: SharedPreferences =
-        runCatching {
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                appContext,
-                "me2_alarm_store",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }.getOrElse {
-            appContext.getSharedPreferences("me2_alarm_store", Context.MODE_PRIVATE)
-        }
+        SecurePreferences.open(appContext, "me2_alarm_store", listOf())
 
     fun upsert(record: StoredAlarmRecord) = synchronized(LOCK) {
         val alarms = loadAll().associateBy { it.id }.toMutableMap()

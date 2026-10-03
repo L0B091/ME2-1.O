@@ -98,3 +98,9 @@ test("monto/moneda: un pago real que no corresponde al plan no activa Premium", 
   assert.equal(premiumManager.obtenerEstado(user.id).premiumActivo, false);
   assert.equal(storage.readUserData("mercadopago_pagos", "99", null), null);
 });
+
+test("M5: el alcance Premium no promete que el servidor no pueda leer el respaldo", async () => {
+  const { ALCANCE_PREMIUM } = await import("../modulos/premium/premiumManager.js");
+  assert.ok(!/no puede leerla/.test(ALCANCE_PREMIUM[0]));
+  assert.match(ALCANCE_PREMIUM[0], /no es cifrado de extremo a extremo/);
+});

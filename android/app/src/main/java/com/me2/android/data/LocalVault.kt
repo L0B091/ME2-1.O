@@ -20,8 +20,11 @@ data class EncryptedLocalPayload(
 )
 
 /**
- * Local AES-GCM vault. Prefers AndroidKeyStore; falls back to an in-memory/app-prefs
- * soft key so Keystore OEM failures cannot crash launch (demo / first-open path).
+ * Local AES-GCM vault. La clave vive en AndroidKeyStore (no exportable).
+ *
+ * Si el Keystore falla (OEM roto / tests), se usa una clave de proceso SOLO en memoria: nunca se persiste una clave
+ * junto a los datos (eso equivalía a guardarlos en claro). La clave "soft" heredada en prefs solo se LEE para
+ * descifrar datos viejos (se re-cifran con Keystore en el próximo guardado) y nunca se crea de nuevo.
  */
 class LocalVault(context: Context) {
     private val appContext = context.applicationContext
@@ -96,17 +99,13 @@ class LocalVault(context: Context) {
         }
     }
 
-    private fun softSecretKey(): SecretKey {
-        val prefs = appContext.getSharedPreferences("me2_vault_soft", Context.MODE_PRIVATE)
-        val existing = prefs.getString(SOFT_KEY, null)
-        val raw = if (existing != null) {
-            Base64.decode(existing, Base64.NO_WRAP)
-        } else {
-            ByteArray(32).also { SecureRandom().nextBytes(it) }.also {
-                prefs.edit().putString(SOFT_KEY, Base64.encodeToString(it, Base64.NO_WRAP)).commit()
-            }
-        }
-        return SecretKeySpec(raw, "AES")
+    private fun softSecretKey(): SecretKey = processKey
+
+    /** Clave heredada (versiones previas la guardaban en prefs en claro): solo lectura, para migrar. */
+    private fun legacySoftKey(): SecretKey? {
+        val prefs = appContext.getSharedPreferences(LEGACY_SOFT_PREFS, Context.MODE_PRIVATE)
+        val existing = prefs.getString(SOFT_KEY, null) ?: return null
+        return runCatching { SecretKeySpec(Base64.decode(existing, Base64.NO_WRAP), "AES") }.getOrNull()
     }
 
     private fun encryptWithSoftKey(plainText: String): EncryptedLocalPayload {
@@ -120,19 +119,22 @@ class LocalVault(context: Context) {
     }
 
     private fun decryptWithSoftKey(ivBase64: String, payloadBase64: String): String? =
-        runCatching {
-            val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(
-                Cipher.DECRYPT_MODE,
-                softSecretKey(),
-                GCMParameterSpec(128, Base64.decode(ivBase64, Base64.NO_WRAP))
-            )
-            String(cipher.doFinal(Base64.decode(payloadBase64, Base64.NO_WRAP)), StandardCharsets.UTF_8)
-        }.getOrNull()
+        listOfNotNull(softSecretKey(), legacySoftKey()).firstNotNullOfOrNull { key ->
+            runCatching {
+                val cipher = Cipher.getInstance(TRANSFORMATION)
+                cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(128, Base64.decode(ivBase64, Base64.NO_WRAP)))
+                String(cipher.doFinal(Base64.decode(payloadBase64, Base64.NO_WRAP)), StandardCharsets.UTF_8)
+            }.getOrNull()
+        }
 
     companion object {
         private const val TAG = "Me2LocalVault"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val SOFT_KEY = "soft_aes_key"
+        const val LEGACY_SOFT_PREFS = "me2_vault_soft"
+        /** Clave volátil del proceso (solo si el Keystore no funciona). */
+        private val processKey: SecretKey by lazy {
+            SecretKeySpec(ByteArray(32).also { SecureRandom().nextBytes(it) }, "AES")
+        }
     }
 }

@@ -2,27 +2,12 @@ package com.me2.android.data
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 
 class SessionStorage(context: Context) {
     private val appContext = context.applicationContext
 
     private val preferences: SharedPreferences =
-        runCatching {
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                appContext,
-                "me2_session_secure",
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }.getOrElse {
-            appContext.getSharedPreferences("me2_session", Context.MODE_PRIVATE)
-        }
+        SecurePreferences.open(appContext, "me2_session_secure", listOf("me2_session"))
 
     fun saveUser(session: UserSession) {
         preferences.edit()
