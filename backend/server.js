@@ -648,15 +648,10 @@ app.use((err, _req, res, _next) => {
 });
 
 export function iniciarServidor(port = PORT) {
+  // Sin tick de alarmas en el servidor: el protocolo de 3 intentos lo ejecuta Android (AlarmManager) y el backend
+  // solo registra los eventos que informa el teléfono (/api/alarmas/:userId/:alarmId/evento).
   const server = app.listen(port, () => {
     console.log(`🚀 ME2 corriendo en http://localhost:${server.address().port}`);
-    // Server-side alarm tick (Android remains primary executor for notifications)
-    try {
-      orquestadorNotificaciones.iniciar(60_000);
-      console.log("⏰ orquestadorNotificaciones tick iniciado (60s)");
-    } catch (error) {
-      console.error("No se pudo iniciar orquestadorNotificaciones:", error?.message || error);
-    }
   });
   return server;
 }

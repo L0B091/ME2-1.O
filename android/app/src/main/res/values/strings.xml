@@ -54,7 +54,6 @@
     <string name="initiative_invalid_sleep">Las horas de dormir y despertar deben ser diferentes.</string>
     <string name="initiative_unavailable">Esta iniciativa no está disponible para la sesión actual.</string>
     <string name="initiative_close">Cerrar</string>
-    <string name="silence_check_in">¿Estás ahí?</string>
     <string name="premium_checkout">PAGAR CON MERCADO PAGO</string>
     <string name="premium_checkout_starting">ABRIENDO CHECKOUT…</string>
     <string name="premium_checkout_unavailable">CHECKOUT NO DISPONIBLE. EL BACKEND DE MERCADO PAGO NO ESTÁ CONFIGURADO.</string>

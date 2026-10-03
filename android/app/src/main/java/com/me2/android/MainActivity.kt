@@ -530,12 +530,24 @@ class MainActivity : AppCompatActivity() {
         if (!initiativeStore.isEnabled(currentSession.id)) return
         if (!initiativeStore.shouldAskCheckIn(currentSession.id)) return
         initiativeStore.markCheckInAsked(currentSession.id)
-        val prompt = getString(R.string.silence_check_in)
-        localMemoryStore.appendAssistantMessage(currentSession.id, prompt)
-        hydrateConversation()
+        appendSilenceCheckIn()
         // After check-in without response, arm 1h countdown toward server eval.
         initiativeStore.markPostSilenceEvalArmed(currentSession.id)
         initiativeScheduler.schedulePostSilenceEval()
+    }
+
+    /**
+     * Check-in de silencio: la voz es de Dolphin. Con red no se escribe texto fijo (la evaluación de iniciativa del
+     * servidor, ya armada, genera el mensaje con el LLM). Sin red: frase del banco offline aprobado.
+     */
+    private fun appendSilenceCheckIn() {
+        if (backendClient.isConfigured() && backendClient.isOnline(this)) return
+        val nombre = currentSession.displayName.trim().substringBefore(' ').ifBlank { null }
+        val phrase = runCatching {
+            com.me2.android.offline.OfflinePhrases(this).pick(com.me2.android.offline.OfflinePhraseBank.INICIO, mapOf("nombre" to nombre))
+        }.getOrNull() ?: return
+        localMemoryStore.appendAssistantMessage(currentSession.id, phrase.text)
+        hydrateConversation()
     }
 
     private fun dispatchChat(content: String, initiative: JSONObject? = null) {
@@ -980,9 +992,7 @@ class MainActivity : AppCompatActivity() {
         if (::initiativeStore.isInitialized) {
             runCatching { initiativeStore.markCheckInAsked(currentSession.id) }
         }
-        val prompt = getString(R.string.silence_check_in)
-        localMemoryStore.appendAssistantMessage(currentSession.id, prompt)
-        hydrateConversation()
+        appendSilenceCheckIn()
         if (::initiativeStore.isInitialized && ::initiativeScheduler.isInitialized) {
             runCatching {
                 initiativeStore.markPostSilenceEvalArmed(currentSession.id)
@@ -1218,13 +1228,9 @@ class MainActivity : AppCompatActivity() {
         thread {
             runCatching {
                 backendClient.reportAlarmEvent(currentSession, alarmId, stage, "respondio")
-            }.onSuccess { result ->
+            }.onSuccess {
+                // Sin texto fijo en el chat: la respuesta a la alarma la redacta Dolphin en el turno del usuario.
                 runCatching(onReported)
-                result.message?.let { reply ->
-                    runOnUiThread {
-                        appendAssistantReply(reply, "AWAKE", "CLIMA")
-                    }
-                }
             }
         }
     }

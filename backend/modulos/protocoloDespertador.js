@@ -5,84 +5,29 @@ import gestorDeAlarmas from "./gestorDeAlarmas.js";
 import notificacionesApi from "../api/notificaciones.js";
 import memoriaConversacional from "../memoria/memoriaConversacional.js";
 
-const VIBRACION_INTERVALO_MS = 600;
-const MENSAJE_INTERVALO_MS = 1500;
 export const ESPERA_ENTRE_INTENTOS_MS = 5 * 60 * 1000;
 
-/**
-* Utilidad de espera
-*/
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
-* Vibración suave en 2 pulsos
-*/
-async function vibracionDoble() {
-  console.log("📳 vibración");
-  await delay(VIBRACION_INTERVALO_MS);
-  console.log("📳 vibración");
-}
-
-/**
-* Push tipo WhatsApp simulado
-*/
-async function push(userID, mensaje) {
-  console.log(`📩 [${userID}] ${mensaje}`);
-  notificacionesApi.notificarAlarma(userID, mensaje);
-}
-
-
-/**
- * Prefer stored user coords when available; otherwise Buenos Aires default.
- * Never call OpenWeather with (0,0).
- */
-async function obtenerMensajeClimaSeguro(coords = null) {
-  try {
-    // Sin ubicación conocida del usuario no se consulta clima (evita datos de otra ciudad).
-    if (!Number.isFinite(Number(coords?.lat)) || !Number.isFinite(Number(coords?.lon))) {
-      return "Buen día. Ya registré tu despertar.";
-    }
-    const lat = Number(coords.lat);
-    const lon = Number(coords.lon);
-    const clima = await obtenerClima(lat, lon);
-    return Number.isFinite(clima?.temperatura)
-      ? `${Math.round(clima.temperatura)}°C, ${clima.descripcion || ""}`.trim()
-      : "Buen día. Ya registré tu despertar.";
-  } catch (error) {
-    return "Buen día. Ya registré tu despertar.";
-  }
-}
-
-/**
-* Mensajes por nivel de insistencia
-*/
-const mensajesPorStage = {
-  1: [
-    "Buenos días ☀️ es hora de despertar",
-    "Ey… ya es momento de levantarse 😴",
-    "El día ya empezó, vamos!"
-  ],
-  2: [
-    "Segunda llamada ⏰ despertá",
-    "No te duermas otra vez 😏",
-    "Último aviso antes de la alarma fuerte"
-  ],
-  3: [
-    "⚠️ ÚLTIMO INTENTO",
-    "Esto ya es serio… despertate",
-    "Activando alarma sonora"
-  ]
+// El protocolo lo EJECUTA Android (AlarmManager: intento 1 → 5 min → intento 2 → 5 min → intento 3 alarma fuerte).
+// El backend solo define los stages y registra los eventos que informa el teléfono. Los textos de notificación son
+// etiquetas de sistema neutras (sin voz del personaje): con red la voz es de Dolphin; sin red, el banco offline.
+const ETIQUETA_STAGE = {
+  1: hora => `Alarma${hora ? ` · ${hora}` : ""}`,
+  2: hora => `Alarma${hora ? ` · ${hora}` : ""} · segundo aviso`,
+  3: hora => `Alarma${hora ? ` · ${hora}` : ""} · último aviso`
 };
 
-function obtenerMensajesStage(stage) {
-  return [...(mensajesPorStage[Number(stage)] || [])];
+function etiquetaStage(stage, hora = null) {
+  const f = ETIQUETA_STAGE[Number(stage)];
+  return f ? f(hora) : "Alarma";
 }
 
-function obtenerDefinicionStages() {
+function obtenerMensajesStage(stage, hora = null) {
+  return [etiquetaStage(stage, hora)];
+}
+
+function obtenerDefinicionStages(hora = null) {
   return [1, 2, 3].map((stage) => {
-    const mensajes = obtenerMensajesStage(stage);
+    const mensajes = obtenerMensajesStage(stage, hora);
     return {
       stage,
       channelId: stage >= 3 ? "ME2_ALARMS" : "ME2_MESSAGES",
@@ -96,15 +41,22 @@ function obtenerDefinicionStages() {
   });
 }
 
+/** Clima como DATO (sin frase armada) para que Dolphin lo use si corresponde. */
+async function climaComoDato(coords = null) {
+  if (!Number.isFinite(Number(coords?.lat)) || !Number.isFinite(Number(coords?.lon))) return null;
+  try {
+    const c = await obtenerClima(Number(coords.lat), Number(coords.lon), { timeoutMs: 6000 });
+    return Number.isFinite(c?.temperatura) ? { temperatura: c.temperatura, descripcion: c.descripcion || null } : null;
+  } catch {
+    return null;
+  }
+}
+
 async function registrarRespuestaUsuario(userID, alarmId = null) {
   const ubicacion = memoriaConversacional.obtener(userID)?.ubicacion || null;
-  const mensajeClima = await obtenerMensajeClimaSeguro(ubicacion);
-  await push(userID, `🌤 ${mensajeClima}`);
+  const clima = await climaComoDato(ubicacion);
   gestorDeAlarmas.cerrarAlarma(userID, alarmId);
-  return {
-    estado: "respondio",
-    mensaje: mensajeClima
-  };
+  return { estado: "respondio", mensaje: null, clima };
 }
 
 function registrarDisparoAndroid(userID, stage, alarmId = null) {
@@ -113,8 +65,7 @@ function registrarDisparoAndroid(userID, stage, alarmId = null) {
     return null;
   }
 
-  const mensajes = obtenerMensajesStage(stage);
-  const mensaje = mensajes[0] || "Hora de despertar";
+  const mensaje = etiquetaStage(stage, alarma.hora);
   notificacionesApi.notificarAlarma(userID, mensaje);
 
   if (Number(stage) >= 3) {
@@ -138,73 +89,7 @@ function registrarDisparoAndroid(userID, stage, alarmId = null) {
   };
 }
 
-/**
-* Ejecuta una ronda de mensajes del stage actual
-*/
-async function ejecutarStage(userID, stage, respuestaUsuario = false) {
-  const mensajes = obtenerMensajesStage(stage);
-
-  for (const msg of mensajes) {
-    await vibracionDoble();
-    await push(userID, msg);
-    await delay(1500);
-
-    // Si el usuario responde en cualquier momento
-    if (respuestaUsuario) {
-      return registrarRespuestaUsuario(userID);
-    }
-  }
-
-  return null;
-}
-
-/**
-* Protocolo principal de despertador
-*/
-async function ejecutarAlarma(userID, respuestaUsuario = false) {
-  const alarma = gestorDeAlarmas.obtenerAlarma(userID);
-
-  if (!alarma || alarma.estado !== "ACTIVE") {
-    return null;
-  }
-
-  let stage = alarma.stage || 1;
-
-  // Ejecuta stage actual
-  const resultado = await ejecutarStage(userID, stage, respuestaUsuario);
-
-  // Si respondió → termina todo
-  if (resultado) return resultado;
-
-  // -------------------------
-  // ESCALADO
-  // -------------------------
-  if (stage < 3) {
-    gestorDeAlarmas.actualizarAlarma(userID, {
-      stage: stage + 1,
-      intentos: (alarma.intentos || 0) + 1
-    });
-
-    console.log(`⬆️ Escalando a stage ${stage + 1}`);
-
-    return ejecutarAlarma(userID, respuestaUsuario);
-  }
-
-  // -------------------------
-  // STAGE 3 FINAL → ALARMA SONORA
-  // -------------------------
-  console.log("🚨 ALARMA SONORA ACTIVADA");
-
-  gestorDeAlarmas.cerrarAlarma(userID);
-
-  return {
-    estado: "alarmaSonora",
-    mensaje: "Alarma sonora activada tras 3 intentos"
-  };
-}
-
 export default {
-  ejecutarAlarma,
   obtenerDefinicionStages,
   registrarRespuestaUsuario,
   registrarDisparoAndroid
