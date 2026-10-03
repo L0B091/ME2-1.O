@@ -3,6 +3,7 @@
 // SOLO datos (hora, clima, noticias, agenda, alarmas, memoria, funciones de la app).
 // Sin instrucciones de personalidad ni de estilo: eso vive en el master prompt del modelo.
 import horaApi from "../api/hora.js";
+import guardia from "../seguridad/guardiaInstrucciones.js";
 import obtenerClima, { UBICACION_DEFAULT, ubicacionDevHabilitada } from "../api/clima.js";
 import noticiasApi from "../api/noticias.js";
 import calendarioApi from "../api/calendario.js";
@@ -165,21 +166,23 @@ export function construirMensajeContexto({ mensaje = "", herramientas, memoria, 
   const h = herramientas.hora;
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
-  const nombre = memoria?.nombre || null;
+  l.push(guardia.LINEA_CONTRATO);
+  const d = guardia.datoDeUsuario;
+  const nombre = memoria?.nombre ? d(memoria.nombre, 80) : null;
   l.push(`Nombre del usuario: ${nombre || "desconocido"}`);
   const nombreCuenta = datosPerfil?.identidad?.nombre;
-  if (!nombre && nombreCuenta && !String(nombreCuenta).includes("@")) l.push(`Nombre de la cuenta (sin confirmar en la conversación): ${nombreCuenta}`);
+  if (!nombre && nombreCuenta && !String(nombreCuenta).includes("@")) l.push(`Nombre de la cuenta (sin confirmar en la conversación): ${d(nombreCuenta, 80)}`);
   if (onboarding.length) l.push(...onboarding);
-  if (characterName) l.push(`Nombre que el usuario eligió para vos: ${characterName}`);
-  if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.join(", ")}`);
-  if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.join(", ")}`);
-  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...seleccionarHechos(memoria.hechos, mensaje).map(x => `  • ${x}`));
+  if (characterName) l.push(`Nombre que el usuario eligió para vos: ${d(characterName, 60)}`);
+  if (memoria?.gustos?.length) l.push(`Gustos del usuario: ${memoria.gustos.slice(-30).map(x => d(x, 80)).join(", ")}`);
+  if (memoria?.disgustos?.length) l.push(`No le gusta: ${memoria.disgustos.slice(-30).map(x => d(x, 80)).join(", ")}`);
+  if (memoria?.hechos?.length) l.push("Cosas que el usuario contó:", ...seleccionarHechos(memoria.hechos, mensaje).map(x => `  • ${d(x)}`));
   l.push(...lineasEstado(estadoEmocional, pendientes));
   l.push(`Hora actual: ${h.hora} (${h.zonaHoraria}${h.zonaDelUsuario ? "" : ", zona horaria por defecto del servidor; la del usuario aún no se conoce"})`);
   l.push(`Fecha de hoy: ${h.fechaLarga}`);
   const u = herramientas.ubicacion;
   l.push(u
-    ? `Ubicación del usuario: ${u.ciudad || `${u.lat},${u.lon}`}${u.provincia ? `, ${u.provincia}` : ""}${u.pais ? `, ${u.pais}` : ""}${u.origen === "dev_default" ? " (ubicación de desarrollo por defecto, NO confirmada)" : ""}`
+    ? `Ubicación del usuario: ${d(u.ciudad || `${u.lat},${u.lon}`, 80)}${u.provincia ? `, ${d(u.provincia, 60)}` : ""}${u.pais ? `, ${d(u.pais, 60)}` : ""}${u.origen === "dev_default" ? " (ubicación de desarrollo por defecto, NO confirmada)" : ""}`
     : "Ubicación del usuario: desconocida");
   l.push(lineaClima(herramientas.clima));
   l.push(...lineasNoticias(herramientas.noticias));
@@ -199,7 +202,7 @@ const HISTORIAL_CHARS = Number(process.env.ME2_HISTORY_CHARS || 1200);
 export function historialAMensajes(historial = [], limite = HISTORIAL_MAX) {
   return historial.slice(-Math.min(limite, HISTORIAL_MAX)).map(item => ({
     role: item.role === "assistant" || (item.tipo && item.tipo !== "usuario" && item.tipo !== "user") ? "assistant" : "user",
-    content: String(item.mensaje ?? item.text ?? "").slice(0, HISTORIAL_CHARS)
+    content: guardia.limpiarTextoUsuario(item.mensaje ?? item.text ?? "", HISTORIAL_CHARS)
   })).filter(m => m.content.trim());
 }
 

@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import { pathToFileURL } from "url";
-import cors from "cors";
 import dotenv from "dotenv";
 import { rateLimit } from "express-rate-limit";
 
@@ -32,19 +31,13 @@ import datosUsuario from "./memoria/datosUsuario.js";
 import flujoPremium from "./modulos/premium/flujoPremium.js";
 import selectorMedia from "./modulos/media/selectorMedia.js";
 import verificacionEdad from "./auth/verificacionEdad.js";
+import { headersSeguridad, corsEstricto, authPorDefecto, validarCuerpoChat, instalarRedaccionLogs, origenesPermitidos } from "./seguridad/http.js";
 
 dotenv.config();
+instalarRedaccionLogs();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DEFAULT_CORS_ORIGINS = [
-  "http://localhost",
-  "http://127.0.0.1",
-  "http://10.0.2.2",
-  "https://localhost",
-  "https://127.0.0.1",
-  "https://10.0.2.2"
-];
 const authRateLimit = rateLimit({
   windowMs: 60 * 1000,
   limit: 10,
@@ -71,28 +64,22 @@ const initiativeRateLimit = rateLimit({
   windowMs: 60 * 1000, limit: 6, standardHeaders: true, legacyHeaders: false
 });
 
-function getAllowedOrigins() {
-  const configured = String(process.env.CORS_ALLOWED_ORIGINS || "")
-    .split(",")
-    .map(item => item.trim())
-    .filter(Boolean);
-  return configured.length > 0 ? configured : DEFAULT_CORS_ORIGINS;
-}
+app.disable("x-powered-by");
+// Detrás de un proxy (Render/Fly/NGINX) configurar TRUST_PROXY (p. ej. 1) para que el rate limit vea la IP real.
+if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+const apiRateLimit = rateLimit({
+  windowMs: 60 * 1000, limit: Math.max(10, Number(process.env.ME2_API_RATE_LIMIT) || 120), standardHeaders: true, legacyHeaders: false
+});
+const fuentesRateLimit = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
 
-const allowedOrigins = getAllowedOrigins();
-
-app.use(cors({
-  origin(origin, callback) {
-    if (!origin) {
-      return callback(null, true);
-    }
-    const allowed = allowedOrigins.some(item => origin === item || origin.startsWith(`${item}:`));
-    return callback(allowed ? null : new Error("Origen no permitido por CORS"), allowed);
-  },
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
-}));
-app.use(express.json({ limit: "5mb" }));
+app.use(headersSeguridad);
+app.use(corsEstricto);
+app.use(apiRateLimit);
+// Auth por defecto: todo exige Bearer válido salvo la whitelist de públicos (seguridad/http.js → RUTAS_PUBLICAS).
+app.use(authPorDefecto);
+// Límites de tamaño: el respaldo cifrado puede ser grande; el resto de la API, no.
+app.put("/api/premium/:userId/backup", express.json({ limit: process.env.ME2_BACKUP_MAX_BODY || "5mb" }));
+app.use(express.json({ limit: process.env.ME2_MAX_BODY || "100kb" }));
 
 function handleAsync(handler) {
   return (req, res, next) => {
@@ -144,27 +131,14 @@ function serializarAlarma(alarma) {
 }
 
 app.get("/", (req, res) => {
-  res.json({
-    ok: true,
-    servicio: "ME2 BACKEND",
-    estado: "activo",
-    endpoints: ["/health", "/chat", "/api/auth/*", "/api/bitacora/me"]
-  });
+  res.json({ ok: true, servicio: "ME2 BACKEND", estado: "activo" });
 });
 
+// /health mínimo en público; el diagnóstico (integraciones, LLM, CORS) solo en desarrollo.
 app.get("/health", healthRateLimit, (req, res) => {
-  res.status(200).json({
-    ok: true,
-    servicio: "ME2 Backend",
-    estado: "activo",
-    timestamp: new Date().toISOString(),
-    llm: dolphinClient.obtenerDiagnostico(),
-    integrations: authStatus(),
-    cors: {
-      mode: "restricted",
-      allowedOrigins
-    }
-  });
+  const base = { ok: true, estado: "activo", timestamp: new Date().toISOString() };
+  if (process.env.NODE_ENV !== "development") return res.status(200).json(base);
+  return res.status(200).json({ ...base, llm: dolphinClient.obtenerDiagnostico(), integrations: authStatus(), cors: origenesPermitidos() });
 });
 
 // Login local: deshabilitado salvo LOCAL_AUTH_ENABLED=true (dev). Google es el único método de producción.
@@ -211,7 +185,8 @@ app.post("/api/auth/google", authRateLimit, handleAsync(async (req, res) => {
 }));
 
 app.get("/api/auth/me", requireAuth, (req, res) => {
-  res.json({ ok: true, data: req.auth });
+  const { token: _token, ...publico } = req.auth;
+  res.json({ ok: true, data: publico });
 });
 
 app.post("/api/auth/logout", requireAuth, (req, res) => {
@@ -248,12 +223,12 @@ app.post("/api/reloj/:userId/interaccion", requireAuth, (req, res) => {
   res.json({ ok: true, data: { userId, ultimaInteraccionRegistrada: true } });
 });
 
-app.get("/api/clima", optionalAuth, handleAsync(async (req, res) => {
+app.get("/api/clima", fuentesRateLimit, requireAuth, handleAsync(async (req, res) => {
   let lat = req.query.lat != null ? Number(req.query.lat) : null;
   let lon = req.query.lon != null ? Number(req.query.lon) : null;
   let ciudad = null;
   if (lat == null || lon == null) {
-    const ubicacion = req.auth ? memoriaConversacional.obtener(req.auth.userId)?.ubicacion : null;
+    const ubicacion = memoriaConversacional.obtener(req.auth.userId)?.ubicacion || null;
     const dev = !ubicacion && ubicacionDevHabilitada() ? UBICACION_DEFAULT : null;
     const u = ubicacion || dev;
     if (!u) return res.status(400).json({ ok: false, disponible: false, motivo: "ubicacion_desconocida" });
@@ -268,7 +243,7 @@ app.get("/api/clima", optionalAuth, handleAsync(async (req, res) => {
   }
 }));
 
-app.get("/api/noticias", handleAsync(async (req, res) => {
+app.get("/api/noticias", fuentesRateLimit, requireAuth, handleAsync(async (req, res) => {
   const ciudad = String(req.query.ciudad || "");
   const categorias = String(req.query.categorias || "")
     .split(",")
@@ -431,7 +406,7 @@ app.get("/api/media/:catalogo/:id", requireAuth, (req, res) => {
   }
   const f = selectorMedia.archivoDe(catalogo, id);
   if (!f) return res.status(404).json({ ok: false, error: "Medio no encontrado" });
-  res.sendFile(f.ruta);
+  res.sendFile(f.ruta, { dotfiles: "deny" });
 });
 
 // Mercado Pago simulado (solo sin MERCADO_PAGO_ACCESS_TOKEN)
@@ -587,10 +562,10 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, identida
 }));
 
 app.post("/chat", chatRateLimit, optionalAuth, identidadObligatoria, handleAsync(async (req, res) => {
-  const { mensaje, contexto } = req.body || {};
-  if (!mensaje || typeof mensaje !== "string") {
-    return res.status(400).json({ ok: false, error: "Mensaje inválido" });
-  }
+  // Validación + whitelist de campos de contexto: nunca userId/premium/adulto del cliente.
+  const valido = validarCuerpoChat(req.body);
+  if (valido.error) return res.status(valido.status || 400).json({ ok: false, error: valido.error });
+  const { mensaje, contexto } = valido;
 
   const effectiveUserId = req.identidad;
   const resultado = await orquestadorChat(mensaje, {
@@ -636,14 +611,14 @@ app.use((req, res) => {
 });
 
 app.use((err, _req, res, _next) => {
-  console.error("💥 Error global:", {
-    status: err.status || 500,
-    message: err.message || "Fallo inesperado del servidor"
-  });
-  res.status(err.status || 500).json({
+  const status = Number(err.status || err.statusCode) || 500;
+  console.error("💥 Error global:", { status, message: err.message || "Fallo inesperado del servidor" });
+  // 5xx: sin detalles internos al cliente (en producción).
+  const interno = status >= 500 && process.env.NODE_ENV === "production";
+  res.status(status).json({
     ok: false,
-    error: err.message || "Fallo inesperado del servidor",
-    details: err.details || undefined
+    error: interno ? "Fallo inesperado del servidor" : (err.type === "entity.too.large" ? "Cuerpo demasiado grande" : err.message || "Fallo inesperado del servidor"),
+    details: interno ? undefined : err.details || undefined
   });
 });
 

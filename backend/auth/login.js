@@ -6,36 +6,61 @@ const DURACION_TOKEN = 1000 * 60 * 60 * 24 * 7;
 const SESSION_NAMESPACE = "sesiones_auth";
 const SESSION_KEY = "tokens";
 
-/** @type {Map<string, {token:string,userId:string,email:string,creado:number,expira:number}>} */
+/**
+ * Sesiones indexadas por SHA-256 del token: en memoria y en disco solo queda el hash (B4). Un volcado de
+ * data/sesiones_auth no permite suplantar a nadie.
+ * @type {Map<string, {tokenHash:string,userId:string,email:string,creado:number,expira:number}>}
+ */
 const sesiones = new Map();
+
+export function hashToken(token) {
+  return crypto.createHash("sha256").update(String(token || "")).digest("hex");
+}
+const ES_HASH = /^[a-f0-9]{64}$/;
+
+function buscarSesion(token) {
+  if (!token || typeof token !== "string" || token.length > 256) return null;
+  const h = hashToken(token);
+  const sesion = sesiones.get(h);
+  if (!sesion) return null;
+  // Comparación en tiempo constante del hash guardado (defensa en profundidad).
+  const a = Buffer.from(sesion.tokenHash, "hex");
+  const b = Buffer.from(h, "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b) ? sesion : null;
+}
 
 function cargarSesiones() {
   const data = storage.readGlobalData(SESSION_NAMESPACE, SESSION_KEY, { tokens: {} });
   const tokens = data?.tokens && typeof data.tokens === "object" ? data.tokens : {};
   const ahora = Date.now();
   sesiones.clear();
-  for (const [token, sesion] of Object.entries(tokens)) {
+  let migradas = false;
+  for (const [clave, sesion] of Object.entries(tokens)) {
     if (!sesion || typeof sesion !== "object") continue;
     if (!Number.isFinite(sesion.expira) || sesion.expira <= ahora) continue;
-    sesiones.set(token, {
-      token,
+    // Formato viejo: la clave era el token en claro → se migra a su hash.
+    const tokenHash = ES_HASH.test(clave) ? clave : hashToken(clave);
+    if (tokenHash !== clave || sesion.token) migradas = true;
+    sesiones.set(tokenHash, {
+      tokenHash,
       userId: String(sesion.userId || ""),
       email: String(sesion.email || ""),
       creado: Number(sesion.creado) || ahora,
       expira: Number(sesion.expira)
     });
   }
+  if (migradas) persistirSesiones();
 }
 
 function persistirSesiones() {
   const ahora = Date.now();
   const tokens = {};
-  for (const [token, sesion] of sesiones.entries()) {
+  for (const [tokenHash, sesion] of sesiones.entries()) {
     if (sesion.expira <= ahora) {
-      sesiones.delete(token);
+      sesiones.delete(tokenHash);
       continue;
     }
-    tokens[token] = sesion;
+    tokens[tokenHash] = { userId: sesion.userId, email: sesion.email, creado: sesion.creado, expira: sesion.expira };
   }
   storage.writeGlobalData(SESSION_NAMESPACE, SESSION_KEY, { tokens });
 }
@@ -56,8 +81,9 @@ function emitirSesion(usuario) {
   const creado = Date.now();
   const expira = creado + DURACION_TOKEN;
 
-  sesiones.set(token, {
-    token,
+  const tokenHash = hashToken(token);
+  sesiones.set(tokenHash, {
+    tokenHash,
     userId: usuario.id,
     email: usuario.email,
     creado,
@@ -136,11 +162,11 @@ function iniciarSesionParaUsuario(email) {
 }
 
 function validarToken(token) {
-  const sesion = sesiones.get(String(token || ""));
+  const sesion = buscarSesion(token);
   if (!sesion) return null;
 
   if (Date.now() > sesion.expira) {
-    sesiones.delete(String(token));
+    sesiones.delete(sesion.tokenHash);
     persistirSesiones();
     return null;
   }
@@ -159,7 +185,6 @@ function validarToken(token) {
       leyenda: usuario.leyenda,
       premiumUntil: usuario.premiumUntil
     },
-    token: sesion.token,
     expira: sesion.expira
   };
 }
@@ -176,7 +201,8 @@ function sesionesActivas() {
 }
 
 function cerrarSesion(token) {
-  const existed = sesiones.delete(String(token || ""));
+  const sesion = buscarSesion(token);
+  const existed = sesion ? sesiones.delete(sesion.tokenHash) : false;
   if (existed) persistirSesiones();
   return existed ? { ok: true, mensaje: "Sesión cerrada" } : { ok: false, error: "Token inválido" };
 }

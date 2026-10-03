@@ -36,16 +36,18 @@ function actualizarBitacora(userId, payload = {}) {
   const usuarioAuth = usuariosMemoria.obtenerUsuarioPorId(userId);
   const updates = {};
 
+  // Validación/límites: solo campos de perfil editables; nada de premium/adulto/respaldo desde el cliente.
   if (typeof payload.userName === "string" && payload.userName.trim()) {
-    updates.displayName = payload.userName.trim();
+    updates.displayName = payload.userName.trim().slice(0, 60);
   }
 
   if (typeof payload.fotoPerfil === "string") {
-    updates.photoUrl = payload.fotoPerfil.trim() || null;
+    const foto = payload.fotoPerfil.trim();
+    updates.photoUrl = foto && /^https:\/\/[^\s]{1,500}$/.test(foto) ? foto : null;
   }
 
   if (typeof payload.leyenda === "string") {
-    updates.leyenda = payload.leyenda.trim();
+    updates.leyenda = payload.leyenda.trim().slice(0, 280);
   }
 
   if (usuarioAuth && Object.keys(updates).length > 0) {

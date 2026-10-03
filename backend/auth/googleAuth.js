@@ -24,18 +24,37 @@ async function verificarIdToken(idToken) {
     throw new HttpError(503, "GOOGLE_CLIENT_ID no está configurado");
   }
 
+  if (typeof idToken !== "string" || !idToken || idToken.length > 4096) {
+    throw new HttpError(400, "idToken requerido");
+  }
   const client = new OAuth2Client();
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: audiences
-  });
-
-  const payload = ticket.getPayload();
-  if (!payload?.email || !payload?.sub) {
+  let payload;
+  try {
+    // verifyIdToken valida firma (certs de Google), aud y exp.
+    const ticket = await client.verifyIdToken({ idToken, audience: audiences });
+    payload = ticket.getPayload();
+  } catch {
     throw new HttpError(401, "Token de Google inválido");
   }
-
+  validarClaimsGoogle(payload, audiences);
   return payload;
+}
+
+export const EMISORES_GOOGLE = ["accounts.google.com", "https://accounts.google.com"];
+
+/**
+ * Chequeo explícito de claims (defensa en profundidad sobre verifyIdToken): iss de Google, aud = nuestro client id,
+ * exp vigente (con 60 s de tolerancia), sub y email presentes y email_verified.
+ */
+export function validarClaimsGoogle(payload, audiences = getGoogleAudiences(), ahoraSeg = Math.floor(Date.now() / 1000)) {
+  if (!payload || typeof payload !== "object") throw new HttpError(401, "Token de Google inválido");
+  if (!EMISORES_GOOGLE.includes(payload.iss)) throw new HttpError(401, "Emisor del token inválido");
+  const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+  if (!aud.some(a => audiences.includes(a))) throw new HttpError(401, "Audiencia del token inválida");
+  if (!Number.isFinite(Number(payload.exp)) || Number(payload.exp) + 60 < ahoraSeg) throw new HttpError(401, "Token de Google vencido");
+  if (!payload.sub || !payload.email) throw new HttpError(401, "Token de Google inválido");
+  if (!emailVerificado(payload)) throw new HttpError(403, "El email de Google no está verificado");
+  return true;
 }
 
 function emailVerificado(payload = {}) {
@@ -153,5 +172,6 @@ export default {
   autenticarConGoogle,
   validarToken,
   sesionesActivas,
-  googleAuthEnabled
+  googleAuthEnabled,
+  validarClaimsGoogle
 };

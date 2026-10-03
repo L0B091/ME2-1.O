@@ -8,6 +8,7 @@
 
 import historialConversacion from "../memoria/historialConversacion.js";
 import registrarActividad from "../memoria/registrarActividad.js";
+import guardia from "../seguridad/guardiaInstrucciones.js";
 import memoriaConversacional from "../memoria/memoriaConversacional.js";
 import { geocodificar } from "../api/geocoding.js";
 import datosUsuario from "../memoria/datosUsuario.js";
@@ -275,6 +276,18 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     }
   }
 
+  // [INICIATIVA] B10: el usuario responde a una iniciativa que ME2 le envió (dato del cliente, saneado; no dispara nada).
+  const ini = contexto.iniciativa && typeof contexto.iniciativa === "object" ? contexto.iniciativa : null;
+  const iniTexto = ini ? guardia.datoDeUsuario(ini.mensaje || ini.texto || "", 240) : "";
+  if (iniTexto) {
+    const cat = guardia.datoDeUsuario(ini.categoria || ini.fuente || "", 30);
+    extra.push(`El usuario está respondiendo a una iniciativa tuya${cat ? ` (${cat})` : ""}: «${iniTexto}». Retomá ese tema si corresponde.`);
+  }
+
+  // [GUARDIA] anti prompt-injection: el texto del usuario no cambia estado ni dispara acciones (ya decididas arriba).
+  const inyeccion = guardia.detectarIntentoInyeccion(mensajeUsuario);
+  if (inyeccion.sospechoso) extra.push(guardia.AVISO_INYECCION);
+
   // [CONTEXT] herramientas + memoria + funciones de la app
   const herramientas = await contextoLLM.obtenerHerramientas(userId, {
     lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
@@ -295,7 +308,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   const mensajes = [
     mensajeContexto,
     ...contextoLLM.historialAMensajes(historialPrevio, 20),
-    { role: "user", content: mensajeUsuario }
+    { role: "user", content: guardia.limpiarTextoUsuario(mensajeUsuario) || "…" }
   ];
 
   // [LLM] respuesta sin filtros
@@ -364,6 +377,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       contexto: mensajeContexto.content,
       onboarding: { siguiente: onboarding.siguiente, faltantes: onboarding.faltantes, hechosTurno: onboarding.hechosTurno },
       historialEnviado: mensajes.length - 2,
+      inyeccion: inyeccion.motivos,
       memoriaEscritura,
       memoriaHechos
     }

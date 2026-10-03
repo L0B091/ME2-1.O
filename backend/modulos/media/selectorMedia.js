@@ -67,11 +67,15 @@ export function mediosRespuesta({ mensaje = "", respuesta = "", adult = null, vi
 }
 
 export function archivoDe(catalogo, id, raiz = RAIZ) {
+  // Anti path traversal: catálogo e id con formato estricto, archivo como nombre plano y ruta final contenida en la raíz.
+  if (!/^[a-z0-9_-]{1,40}$/i.test(String(catalogo)) || !/^[a-z0-9_-]{1,120}$/i.test(String(id))) return null;
   const c = cargarCatalogo(catalogo, raiz);
   const item = c.items.find(i => i.id === id);
-  if (!item?.archivo || item.archivo.includes("/") || item.archivo.includes("..")) return null;
-  const ruta = path.join(raiz, catalogo, item.archivo);
-  return fs.existsSync(ruta) ? { ruta, item, adulto: c.adulto } : null;
+  if (!item?.archivo || /[\\/\0]|\.\./.test(item.archivo) || path.basename(item.archivo) !== item.archivo) return null;
+  const base = path.resolve(raiz, catalogo);
+  const ruta = path.resolve(base, item.archivo);
+  if (!ruta.startsWith(base + path.sep)) return null;
+  return fs.existsSync(ruta) && fs.statSync(ruta).isFile() ? { ruta, item, adulto: c.adulto } : null;
 }
 
 export default { cargarCatalogo, catalogosPermitidos, seleccionar, mediosRespuesta, archivoDe };
