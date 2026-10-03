@@ -83,6 +83,8 @@ import org.json.JSONObject
 class MainActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "Me2Main"
+        private const val PREFS_PERMISSIONS = "me2_permissions"
+        private const val KEY_LOCATION_ASKED = "location_asked"
         private const val AVATAR_VOLUME = 1f
         /** Post-presentation wait before silence check-in (product: ~45–60s). */
         private const val POST_PRESENTATION_SILENCE_MS = 50_000L
@@ -174,7 +176,56 @@ class MainActivity : AppCompatActivity() {
             if (!granted) {
                 Toast.makeText(this, getString(R.string.notification_permission_needed), Toast.LENGTH_SHORT).show()
             }
+            // Un diálogo por vez: la ubicación se pide recién al cerrar el de notificaciones.
+            notificationPermissionPending = false
+            maybeRequestLocationPermission()
         }
+
+    private val locationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) refreshDeviceLocation()
+        }
+
+    /**
+     * Ubicación aproximada: se pide UNA sola vez (nunca durante la presentación). Si la niega, sigue la ciudad que
+     * el usuario contó en el chat y no se vuelve a preguntar.
+     */
+    private var notificationPermissionPending = false
+
+    private fun maybeRequestLocationPermission() {
+        if (presentationSequenceActive || notificationPermissionPending || isFinishing) return
+        // Primer contacto (Google): esperar a que la presentación termine o se descarte (maybePlayPresentation).
+        if (::currentSession.isInitialized && !currentSession.isDemo && ::sessionStorage.isInitialized &&
+            !sessionStorage.isPresentationIntroCompleted()) return
+        val prefs = getSharedPreferences(PREFS_PERMISSIONS, MODE_PRIVATE)
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) return
+        if (prefs.getBoolean(KEY_LOCATION_ASKED, false)) return
+        prefs.edit().putBoolean(KEY_LOCATION_ASKED, true).apply()
+        runCatching { locationPermissionLauncher.launch(Manifest.permission.ACCESS_COARSE_LOCATION) }
+    }
+
+    /** Refresco de la ubicación del teléfono en Dispatchers.IO (throttle 30 min / 5 km) + clima del widget. */
+    private fun refreshDeviceLocation() {
+        if (!::currentSession.isInitialized) return
+        val session = currentSession
+        val app = applicationContext
+        lifecycleScope.launch(Dispatchers.IO) {
+            val fix = runCatching { com.me2.android.location.DeviceLocationProvider(app).refreshIfNeeded() }.getOrNull() ?: return@launch
+            if (session.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(app)) return@launch
+            runCatching { backendClient.fetchWeatherLabel(session, fix.lat, fix.lon) }.getOrNull()?.let { label ->
+                runCatching {
+                    sessionStorage.saveLastTemperature(label)
+                    Me2HomeWidgetProvider.refreshAll(app)
+                }
+            }
+        }
+    }
+
+    /** Ubicación para el backend: la del teléfono si está fresca; si no, la ciudad contada en el chat. */
+    private fun effectiveLocation(memory: com.me2.android.data.LocalMe2Memory): com.me2.android.data.LocalLocation? {
+        val device = runCatching { com.me2.android.location.DeviceLocationStore(this).load() }.getOrNull()
+        return com.me2.android.location.DeviceLocationPolicy.effective(device, memory.location, System.currentTimeMillis())
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -317,6 +368,7 @@ class MainActivity : AppCompatActivity() {
         }
         player?.playWhenReady = true
         player?.volume = 1f
+        if (::currentSession.isInitialized) refreshDeviceLocation()
         if (::currentSession.isInitialized) {
             // Returning to foreground cancels a pending post-silence eval only if user is active;
             // observeInteraction is reserved for real chat/widget interactions.
@@ -624,7 +676,7 @@ class MainActivity : AppCompatActivity() {
         binding.sendButton.isEnabled = false
         thread {
             runCatching {
-                backendClient.sendChat(currentSession, memorySnapshot, content, initiative)
+                backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot))
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
@@ -839,10 +891,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun ensureNotificationPermission() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+            maybeRequestLocationPermission()
             return
         }
+        notificationPermissionPending = true
         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
@@ -912,6 +966,7 @@ class MainActivity : AppCompatActivity() {
                 memory?.presentationCompletedAt ?: 0L, memory?.conversation?.isEmpty() ?: true)) {
             markPresentationSeen()
             setChatInputEnabled(true)
+            maybeRequestLocationPermission()
             return
         }
         val gallery = presentationGallery
@@ -958,6 +1013,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onPresentationSequenceCompleted() {
         presentationSequenceActive = false
+        maybeRequestLocationPermission()
         markPresentationSeen()
         setChatInputEnabled(true)
         runCatching { initiativeStore.observeInteraction(currentSession.id) }

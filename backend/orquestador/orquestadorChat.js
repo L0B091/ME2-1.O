@@ -305,7 +305,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // [CONTEXT] herramientas + memoria + funciones de la app
   const herramientas = await contextoLLM.obtenerHerramientas(userId, {
-    lat: contexto.lat, lon: contexto.lon, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
+    lat: contexto.lat, lon: contexto.lon, ciudad: contexto.ciudad, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
   });
   const mensajeContexto = contextoLLM.construirMensajeContexto({
     mensaje: mensajeUsuario,

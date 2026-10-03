@@ -60,7 +60,7 @@ export async function obtenerHerramientas(userId, opciones = {}) {
   const memoria = opciones.memoria || {};
   const ubicacion = opciones.lat != null && opciones.lon != null && opciones.lat !== "" && opciones.lon !== "" &&
     Number.isFinite(Number(opciones.lat)) && Number.isFinite(Number(opciones.lon))
-    ? { lat: Number(opciones.lat), lon: Number(opciones.lon), ciudad: null, zonaHoraria: opciones.zonaHoraria || null, origen: "cliente" }
+    ? { lat: Number(opciones.lat), lon: Number(opciones.lon), ciudad: typeof opciones.ciudad === "string" && opciones.ciudad.trim() ? guardia.datoDeUsuario(opciones.ciudad, 80) : null, zonaHoraria: opciones.zonaHoraria || null, origen: "cliente" }
     : resolverUbicacion(memoria);
   const gustos = memoria.gustos || [];
   const [clima, noticias, agenda] = await Promise.allSettled([

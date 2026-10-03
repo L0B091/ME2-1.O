@@ -150,7 +150,9 @@ class Me2BackendClient {
         session: UserSession,
         memory: LocalMe2Memory,
         message: String,
-        initiative: JSONObject? = null
+        initiative: JSONObject? = null,
+        /** Ubicación efectiva (teléfono fresco > ciudad del chat), ver DeviceLocationPolicy.effective. */
+        location: com.me2.android.data.LocalLocation? = memory.location
     ): BackendChatResult {
         val json = request(
             method = "POST",
@@ -165,9 +167,10 @@ class Me2BackendClient {
                     put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
                     // Herramientas (clima/hora): zona del teléfono + coordenadas conocidas de la memoria local.
-                    put("zonaHoraria", memory.location?.timeZone ?: TimeZone.getDefault().id)
-                    memory.location?.let { loc ->
+                    put("zonaHoraria", location?.timeZone ?: TimeZone.getDefault().id)
+                    location?.let { loc ->
                         if (loc.lat != null && loc.lon != null) { put("lat", loc.lat); put("lon", loc.lon) }
+                        loc.city?.let { put("ciudad", it) }
                     }
                 })
             }
@@ -349,6 +352,16 @@ class Me2BackendClient {
     fun listCalendar(session: UserSession): JSONArray {
         val json = request(method = "GET", path = "/api/calendario/${session.id}", authToken = session.authToken)
         return json.optJSONArray("data") ?: JSONArray()
+    }
+
+    /** Clima en las coordenadas actuales del teléfono (para el widget), p. ej. "23°C". */
+    fun fetchWeatherLabel(session: UserSession, lat: Double, lon: Double): String? {
+        val json = request(
+            method = "GET",
+            path = "/api/clima?lat=${"%.4f".format(java.util.Locale.US, lat)}&lon=${"%.4f".format(java.util.Locale.US, lon)}",
+            authToken = session.authToken
+        )
+        return parseWeatherLabel(json.optJSONObject("data"))
     }
 
     fun listAlarms(session: UserSession): List<AlarmRecord> {

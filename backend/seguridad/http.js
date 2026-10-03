@@ -91,7 +91,7 @@ export function authPorDefecto(req, res, next) {
 
 // ---------------------------------------------------------------- validación de /chat
 export const LIMITES_CHAT = Object.freeze({ mensaje: 4000, contextoBytes: 256 * 1024, historial: 60, memorias: 300 });
-const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "iniciativa"]);
+const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "ciudad", "iniciativa"]);
 
 /** Valida el cuerpo de /chat y devuelve SOLO los campos de contexto admitidos (nunca userId/premium/adulto del cliente). */
 export function validarCuerpoChat(body = {}) {
@@ -108,6 +108,11 @@ export function validarCuerpoChat(body = {}) {
     if (!Number.isFinite(n) || Math.abs(n) > (k === "lat" ? 90 : 180)) delete ctx[k]; else ctx[k] = n;
   }
   if (ctx.zonaHoraria != null && !/^[A-Za-z_]+(\/[A-Za-z0-9_+-]+){0,2}$/.test(String(ctx.zonaHoraria))) delete ctx.zonaHoraria;
+  // Ciudad del GPS del teléfono (solo etiqueta para el clima): texto corto de una línea, sin coordenadas no vale.
+  if (ctx.ciudad != null) {
+    const c = typeof ctx.ciudad === "string" ? ctx.ciudad.replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, 80) : "";
+    if (!c || ctx.lat == null || ctx.lon == null) delete ctx.ciudad; else ctx.ciudad = c;
+  }
   const m = ctx.memoriaLocal;
   if (m != null) {
     if (typeof m !== "object" || Array.isArray(m)) delete ctx.memoriaLocal;

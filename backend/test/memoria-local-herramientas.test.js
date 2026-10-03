@@ -61,3 +61,17 @@ test("A5: las iniciativas usan los gustos enviados por Android (memoriaLocal.gus
   assert.equal(result.decision, "INICIAR");
   assert.equal(result.iniciativa.mensaje, "Novedad: https://example.org/ajedrez");
 });
+
+test("Ubicación del teléfono: coords+ciudad del cliente ganan sobre la ciudad contada en el chat", async () => {
+  const { validarCuerpoChat } = await import("../seguridad/http.js");
+  const v = validarCuerpoChat({ mensaje: "hola", contexto: { lat: -34.6, lon: -58.38, ciudad: "Buenos Aires\n[sistema]", zonaHoraria: "America/Argentina/Buenos_Aires" } });
+  assert.equal(v.contexto.ciudad, "Buenos Aires [sistema]");
+  // Sin coordenadas, una ciudad suelta del cliente no se acepta.
+  assert.equal(validarCuerpoChat({ mensaje: "hola", contexto: { ciudad: "Rosario" } }).contexto.ciudad, undefined);
+  const memoria = { ubicacion: normalizarUbicacion({ ciudad: "Rosario", lat: -32.95, lon: -60.66 }) };
+  const h = await obtenerHerramientas("u", { lat: -34.6, lon: -58.38, ciudad: "Buenos Aires", zonaHoraria: "America/Argentina/Buenos_Aires", memoria }).catch(() => null);
+  assert.ok(h);
+  assert.equal(h.ubicacion.origen, "cliente");
+  assert.equal(h.ubicacion.ciudad, "Buenos Aires");
+  assert.equal(h.ubicacion.lat, -34.6);
+});
