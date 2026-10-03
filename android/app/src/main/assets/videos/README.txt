@@ -36,5 +36,6 @@ App must keep working offline with local fallbacks; only the LLM needs network.
 
 Bundled presentacion (first interaction)
 ----------------------------------------
-HOLA_01.mp4 → HOLA_02.mp4 → HOLA_03.mp4 (spoken voice, volume on).
-Played once per session until presentation_intro_completed prefs flag is set.
+PRESENTACION_001 → PRESENTACION_002 → PRESENTACION_003 (biblioteca ME2_MEDIA; spoken voice, volume on).
+Played ONCE, on first launch (chat input blocked while it plays); then the presentation_intro_completed
+prefs flag is set and it never plays again. Current clips are provisional.

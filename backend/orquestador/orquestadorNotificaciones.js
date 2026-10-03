@@ -388,7 +388,9 @@ export async function evaluarAutonomia(body, opciones = {}) {
   } else if (opciones.debugFuentes) fallosFuentes.push(`sueno_no_elegible:${sueno.motivo}`);
   // Fuente: recordatorios del calendario (próximas 24 h)
   try {
-    const { eventos: proximos } = await calendarioApi.proximosUnificados(solicitud.userId, 5);
+    const { eventos: proximos } = opciones.calendario
+      ? { eventos: await opciones.calendario(solicitud.userId) }
+      : await calendarioApi.proximosUnificados(solicitud.userId, 5);
     for (const ev of proximos) {
       const t = Date.parse(`${ev.fecha}T${ev.hora}:00-03:00`);
       if (!Number.isFinite(t) || t - ahora > 24 * 3600e3) continue;

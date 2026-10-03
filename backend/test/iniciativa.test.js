@@ -207,21 +207,21 @@ test("unconfigured LLM does not call remote providers", async () => {
   assert.equal(result.motivoEspera, "llm_no_configurado");
 });
 
-test("beta evaluation never reads calendar events, including for authenticated identities", async () => {
+test("calendar reminders come only from the user's agenda (empty agenda never fabricates an event)", async () => {
   for (const authUserId of [undefined, "authenticated-test"]) {
     let calendarReads = 0;
     const result = await evaluarAutonomia(solicitud(), {
       ahora, authUserId, llmConfigurado: true, newsConfigurado: false,
       calendario() {
         calendarReads++;
-        return [evento("EVENTO", { fuente: "calendario" })];
+        return [];
       },
       generar: async iniciativa => {
         assert.equal(iniciativa.fuente, "continuidad");
         return { used: true, respuesta: "Retomamos tu proyecto?" };
       }
     });
-    assert.equal(calendarReads, 0);
+    assert.ok(calendarReads >= 1, "el spy de calendario está realmente conectado");
     assert.equal(result.decision, "INICIAR");
     assert.equal(result.iniciativa.fuente, "continuidad");
     assert.deepEqual(result.fallosFuentes, []);
@@ -308,4 +308,17 @@ test("initiative generator sends factual context to the Dolphin client (no perso
       if (v === undefined) delete process.env[k]; else process.env[k] = v;
     }
   }
+});
+
+test("an agenda event within 24h is offered as a calendar reminder candidate", async () => {
+  const fecha = new Date(ahora + 2 * 3600e3 - 3 * 3600e3).toISOString();
+  const ev = { id: "e1", fecha: fecha.slice(0, 10), hora: fecha.slice(11, 16), descripcion: "turno médico" };
+  let vistos = [];
+  await evaluarAutonomia(solicitud(), {
+    ahora, llmConfigurado: true, newsConfigurado: false, debugFuentes: true,
+    calendario: async () => [ev],
+    generar: async iniciativa => { vistos.push(iniciativa.fuente); return { used: true, respuesta: "Ok" }; }
+  });
+  assert.ok(vistos.length >= 1);
+  assert.equal(vistos[0], "calendario");
 });

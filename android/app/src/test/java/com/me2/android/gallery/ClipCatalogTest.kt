@@ -21,11 +21,11 @@ class ClipCatalogTest {
     }
 
     @Test
-    fun listByMoodFallsBackToRawDemos() {
+    fun listByMoodReturnsBundledClipsAndOrderedPresentation() {
         val catalog = ClipCatalog(RuntimeEnvironment.getApplication())
         catalog.ensureDirs()
         val loop = catalog.listByMood(ClipCatalog.MOOD_LOOP_NEUTRAL)
-        assertTrue("expected demo/raw clips when assets empty", loop.isNotEmpty())
+        assertTrue("expected bundled clips", loop.isNotEmpty())
         assertTrue(
             "offline fallback should be RAW demos when no drop-in files",
             loop.all { it.source == GalleryClip.Source.RAW || it.source == GalleryClip.Source.ASSETS }
@@ -34,16 +34,9 @@ class ClipCatalogTest {
         assertTrue(presentacion.isNotEmpty())
         assertTrue(presentacion.first().carriesVoice)
         assertTrue(catalog.runtimeGalleryRoot().exists())
-        // Presentación: PRESENTACION_001→003 (ME2_MEDIA) o HOLA_* en assets/videos (orden por nombre).
-        if (presentacion.any { it.source == GalleryClip.Source.ASSETS }) {
-            assertTrue(presentacion.size >= 3)
-            val names = presentacion.map { it.displayName.uppercase() }
-            assertTrue(names[0].contains("HOLA") || names[0] == "PRESENTACION_001")
-            assertEquals(
-                names.sorted(),
-                names
-            )
-        }
+        // M9: Presentación = PRESENTACION_001 → 002 → 003 (ME2_MEDIA), en ese orden, sin condicionales vacuos.
+        val names = presentacion.map { it.displayName.uppercase().substringBeforeLast('.') }
+        assertEquals(listOf("PRESENTACION_001", "PRESENTACION_002", "PRESENTACION_003"), names.take(3))
     }
 
     @Test

@@ -29,11 +29,11 @@ reescribe los registros de memoria existentes.
 ## Flujo y contrato
 
 Android conserva el registro, el contexto y las observaciones de uso
-localmente. WorkManager solicita `POST /api/iniciativas/evaluar`:
+localmente. WorkManager solicita `POST /api/iniciativas/evaluar` con `Authorization: Bearer <token>`
+(la identidad sale del token, nunca de un `userId` en el cuerpo):
 
 ```json
 {
-  "userId": "identidad-local",
   "memoriaLocal": {
     "recentConversation": [],
     "persistentMemories": [],
@@ -88,8 +88,8 @@ la nueva pantalla si una respuesta llega despues de una recreacion.
 
 Se utilizan noticias de News API y contexto real de la memoria local: pendientes,
 recuerdos importantes, intereses y curiosidad contextual.
-El calendario/agenda no se integra con las iniciativas de esta beta.
-El modulo y las rutas de calendario anteriores al PR se conservan intactos.
+El calendario se consulta solo si el usuario lo conectó (calendarioApi); sin
+conexión no se inventan eventos.
 No hay una API de transito/transporte ni de eventos sociales externos en
 esta beta. El contrato admite eventos de esas categorias con evidencia y
 referencia estable, pero **no simula un feed ni inventa incidentes**.
@@ -151,8 +151,8 @@ no cancela alarmas explicitas.
 
 ## Configuracion y comprobacion
 
-Se mantienen las opciones beta existentes: `BETA_PREMIUM_DEFAULT=true`,
-`GOOGLE_AUTH_ENABLED=false` y Google Android desactivado por defecto.
+Opciones: `GOOGLE_AUTH_ENABLED=true` (por defecto; el login con Google es la identidad del
+backend) y `BETA_PREMIUM_DEFAULT=false` fuera de desarrollo.
 Configure `ME2_BACKEND_BASE_URL` (Gradle) o
 `ME2_ANDROID_BACKEND_BASE_URL` (entorno) para conectar el backend.
 Las claves `OPENROUTER_API_KEY` y `NEWS_API_KEY` permanecen exclusivamente

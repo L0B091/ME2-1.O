@@ -1,7 +1,7 @@
 {
   "name": "me2-backend",
   "version": "1.0.0",
-  "description": "Sistema de IA ME2 con motores y modulos psicologicos",
+  "description": "Backend de ME2: chat, memoria, iniciativas y Premium",
   "main": "server.js",
   "type": "module",
   "scripts": {
@@ -13,7 +13,7 @@
     "ME2",
     "IA",
     "motores",
-    "psicologia",
+    "asistente",
     "interaccion"
   ],
   "author": "Emanuel Slobodianiuk",

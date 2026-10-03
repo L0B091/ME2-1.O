@@ -1,7 +1,7 @@
 package com.me2.android.media
 
 /**
- * Presentación (00_PRESENTACION, los 3 HOLA) SOLO en el primer contacto. Una vez vista queda marcada en prefs
+ * Presentación (PRESENTACION_001 → 002 → 003, clips provisionales) SOLO en el primer contacto. Una vez vista queda marcada en prefs
  * (commit) y en la memoria local (que viaja en el respaldo cifrado): nunca se repite, ni tras reiniciar ni tras
  * reinstalar + restaurar.
  */
