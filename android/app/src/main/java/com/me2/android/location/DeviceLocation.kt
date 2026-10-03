@@ -8,6 +8,7 @@ import android.location.Geocoder
 import android.location.Location
 import android.location.LocationManager
 import android.os.Build
+import android.os.CancellationSignal
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.me2.android.data.SecurePreferences
@@ -15,7 +16,6 @@ import org.json.JSONObject
 import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** Fix del teléfono cifrado en disco (EncryptedSharedPreferences): la ubicación es dato sensible. */
@@ -65,15 +65,16 @@ class DeviceLocationProvider(context: Context) {
         if (recent != null || Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return recent ?: lastKnown
         val provider = providers.firstOrNull { it == LocationManager.NETWORK_PROVIDER } ?: return lastKnown
         // Lectura puntual (API 30+), con tope de 10 s; si no llega, el último conocido.
+        // Executor directo (nunca se apaga: el sistema puede entregar null más tarde por su propio timeout) y
+        // cancelación explícita si no llega a tiempo.
         val latch = CountDownLatch(1)
-        var current: Location? = null
-        val executor = Executors.newSingleThreadExecutor()
+        val cancel = CancellationSignal()
+        val current = java.util.concurrent.atomic.AtomicReference<Location?>(null)
         runCatching {
-            lm.getCurrentLocation(provider, null, executor) { loc -> current = loc; latch.countDown() }
-            latch.await(10, TimeUnit.SECONDS)
+            lm.getCurrentLocation(provider, cancel, { it.run() }) { loc -> current.set(loc); latch.countDown() }
+            if (!latch.await(10, TimeUnit.SECONDS)) cancel.cancel()
         }
-        executor.shutdown()
-        return current ?: lastKnown
+        return current.get() ?: lastKnown
     }
 
     @Suppress("DEPRECATION")
