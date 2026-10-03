@@ -53,6 +53,7 @@ import com.me2.android.media.AudiovisualCue
 import com.me2.android.media.AvatarCueMapper
 import com.me2.android.media.AvatarState
 import com.me2.android.media.AvatarStateMachine
+import com.me2.android.media.OfflineAvatarPool
 import com.me2.android.media.MediaCategoria
 import com.me2.android.media.MediaLibrary
 import com.me2.android.media.MediaPermisos
@@ -537,7 +538,8 @@ class MainActivity : AppCompatActivity() {
         answerPendingAlarms()
         runCatching { Me2InitiativeTimer(this).arm(currentSession.id) }
         // Mientras ME2 procesa: estado de conversación (PENSANDO → fallback neutral si no hay clip).
-        playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
+        // Sin red no hay "pensando": el contenedor queda en el pool neutral/escribiendo (replyOffline).
+        if (backendClient.isOnline(this)) playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
         renderConversation()
         dispatchChat(content, initiative)
     }
@@ -686,7 +688,33 @@ class MainActivity : AppCompatActivity() {
             nombre = currentSession.greetingName,
             fallbackText = getString(R.string.offline_memory_notice)
         )
-        appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue)
+        appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue, applyAvatar = false)
+        playOfflineNeutral()
+    }
+
+    /**
+     * Sin red: clip "escribiendo" (si hay) mientras se tipea la frase; al terminar ese clip, handleAvatarPlaybackEnded
+     * vuelve a LOOP_NEUTRAL y rota sus variantes sin repetir hasta el próximo input. Nunca escribiendo en reposo.
+     */
+    private fun playOfflineNeutral() {
+        if (presentationSequenceActive) return
+        val exoPlayer = player ?: return
+        val plan = OfflineAvatarPool.planRespuesta(mediaLibrary.recursos(), mediaPermisos(), currentAvatarClipId)
+        val tipeo = plan.tipeo
+        if (tipeo != null) {
+            avatarMode = AvatarState.REACCION // al terminar → LOOP_NEUTRAL (AvatarStateMachine)
+            currentRequest = null
+            currentAvatarGallery = listOf(mediaLibrary.toClip(tipeo))
+            Log.i(TAG, "offline escribiendo clip=${tipeo.id}")
+            playAvatarClip(exoPlayer, mediaLibrary.toClip(tipeo))
+            return
+        }
+        avatarMode = AvatarState.LOOP_NEUTRAL
+        currentRequest = null
+        currentAvatarGallery = loopNeutralGallery
+        val clip = plan.neutral?.let(mediaLibrary::toClip) ?: pickNextClip(loopNeutralGallery, currentAvatarClipId) ?: return
+        Log.i(TAG, "offline neutral clip=${clip.id}")
+        playAvatarClip(exoPlayer, clip)
     }
 
     private fun appendAssistantReply(
@@ -694,14 +722,15 @@ class MainActivity : AppCompatActivity() {
         state: String,
         detail: String,
         typewriter: Boolean = false,
-        cue: AudiovisualCue? = null
+        cue: AudiovisualCue? = null,
+        applyAvatar: Boolean = true
     ) {
         // Typewriter lo re-dispara el adapter en bind/tap para cualquier burbuja ME2.
         val me2Reply = ChatMessage(reply, true, animateTypewriter = true)
         fullConversation += me2Reply
         visibleConversation += me2Reply
         localMemoryStore.appendAssistantMessage(currentSession.id, reply)
-        applyAssistantAvatarState(state, detail, cue)
+        if (applyAvatar) applyAssistantAvatarState(state, detail, cue)
         renderConversation()
     }
 
@@ -1068,6 +1097,7 @@ class MainActivity : AppCompatActivity() {
     private fun playAvatarClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
         lastAvatarClipId = currentAvatarClipId
         currentAvatarClipId = clip.id
+        Log.i(TAG, "avatar clip=${clip.id} mode=$avatarMode")
         runCatching { mediaHistory.record(clip.id) }
         // Volumen completo en todos los clips: la voz solo existe en la presentación y el resto lleva sonido
         // ambiente/onomatopeyas (regla de producto), así que no hay nada que silenciar por categoría.

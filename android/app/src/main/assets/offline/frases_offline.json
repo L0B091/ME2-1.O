@@ -82,28 +82,20 @@
     },
     "sin_red_input": {
       "audiovisual": {
-        "categoria": "REACCION",
-        "subcategoria": "EMPATIA",
-        "intensidad": "NORMAL"
+        "categoria": "LOOP_NEUTRAL"
       },
       "audiovisual_alternativos": [
         {
-          "categoria": "SISTEMA",
-          "subcategoria": "SIN_CONEXION",
-          "intensidad": "NORMAL"
-        },
-        {
-          "categoria": "REACCION",
-          "subcategoria": "PREOCUPACION",
-          "intensidad": "NORMAL"
+          "categoria": "CONVERSACION",
+          "subcategoria": "ESCRIBIENDO"
         }
       ],
       "variantes": [
-        "Uy, {nombre}, ahora no tengo conexión. Tu mensaje quedó guardado; probá de nuevo cuando vuelva la red.",
-        "Me quedé sin red, {nombre}. No perdí lo que me escribiste: mandámelo otra vez cuando tengas conexión.",
-        "No llego a contestarte bien sin internet. Guardé tu mensaje; intentá de nuevo cuando estés conectado.",
-        "Se cortó la conexión, {nombre}. Lo tuyo quedó acá anotado; reintentá cuando vuelva la señal.",
-        "Estoy sin red en este momento. Tu mensaje no se perdió: volvé a mandarlo cuando haya conexión."
+        "Oops, no hay internet.",
+        "Conectate para seguir charlando.",
+        "Algo pasó con la conexión.",
+        "Sin conexión por ahora.",
+        "Se cortó internet."
       ]
     }
   }

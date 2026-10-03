@@ -43,10 +43,13 @@ object MediaSelector {
         random: Random = Random.Default
     ): MediaSelection? {
         // 00_PRESENTACION es exclusiva del primer contacto (secuenciaPresentacion): nunca en loop, reacción ni fallback.
-        val validos = recursos.filter { permisos.permite(it) && it.tipo in req.tipos && (it.categoria != MediaCategoria.PRESENTACION || req.categoria == MediaCategoria.PRESENTACION) }
+        val sub = req.subcategoria?.let(MediaNameParser::normalizar)
+        // "Escribiendo mensaje" solo mientras ME2 tipea una respuesta (pedido explícito): nunca por ampliación/fallback.
+        val pideEscribiendo = req.categoria == MediaCategoria.CONVERSACION && sub?.startsWith("ESCRIBIENDO") == true
+        val validos = recursos.filter { permisos.permite(it) && it.tipo in req.tipos && (it.categoria != MediaCategoria.PRESENTACION || req.categoria == MediaCategoria.PRESENTACION) &&
+            (pideEscribiendo || !OfflineAvatarPool.esEscribiendo(it)) }
         val deCat = validos.filter { it.categoria == req.categoria }
         val niveles = mutableListOf<List<MediaResource>>()
-        val sub = req.subcategoria?.let(MediaNameParser::normalizar)
         if (sub != null) {
             val mismaSub = deCat.filter { it.subcategoria == sub }
             if (req.intensidad != null) niveles += mismaSub.filter { it.intensidad == req.intensidad }

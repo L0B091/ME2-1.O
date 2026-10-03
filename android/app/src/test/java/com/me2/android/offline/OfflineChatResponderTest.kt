@@ -30,20 +30,29 @@ class OfflineChatResponderTest {
         assertEquals(listOf("pending", "pick:sin_red_input"), order) // primero se guarda el mensaje
         assertTrue(reply.phraseId!!.startsWith("sin_red_input#"))
         assertFalse(reply.text.contains("{")); assertNotEquals("fallback", reply.text)
-        assertTrue(Regex("conexi|red|internet|señal", RegexOption.IGNORE_CASE).containsMatchIn(reply.text))
+        assertTrue("frase del set nuevo: ${reply.text}", reply.text in FRASES_SIN_RED)
+        assertTrue(com.me2.android.media.OfflineAvatarPool.esCueNeutral(reply.cue))
         val req = AvatarCueMapper.fromCue(reply.cue)!!
-        val sel = MediaSelector.select(lib, req, previousId = "EMPATIA_NORMAL_001")!!
+        assertTrue(req.categoria == MediaCategoria.LOOP_NEUTRAL || req.subcategoria == "ESCRIBIENDO")
+        val sel = MediaSelector.select(lib, req)!!
         assertFalse(sel.recurso.adulto)
-        assertTrue(sel.recurso.categoria in setOf(MediaCategoria.REACCION, MediaCategoria.LOOP_NEUTRAL))
-        if (sel.recurso.subcategoria == "EMPATIA") assertEquals("EMPATIA_NORMAL_002", sel.recurso.id)
-        // SISTEMA/SIN_CONEXION y PREOCUPACION aún sin clips → fallback, nunca null
-        for (cue in listOf(OfflineChatResponder.FALLBACK_CUE, com.me2.android.media.AudiovisualCue("REACCION", "PREOCUPACION", "NORMAL")))
-            assertNotNull(MediaSelector.select(lib, AvatarCueMapper.fromCue(cue)!!))
+        assertEquals(MediaCategoria.LOOP_NEUTRAL, sel.recurso.categoria) // sin clips de escribiendo → neutral, nunca reacción
     }
 
-    @Test fun sinBancoUsaTextoDeRespaldoYCueSistema() {
+    @Test fun frasesSinRedSonCortasYSinPromesas() {
+        val json = org.json.JSONObject(context.assets.open("offline/frases_offline.json").bufferedReader().readText())
+        val arr = json.getJSONObject("categorias").getJSONObject("sin_red_input").getJSONArray("variantes")
+        val frases = (0 until arr.length()).map { arr.getString(it) }
+        assertEquals(FRASES_SIN_RED, frases.toSet())
+        frases.forEach { f ->
+            assertTrue(f, f.length <= 40)
+            assertFalse(f, Regex("guard|anot|perd|respond|contest|\\{", RegexOption.IGNORE_CASE).containsMatchIn(f))
+        }
+    }
+
+    @Test fun sinBancoUsaTextoDeRespaldoYCueNeutral() {
         val r = OfflineChatResponder(pick = { _, _ -> null }, markPending = {}).respond(null, "Sin conexión.")
-        assertEquals("Sin conexión.", r.text); assertEquals("SISTEMA", r.cue.categoria)
+        assertEquals("Sin conexión.", r.text); assertEquals("LOOP_NEUTRAL", r.cue.categoria)
     }
 
     @Test fun rotacionSinRepeticionInmediataPersistidaEntreInstancias() {
@@ -63,5 +72,10 @@ class OfflineChatResponderTest {
         assertTrue(back.conversation[0].pending); assertEquals("¿mañana llueve?", back.conversation[0].text)
         assertFalse(back.conversation[1].pending)
         assertFalse(LocalMe2Memory.fromJson(org.json.JSONObject(m.toJson().toString().replace(",\"pendiente\":true", ""))).conversation[0].pending)
+    }
+
+    private companion object {
+        val FRASES_SIN_RED = setOf("Oops, no hay internet.", "Conectate para seguir charlando.", "Algo pasó con la conexión.",
+            "Sin conexión por ahora.", "Se cortó internet.")
     }
 }
