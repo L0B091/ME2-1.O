@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tablet: proporción similar al teléfono para que el zoom no recorte la cara del avatar. -->
+    <dimen name="video_container_height">440dp</dimen>
+    <dimen name="video_container_max_width">560dp</dimen>
+</resources>

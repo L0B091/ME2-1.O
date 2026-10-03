@@ -173,6 +173,7 @@ class MainActivity : AppCompatActivity() {
         try {
             binding = ActivityMainBinding.inflate(layoutInflater)
             setContentView(binding.root)
+            applyVideoContainerMaxWidth()
         } catch (error: Throwable) {
             Log.e(TAG, "Main inflate failed", error)
             LoginActivity.markMainLaunchFailed(this)
@@ -913,6 +914,15 @@ class MainActivity : AppCompatActivity() {
         avatarMode = AvatarState.PRESENTACION
         currentAvatarGallery = gallery
         playAvatarClip(exoPlayer, gallery.first())
+    }
+
+    /** Tablet (sw600dp): limita el ancho del contenedor de video para no recortar la cara con resize_mode=zoom. */
+    private fun applyVideoContainerMaxWidth() {
+        val maxWidth = resources.getDimensionPixelSize(R.dimen.video_container_max_width)
+        if (maxWidth <= 0) return
+        val params = binding.videoContainer.layoutParams
+        params.width = maxWidth
+        binding.videoContainer.layoutParams = params
     }
 
     private fun setChatInputEnabled(enabled: Boolean) {

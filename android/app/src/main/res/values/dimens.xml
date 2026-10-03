@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Contenedor de video del avatar (teléfono). -->
+    <dimen name="video_container_height">280dp</dimen>
+    <!-- 0 = sin límite (ancho completo). -->
+    <dimen name="video_container_max_width">0dp</dimen>
+</resources>
