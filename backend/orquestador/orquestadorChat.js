@@ -156,6 +156,10 @@ function ejecutarAcciones(userId, mensaje, persistir) {
   return { acciones, resultado };
 }
 
+function memoriaVacia(userId) {
+  return { userId, nombre: null, ciudad: null, ubicacion: null, gustos: [], disgustos: [], hechos: [], onboarding: { pendiente: null, horaConfirmada: null }, actualizado: null };
+}
+
 const VIDEO_BASE = Object.freeze({
   categoria: "calida", etiqueta: "calida", assetPath: "ME2_MEDIA/01_LOOP_NEUTRAL/NEUTRAL_001.mp4",
   assetName: "NEUTRAL_001.mp4", mediaId: "NEUTRAL_001", loop: true
@@ -163,6 +167,7 @@ const VIDEO_BASE = Object.freeze({
 
 async function orquestador(mensajeUsuario, contexto = {}) {
   const userId = contexto.userId || "anonimo";
+  const esAnonimo = userId === "anonimo";
   const memoriaLocal = Object.prototype.hasOwnProperty.call(contexto, "memoriaLocal")
     ? normalizarMemoriaLocal(contexto.memoriaLocal)
     : null;
@@ -171,7 +176,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [MEMORY] historial previo (antes de registrar este mensaje)
   const historialPrevio = quitarMensajeActual(memoriaLocal?.recentConversation?.length
     ? memoriaLocal.recentConversation
-    : historialConversacion.obtenerHistorial(userId, 40), mensajeUsuario);
+    : (esAnonimo ? [] : historialConversacion.obtenerHistorial(userId, 40)), mensajeUsuario);
 
   // Nombre del personaje (dato, sin respuesta armada)
   const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(mensajeUsuario, { memoriaLocal });
@@ -191,7 +196,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // Hechos del usuario (nombre, gustos, cosas que contó) — persistidos
   let memoriaEscritura = null;
-  let memoriaHechos = memoriaConversacional.obtener(userId);
+  // Anónimo (solo dev/demo): sin memoria ni historial del servidor (sería compartido entre todos los anónimos).
+  let memoriaHechos = esAnonimo ? memoriaVacia(userId) : memoriaConversacional.obtener(userId);
   if (persistirEnServidor && userId !== "anonimo") {
     const r = memoriaConversacional.registrar(userId, mensajeUsuario);
     memoriaHechos = r.memoria;
@@ -263,7 +269,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   }
 
   // [ACTIONS] alarmas / agenda (deterministas)
-  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor);
+  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo);
 
   // [ONBOARDING] datos básicos faltantes (uno por vez, como hecho de contexto)
   let characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({

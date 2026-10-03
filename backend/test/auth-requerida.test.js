@@ -67,3 +67,14 @@ test("A1: anónimo solo con ME2_ALLOW_ANONYMOUS=true y nunca adopta el userId de
   }
   assert.equal(historialConversacion.obtenerHistorial(victima.id, 10).length, 0);
 });
+
+test("anónimo (dev): no lee memoria ni historial del servidor ni persiste acciones bajo 'anonimo'", async () => {
+  const { default: orquestadorChat } = await import("../orquestador/orquestadorChat.js");
+  const { default: memoriaConversacional } = await import("../memoria/memoriaConversacional.js");
+  const { default: gestorDeAlarmas } = await import("../modulos/gestorDeAlarmas.js");
+  memoriaConversacional.registrar("anonimo", "me encanta el tenis");
+  const antes = gestorDeAlarmas.obtenerAlarmasPorUsuario("anonimo").length;
+  const r = await orquestadorChat("poneme una alarma a las 7:30", { userId: "anonimo" });
+  assert.ok(!/tenis/i.test(r.debug.contexto));
+  assert.equal(gestorDeAlarmas.obtenerAlarmasPorUsuario("anonimo").length, antes);
+});
