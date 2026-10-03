@@ -40,12 +40,10 @@ data class AdultModeSnapshot(
 data class BackendChatResult(
     val reply: String,
     val tone: String?,
-    val rhythm: String?,
     val microExpression: String?,
     val premiumUntilMillis: Long?,
     val adultMode: AdultModeSnapshot? = null,
     val checkoutInitPoint: String? = null,
-    val videoCategoria: String? = null,
     val videoEtiqueta: String? = null,
     val clip: com.me2.android.ui.ChatMediaRouting.Clip? = null,
     val media: com.me2.android.ui.ChatMediaRouting.Media? = null,
@@ -182,7 +180,6 @@ class Me2BackendClient {
         return BackendChatResult(
             reply = json.optString("respuesta", "ME2 recibió el mensaje, pero no devolvió texto."),
             tone = json.optJSONObject("expresion")?.optString("tono"),
-            rhythm = json.optJSONObject("expresion")?.optString("ritmo"),
             microExpression = json.optJSONObject("expresion")?.optString("microexpresion"),
             premiumUntilMillis = parsePremiumMillis(json.optJSONObject("premium")),
             adultMode = adultJson?.let {
@@ -199,7 +196,6 @@ class Me2BackendClient {
                 )
             },
             checkoutInitPoint = checkoutJson?.optString("initPoint")?.ifBlank { null },
-            videoCategoria = videoJson?.optString("categoria")?.ifBlank { null },
             videoEtiqueta = videoJson?.optString("etiqueta")?.ifBlank { null },
             clip = json.optJSONObject("clip")?.let {
                 com.me2.android.ui.ChatMediaRouting.Clip(
