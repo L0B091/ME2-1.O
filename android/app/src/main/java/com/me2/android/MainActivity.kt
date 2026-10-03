@@ -55,6 +55,10 @@ import com.me2.android.media.MediaRequest
 import com.me2.android.media.MediaSelection
 import com.me2.android.media.MediaSelector
 import com.me2.android.media.MediaTipo
+import com.me2.android.notifications.Me2AlarmStore
+import com.me2.android.notifications.Me2InitiativeTimer
+import com.me2.android.notifications.Me2SyncWorker
+import com.me2.android.notifications.StoredAlarmRecord
 import com.me2.android.net.Me2BackendClient
 import com.me2.android.notifications.Me2AlarmScheduler
 import com.me2.android.notifications.Me2NotificationChannels
@@ -101,8 +105,8 @@ class MainActivity : AppCompatActivity() {
     private var currentRequest: MediaRequest? = null
     /** Modo adulto desbloqueado según la última respuesta del backend (solo en memoria, por sesión). */
     private var adultUnlockedNow: Boolean = false
-    /** Alarma abierta pero aún no respondida: se considera respondida solo cuando el usuario envía un INPUT. */
-    private var pendingAlarm: Pair<String, Int>? = null
+    /** Historial anti-repetición del avatar persistido (sobrevive cierre/reinicio). */
+    private lateinit var mediaHistory: com.me2.android.media.MediaHistory
     private var currentAvatarGallery: List<GalleryClip> = emptyList()
     private var hasPlayedPresentation = false
     private var presentationClipIndex: Int = 0
@@ -140,7 +144,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectMedia(request: MediaRequest): MediaSelection? =
-        MediaSelector.select(mediaLibrary.recursos(), request, mediaPermisos(), previousId = currentMediaId())
+        MediaSelector.select(mediaLibrary.recursos(), request, mediaPermisos(), previousId = currentMediaId() ?: mediaHistory.lastId())
 
     /** id V1 del clip actual ("me2:02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4" → "ALEGRIA_MEDIO_001"). */
     private fun currentMediaId(): String? =
@@ -178,6 +182,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         mediaLibrary = MediaLibrary(this)
+        mediaHistory = com.me2.android.media.MediaHistory(this)
         clipCatalog = ClipCatalog(this).also { catalog ->
             runCatching { catalog.ensureDirs() }
             Log.i(TAG, "ClipCatalog ready; ApiConfig ${ApiConfig.readinessSummary()}")
@@ -233,9 +238,13 @@ class MainActivity : AppCompatActivity() {
             }
             syncPremiumState()
             runCatching { handleIncomingIntent(intent) }
+            // Alarmas/recordatorios/iniciativa: todo se re-arma desde disco (funciona offline y tras muerte del proceso).
+            runCatching { alarmScheduler.restoreAll() }
+            runCatching { Me2SyncWorker.enqueueIfPending(this) }
             syncBackendAlarms()
             runCatching {
                 if (initiativeStore.isEnabled(currentSession.id)) {
+                    Me2InitiativeTimer(this).restore(currentSession.id)
                     initiativeScheduler.ensureScheduled()
                     if (initiativeStore.snapshot(currentSession.id).optLong("ultimaInteraccion", 0L) <= 0L) {
                         initiativeStore.observeInteraction(currentSession.id)
@@ -496,12 +505,8 @@ class MainActivity : AppCompatActivity() {
         initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
         // Protocolo despertador: la alarma solo se considera respondida cuando el usuario envía un INPUT en el Chat.
-        pendingAlarm?.let { (alarmId, stage) ->
-            pendingAlarm = null
-            alarmScheduler.cancel(alarmId)
-            notificationCoordinator.cancelAlarmNotifications(alarmId)
-            resolveAlarmEvent(alarmId, stage)
-        }
+        answerPendingAlarms()
+        runCatching { Me2InitiativeTimer(this).arm(currentSession.id) }
         // Mientras ME2 procesa: estado de conversación (PENSANDO → fallback neutral si no hay clip).
         playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
         renderConversation()
@@ -562,6 +567,7 @@ class MainActivity : AppCompatActivity() {
                     binding.sendButton.isEnabled = true
                     applyAdultModeFromChat(result)
                     adultUnlockedNow = result.adultMode?.unlocked == true
+                    applyChatActions(result.actions)
                     result.weatherLabel?.let { label ->
                         runCatching {
                             sessionStorage.saveLastTemperature(label)
@@ -728,6 +734,12 @@ class MainActivity : AppCompatActivity() {
             }.onSuccess { alarms ->
                 alarms.forEach { alarmScheduler.schedule(it) }
             }
+            // Agenda → recordatorios locales (suenan sin red, título = texto del usuario).
+            runCatching {
+                val eventos = backendClient.listCalendar(currentSession)
+                runOnUiThread { for (i in 0 until eventos.length()) eventos.optJSONObject(i)?.let(::scheduleReminderFrom) }
+            }
+            runCatching { Me2SyncWorker.enqueueIfPending(this) }
         }
     }
 
@@ -835,10 +847,11 @@ class MainActivity : AppCompatActivity() {
                     // Abrir la notificación silencia el aviso actual, pero NO responde la alarma: los intentos
                     // siguientes siguen programados hasta que el usuario envíe un INPUT (ver sendMessage).
                     notificationCoordinator.cancelAlarmNotifications(alarmId)
-                    pendingAlarm = alarmId to stage
                 }
+                // Frase offline: trae su pista audiovisual; si no, el intento de despertador correspondiente.
+                val cue = cueFromIntent(intent)
                 val sub = when (stage) { 1 -> "AVISO_01"; 2 -> "AVISO_02"; else -> "ALARMA" }
-                playAvatarRequest(MediaRequest(MediaCategoria.DESPERTADOR, sub))
+                playAvatarRequest(AvatarCueMapper.fromCue(cue) ?: MediaRequest(MediaCategoria.DESPERTADOR, sub))
             }
         }
 
@@ -994,7 +1007,7 @@ class MainActivity : AppCompatActivity() {
         val transition = AvatarStateMachine.onClipEnded(
             avatarMode,
             presentationHasNext = avatarMode == AvatarState.PRESENTACION && presentationClipIndex + 1 < gallery.size,
-            alarmPending = pendingAlarm != null
+            alarmPending = runCatching { alarmScheduler.hasAnswerable(currentSession.id) }.getOrDefault(false)
         )
         when {
             transition.advancePresentation -> {
@@ -1045,6 +1058,7 @@ class MainActivity : AppCompatActivity() {
     private fun playAvatarClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
         lastAvatarClipId = currentAvatarClipId
         currentAvatarClipId = clip.id
+        runCatching { mediaHistory.record(clip.id) }
         // Voice only on welcome/presentacion; mute spoken risk on other moods if tagged.
         exoPlayer.volume = if (clip.carriesVoice || clip.mood == ClipCatalog.MOOD_PRESENTACION) 1f else 1f
         exoPlayer.setMediaItem(MediaItem.fromUri(clipCatalog.playbackUri(clip)))
@@ -1055,9 +1069,11 @@ class MainActivity : AppCompatActivity() {
     private fun galleryContainsCurrentClip(gallery: List<GalleryClip>): Boolean =
         clipCatalog.containsClip(gallery, currentAvatarClipId)
 
-    /** Anti-repetición inmediata: al azar entre los clips distintos del anterior (si hay más de uno). */
-    private fun resolveNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip? =
-        com.me2.android.gallery.ClipPicker.pickRandom(gallery, gallery.firstOrNull { it.id == previousClipId })
+    /** Anti-repetición inmediata (también entre sesiones: último clip persistido). */
+    private fun resolveNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip? {
+        val prev = previousClipId ?: runCatching { mediaHistory.lastClipId() }.getOrNull()
+        return com.me2.android.gallery.ClipPicker.pickRandom(gallery, gallery.firstOrNull { it.id == prev })
+    }
 
     private fun pickNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip =
         resolveNextClip(gallery, previousClipId)
@@ -1084,6 +1100,11 @@ class MainActivity : AppCompatActivity() {
             initiativeStore.opened(userId, id)
             notificationCoordinator.cancelInitiative(userId, id)
             hydrateConversation()
+            // Iniciativa del banco offline: pide al selector el clip de su pista (fallback normal, nunca vacío).
+            initiative.optJSONObject("contexto")?.optJSONObject("audiovisual")?.let { av ->
+                playAvatarRequest(AvatarCueMapper.fromCue(AudiovisualCue(av.optString("categoria"), av.optString("subcategoria").ifBlank { null }, av.optString("intensidad").ifBlank { null }))
+                    ?: MediaRequest(MediaCategoria.LOOP_NEUTRAL))
+            }
         } catch (error: Exception) {
             Log.e("Me2Initiative", "No se pudo abrir el contexto: ${error.javaClass.simpleName}")
             Toast.makeText(this, R.string.initiative_unavailable, Toast.LENGTH_LONG).show()
@@ -1092,7 +1113,60 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun resolveAlarmEvent(alarmId: String, stage: Int) {
+    private fun cueFromIntent(intent: Intent): AudiovisualCue? {
+        val cat = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_AV_CATEGORIA)?.ifBlank { null } ?: return null
+        return AudiovisualCue(cat, intent.getStringExtra(Me2NotificationCoordinator.EXTRA_AV_SUBCATEGORIA), intent.getStringExtra(Me2NotificationCoordinator.EXTRA_AV_INTENSIDAD))
+    }
+
+    /**
+     * Protocolo despertador: el INPUT del usuario responde las escalaciones en curso (estado persistido).
+     * Con red se informa al backend (devuelve el clima); sin red queda pendiente de sync y se muestra el clima cacheado.
+     */
+    private fun answerPendingAlarms() {
+        val answered = runCatching { alarmScheduler.answerActive(currentSession.id) }.getOrDefault(emptyList())
+        if (answered.isEmpty()) return
+        answered.forEach { notificationCoordinator.cancelAlarmNotifications(it.id) }
+        val online = !currentSession.authToken.isNullOrBlank() && backendClient.isConfigured() && backendClient.isOnline(this)
+        if (online) {
+            answered.filter { it.syncState == StoredAlarmRecord.SYNC_ANSWER && it.remoteId != null }.forEach { r ->
+                resolveAlarmEvent(r.remoteId!!, r.firedStage) { Me2AlarmStore(this).remove(r.id) }
+            }
+            Me2SyncWorker.enqueueIfPending(this)
+        } else {
+            Me2SyncWorker.enqueueIfPending(this)
+            val cached = sessionStorage.loadLastTemperature()
+            if (cached.any(Char::isDigit)) appendAssistantReply(cached, "NOTICE", "CLIMA")
+        }
+    }
+
+    /** Acciones del turno: alarma creada/cancelada en el teléfono, alarma del servidor, evento → recordatorio local. */
+    private fun applyChatActions(actions: JSONObject?) {
+        actions ?: return
+        runCatching {
+            actions.optJSONObject("alarma")?.let { a ->
+                when (a.optString("accion")) {
+                    "crear_local" -> {
+                        val hora = a.optString("hora")
+                        if (hora.isNotBlank()) alarmScheduler.createLocalAlarm(currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty())
+                    }
+                    "cancelar_local" -> alarmScheduler.findByHour(currentSession.id, a.optString("hora").takeIf { !a.isNull("hora") })
+                        .forEach { alarmScheduler.cancelAndSync(it.id); notificationCoordinator.cancelAlarmNotifications(it.id) }
+                    "creada" -> syncBackendAlarms()
+                }
+            }
+            actions.optJSONObject("evento")?.optJSONObject("evento")?.let(::scheduleReminderFrom)
+            Me2SyncWorker.enqueueIfPending(this)
+        }.onFailure { Log.w(TAG, "acciones: ${it.javaClass.simpleName}") }
+    }
+
+    private fun scheduleReminderFrom(evento: JSONObject) {
+        val at = runCatching {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).parse("${evento.optString("fecha")} ${evento.optString("hora", "08:00")}")?.time
+        }.getOrNull() ?: return
+        alarmScheduler.scheduleReminder(currentSession.id, evento.optString("id").ifBlank { null }, evento.optString("descripcion"), at)
+    }
+
+    private fun resolveAlarmEvent(alarmId: String, stage: Int, onReported: () -> Unit = {}) {
         if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
             return
         }
@@ -1100,6 +1174,7 @@ class MainActivity : AppCompatActivity() {
             runCatching {
                 backendClient.reportAlarmEvent(currentSession, alarmId, stage, "respondio")
             }.onSuccess { result ->
+                runCatching(onReported)
                 result.message?.let { reply ->
                     runOnUiThread {
                         appendAssistantReply(reply, "AWAKE", "CLIMA")

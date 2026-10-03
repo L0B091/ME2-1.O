@@ -28,13 +28,13 @@ class Me2AlarmStore(context: Context) {
             appContext.getSharedPreferences("me2_alarm_store", Context.MODE_PRIVATE)
         }
 
-    fun upsert(record: StoredAlarmRecord) {
+    fun upsert(record: StoredAlarmRecord) = synchronized(LOCK) {
         val alarms = loadAll().associateBy { it.id }.toMutableMap()
         alarms[record.id] = record
         saveAll(alarms.values.sortedBy { it.triggerAtMillis })
     }
 
-    fun remove(alarmId: String) {
+    fun remove(alarmId: String) = synchronized(LOCK) {
         saveAll(loadAll().filterNot { it.id == alarmId })
     }
 
@@ -43,6 +43,13 @@ class Me2AlarmStore(context: Context) {
     fun listForUser(userId: String): List<StoredAlarmRecord> = loadAll().filter { it.userId == userId }
 
     fun listAll(): List<StoredAlarmRecord> = loadAll()
+
+    fun update(alarmId: String, change: (StoredAlarmRecord) -> StoredAlarmRecord): StoredAlarmRecord? = synchronized(LOCK) {
+        val current = find(alarmId) ?: return null
+        change(current).also(::upsert)
+    }
+
+    fun pendingSync(): List<StoredAlarmRecord> = loadAll().filter { it.syncState != StoredAlarmRecord.SYNC_OK }
 
     private fun loadAll(): List<StoredAlarmRecord> {
         val raw = preferences.getString(KEY_ALARMS, null) ?: return emptyList()
@@ -58,11 +65,13 @@ class Me2AlarmStore(context: Context) {
     private fun saveAll(records: Collection<StoredAlarmRecord>) {
         val array = JSONArray()
         records.forEach { array.put(it.toJson()) }
-        preferences.edit().putString(KEY_ALARMS, array.toString()).apply()
+        // commit(): el estado de escalación debe estar en disco antes de que el proceso pueda morir.
+        preferences.edit().putString(KEY_ALARMS, array.toString()).commit()
     }
 
     companion object {
         private const val KEY_ALARMS = "alarms"
+        private val LOCK = Any()
     }
 }
 
@@ -74,7 +83,17 @@ data class StoredAlarmRecord(
     val message: String,
     val state: String,
     val triggerAtMillis: Long,
-    val dispatchPlan: List<AlarmDispatchStage>
+    val dispatchPlan: List<AlarmDispatchStage>,
+    /** ALARM (protocolo de 3 intentos) o REMINDER (evento/recordatorio, un intento). */
+    val kind: String = KIND_ALARM,
+    /** Último intento disparado (0 = ninguno). Persistido: sobrevive muerte del proceso y reinicio. */
+    val firedStage: Int = 0,
+    val nextFireAtMillis: Long = 0L,
+    val answered: Boolean = false,
+    val answeredAtMillis: Long = 0L,
+    /** id en el backend (null si se creó en el teléfono y aún no se sincronizó). */
+    val remoteId: String? = id,
+    val syncState: String = SYNC_OK
 ) {
     fun toAlarmRecord(): AlarmRecord = AlarmRecord(
         id = id,
@@ -96,6 +115,13 @@ data class StoredAlarmRecord(
         put("message", message)
         put("state", state)
         put("triggerAtMillis", triggerAtMillis)
+        put("kind", kind)
+        put("firedStage", firedStage)
+        put("nextFireAtMillis", nextFireAtMillis)
+        put("answered", answered)
+        put("answeredAtMillis", answeredAtMillis)
+        put("remoteId", remoteId ?: JSONObject.NULL)
+        put("syncState", syncState)
         put("dispatchPlan", JSONArray().apply {
             dispatchPlan.forEach { stage ->
                 put(JSONObject().apply {
@@ -113,6 +139,13 @@ data class StoredAlarmRecord(
     }
 
     companion object {
+        const val KIND_ALARM = "ALARM"
+        const val KIND_REMINDER = "REMINDER"
+        const val SYNC_OK = "SYNCED"
+        const val SYNC_CREATE = "PENDING_CREATE"
+        const val SYNC_ANSWER = "PENDING_ANSWER"
+        const val SYNC_CANCEL = "PENDING_CANCEL"
+
         fun fromJson(json: JSONObject): StoredAlarmRecord {
             val stages = mutableListOf<AlarmDispatchStage>()
             val dispatchPlan = json.optJSONArray("dispatchPlan") ?: JSONArray()
@@ -139,7 +172,15 @@ data class StoredAlarmRecord(
                 message = json.optString("message", "ME2 registró tu protocolo de despertar."),
                 state = json.optString("state", "ACTIVE"),
                 triggerAtMillis = json.optLong("triggerAtMillis", 0L),
-                dispatchPlan = stages
+                dispatchPlan = stages,
+                kind = json.optString("kind", KIND_ALARM),
+                firedStage = json.optInt("firedStage", 0),
+                nextFireAtMillis = json.optLong("nextFireAtMillis", 0L),
+                answered = json.optBoolean("answered", false),
+                answeredAtMillis = json.optLong("answeredAtMillis", 0L),
+                // Registros previos a esta versión venían del backend: su id es el remoto.
+                remoteId = if (json.has("remoteId")) json.optString("remoteId").takeIf { !json.isNull("remoteId") && it.isNotBlank() } else json.optString("id"),
+                syncState = json.optString("syncState", SYNC_OK)
             )
         }
     }

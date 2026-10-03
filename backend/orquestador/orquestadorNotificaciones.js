@@ -450,12 +450,18 @@ export async function evaluarAutonomia(body, opciones = {}) {
       return salir("contexto_vencido_durante_generacion");
     }
     const fuenteElegida = fuenteDe(decision.iniciativa);
-    historialIniciativas.registrar(solicitud.userId, { fuente: fuenteElegida, referencia: decision.iniciativa.referenciaEvento }, finalAhora);
+    // Prefetch (entrega diferida offline): no se registra en la rotación hasta que realmente se entregue.
+    if (!opciones.prefetch) {
+      historialIniciativas.registrar(solicitud.userId, { fuente: fuenteElegida, referencia: decision.iniciativa.referenciaEvento }, finalAhora);
+    }
     return {
       ...decision, perfilRitmo: vigente.perfilRitmo, fallosFuentes,
       fuenteElegida, fuentesRecientes: historialIniciativas.ultimas(solicitud.userId, 3).map(u => u.fuente),
       ...(process.env.NODE_ENV === "development" && resultado.contexto ? { debug: { contexto: resultado.contexto } } : {}),
-      iniciativa: { ...decision.iniciativa, mensaje: resultado.respuesta.trim().slice(0, 240) }
+      iniciativa: {
+        ...decision.iniciativa, mensaje: resultado.respuesta.trim().slice(0, 240),
+        ...(opciones.prefetch ? { diferida: true, entregarDesde: finalAhora } : {})
+      }
     };
   } catch (error) {
     console.error("[iniciativa] Generacion no disponible:", error.name);

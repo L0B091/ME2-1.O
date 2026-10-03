@@ -520,9 +520,16 @@ app.post("/api/memoria/fiscal/:userId/:documentoId/programar-envio", requireAuth
 
 app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAsync(async (req, res) => {
   if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesion vencida" });
+  // prefetch: el teléfono pide una iniciativa generada AHORA (con conexión) para entregarla más tarde sin red.
+  // Se evalúa como si fuera `entregarDesde` (acotado a 5 min–6 h); el teléfono la descarta si el contexto cambia.
+  const prefetch = req.body?.prefetch === true;
+  const ahoraReal = Date.now();
+  const entregarDesde = prefetch
+    ? Math.min(ahoraReal + 6 * 3600e3, Math.max(ahoraReal + 5 * 60e3, Number(req.body?.entregarDesde) || ahoraReal + 3600e3))
+    : undefined;
   const data = await orquestadorNotificaciones.evaluarAutonomia({
     ...req.body, userId: req.auth?.userId || req.body?.userId
-  });
+  }, prefetch ? { ahora: entregarDesde, prefetch: true } : {});
   return res.json({ ok: true, data });
 }));
 

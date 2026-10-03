@@ -81,6 +81,48 @@ class Me2InitiativeStore internal constructor(
         it.put("perfilRitmo", merged)
     }
 
+    // ---- Temporizador de iniciativa (persistido en me2_memory.db; sobrevive cierre/reinicio) ----
+    fun timerState(userId: String): JSONObject = snapshot(userId).optJSONObject("timerIniciativa") ?: JSONObject()
+
+    fun saveTimer(userId: String, dueAt: Long, intervalMs: Long, offlineRetries: Int) = update(userId) {
+        it.put("timerIniciativa", JSONObject().put("dueAt", dueAt).put("intervalMs", intervalMs).put("offlineRetries", offlineRetries))
+    }
+
+    fun observations(userId: String): List<Long> {
+        val a = snapshot(userId).optJSONObject("perfilRitmo")?.optJSONArray("observaciones") ?: return emptyList()
+        return (0 until a.length()).map { a.getLong(it) }
+    }
+
+    fun configuredSleep(userId: String): Pair<String, String>? {
+        val c = snapshot(userId).optJSONObject("perfilRitmo")?.optJSONObject("configurado") ?: return null
+        val d = c.optString("dormir"); val w = c.optString("despertar")
+        return if (d.isNotBlank() && w.isNotBlank()) d to w else null
+    }
+
+    // ---- Mensaje de iniciativa pre-generado por el LLM (con red) para entregar sin red ----
+    fun cacheOfflineInitiative(userId: String, initiative: JSONObject, deliverAfter: Long) = update(userId) {
+        validateInitiative(initiative)
+        it.put("cacheOffline", JSONObject().put("iniciativa", JSONObject(initiative.toString()))
+            .put("entregarDesde", deliverAfter).put("ultimaInteraccionBase", it.optLong("ultimaInteraccion")))
+    }
+
+    fun cachedOfflineInitiative(userId: String, now: Long = System.currentTimeMillis()): JSONObject? {
+        val state = snapshot(userId)
+        val cache = state.optJSONObject("cacheOffline") ?: return null
+        val initiative = cache.optJSONObject("iniciativa") ?: return null
+        val vigente = initiative.optLong("expiresAt") > now && cache.optLong("entregarDesde") <= now &&
+            cache.optLong("ultimaInteraccionBase") == state.optLong("ultimaInteraccion")
+        return if (vigente) initiative else null
+    }
+
+    fun hasUsableCache(userId: String, now: Long = System.currentTimeMillis()): Boolean {
+        val cache = snapshot(userId).optJSONObject("cacheOffline") ?: return false
+        return (cache.optJSONObject("iniciativa")?.optLong("expiresAt") ?: 0L) > now &&
+            cache.optLong("ultimaInteraccionBase") == snapshot(userId).optLong("ultimaInteraccion")
+    }
+
+    fun clearOfflineCache(userId: String) = update(userId) { it.remove("cacheOffline") }
+
     fun recordDecision(userId: String, reason: String) = update(userId) {
         it.put("ultimaEvaluacion", JSONObject().put("motivo", reason).put("timestamp", System.currentTimeMillis()))
     }

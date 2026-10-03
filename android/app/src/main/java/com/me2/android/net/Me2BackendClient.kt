@@ -53,7 +53,9 @@ data class BackendChatResult(
     /** Pista audiovisual del orquestador (categoría + subcategoría + intensidad; nunca un archivo). */
     val audiovisual: com.me2.android.media.AudiovisualCue? = null,
     /** Clima actual para el widget (p. ej. "23°C"), si el backend lo tiene. */
-    val weatherLabel: String? = null
+    val weatherLabel: String? = null,
+    /** Acciones deterministas del turno (alarma creada/cancelada en el teléfono, evento agendado). */
+    val actions: JSONObject? = null
 )
 
 data class PremiumStatusResult(
@@ -229,7 +231,8 @@ class Me2BackendClient {
             },
             reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null },
             audiovisual = parseAudiovisual(json.optJSONObject("audiovisual")),
-            weatherLabel = parseWeatherLabel(json.optJSONObject("clima"))
+            weatherLabel = parseWeatherLabel(json.optJSONObject("clima")),
+            actions = json.optJSONObject("acciones")
         )
     }
 
@@ -255,7 +258,9 @@ class Me2BackendClient {
         state: JSONObject,
         events: JSONArray = JSONArray(),
         enPrimerPlano: Boolean,
-        notificacionesHabilitadas: Boolean
+        notificacionesHabilitadas: Boolean,
+        /** Si no es null: pedir al orquestador una iniciativa generada ahora para entregar desde ese instante (sin red). */
+        prefetchAt: Long? = null
     ): JSONObject {
         val profile = JSONObject((state.optJSONObject("perfilRitmo") ?: JSONObject()).toString())
             .put("zonaHoraria", TimeZone.getDefault().id)
@@ -276,6 +281,10 @@ class Me2BackendClient {
                         .put("notificacionesHabilitadas", notificacionesHabilitadas)
                 )
                 put("eventos", events)
+                if (prefetchAt != null) {
+                    put("prefetch", true)
+                    put("entregarDesde", prefetchAt)
+                }
             }
         )
         return json.getJSONObject("data")
@@ -377,6 +386,12 @@ class Me2BackendClient {
             authToken = session.authToken
         )
         return json.optJSONObject("data")?.optJSONObject("backup")
+    }
+
+    /** Eventos de agenda del usuario (para recordatorios locales que suenan sin red). */
+    fun listCalendar(session: UserSession): JSONArray {
+        val json = request(method = "GET", path = "/api/calendario/${session.id}", authToken = session.authToken)
+        return json.optJSONArray("data") ?: JSONArray()
     }
 
     fun listAlarms(session: UserSession): List<AlarmRecord> {

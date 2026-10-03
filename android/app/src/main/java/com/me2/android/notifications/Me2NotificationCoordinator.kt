@@ -96,7 +96,7 @@ class Me2NotificationCoordinator(private val context: Context) {
         NotificationManagerCompat.from(context).cancel(initiativeTag(userId, id), id.hashCode())
     }
 
-    fun showAlarmNotification(userId: String, alarmId: String, stage: AlarmDispatchStage) {
+    fun showAlarmNotification(userId: String, alarmId: String, stage: AlarmDispatchStage, cue: com.me2.android.media.AudiovisualCue? = null) {
         Me2NotificationChannels.ensure(context)
         val channel = if (stage.notificationType == "alarm") Me2NotificationChannels.CHANNEL_ALARMS
             else Me2NotificationChannels.CHANNEL_MESSAGES
@@ -138,7 +138,8 @@ class Me2NotificationCoordinator(private val context: Context) {
                         stage = stage.stage,
                         eventType = "alarm",
                         title = stage.title,
-                        message = stage.message
+                        message = stage.message,
+                        cue = cue
                     )
                 )
                 .applyPreOConfig(stage.notificationType == "alarm")
@@ -177,7 +178,8 @@ class Me2NotificationCoordinator(private val context: Context) {
         eventType: String,
         title: String,
         message: String,
-        initiativeId: String? = null
+        initiativeId: String? = null,
+        cue: com.me2.android.media.AudiovisualCue? = null
     ): PendingIntent {
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -187,6 +189,12 @@ class Me2NotificationCoordinator(private val context: Context) {
             putExtra(EXTRA_EVENT_TYPE, eventType)
             putExtra(EXTRA_TITLE, title)
             putExtra(EXTRA_MESSAGE, message)
+            // Pista audiovisual (frase offline): al abrir el Chat el avatar pide ese clip al MediaSelector.
+            cue?.let {
+                putExtra(EXTRA_AV_CATEGORIA, it.categoria)
+                putExtra(EXTRA_AV_SUBCATEGORIA, it.subcategoria)
+                putExtra(EXTRA_AV_INTENSIDAD, it.intensidad)
+            }
             if (initiativeId != null) {
                 data = initiativeUri(userId, initiativeId)
                 putExtra(EXTRA_INITIATIVE_ID, initiativeId)
@@ -203,6 +211,9 @@ class Me2NotificationCoordinator(private val context: Context) {
     companion object {
         const val EXTRA_USER_ID = "me2_user_id"
         const val EXTRA_ALARM_ID = "me2_alarm_id"
+        const val EXTRA_AV_CATEGORIA = "me2_av_categoria"
+        const val EXTRA_AV_SUBCATEGORIA = "me2_av_subcategoria"
+        const val EXTRA_AV_INTENSIDAD = "me2_av_intensidad"
         const val EXTRA_STAGE = "me2_alarm_stage"
         const val EXTRA_EVENT_TYPE = "me2_event_type"
         const val EXTRA_TITLE = "me2_event_title"

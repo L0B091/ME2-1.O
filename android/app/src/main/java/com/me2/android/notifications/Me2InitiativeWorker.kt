@@ -24,6 +24,10 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
             store.expire(session.id).forEach { coordinator.cancelInitiative(session.id, it) }
             if (!store.isEnabled(session.id)) return wait(store, session.id, "deshabilitadas")
             if (inForeground()) return wait(store, session.id, "en_primer_plano")
+            // Ventana de descanso aprendida en el teléfono: nunca iniciar conversación dentro de ella.
+            if (Me2InitiativeTimer(applicationContext).restWindow(session.id).contains(System.currentTimeMillis())) {
+                return wait(store, session.id, "ventana_descanso_local")
+            }
             if (!coordinator.canShowMessages()) return wait(store, session.id, "notificaciones_denegadas")
 
             val backend = Me2BackendClient()
@@ -53,6 +57,9 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
                 notificacionesHabilitadas = coordinator.canShowMessages()
             )
             decision.optJSONObject("perfilRitmo")?.let { store.mergeProfile(session.id, it) }
+            // Con red: subir pendientes offline y dejar pre-generado (por el LLM) un mensaje para un posible corte de red.
+            Me2SyncWorker.enqueueIfPending(applicationContext)
+            prefetchIfNeeded(backend, session, store, alarmEvents)
 
             if (decision.getString("decision") == "ESPERAR") {
                 return wait(store, session.id, decision.getString("motivoEspera"))
@@ -102,6 +109,22 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
         } finally {
             evaluationLock.unlock()
         }
+    }
+
+    private fun prefetchIfNeeded(backend: Me2BackendClient, session: com.me2.android.data.UserSession, store: Me2InitiativeStore, events: JSONArray) {
+        runCatching {
+            if (store.hasUsableCache(session.id)) return
+            val timer = store.timerState(session.id)
+            val at = timer.optLong("dueAt").takeIf { it > System.currentTimeMillis() } ?: (System.currentTimeMillis() + InitiativeTimerPolicy.DEFAULT_INTERVAL_MS)
+            val r = backend.evaluateInitiative(
+                session = session, memory = LocalMemoryStore(applicationContext).load(session.id), state = store.snapshot(session.id),
+                events = events, enPrimerPlano = false, notificacionesHabilitadas = true, prefetchAt = at
+            )
+            if (r.optString("decision") != "INICIAR") return
+            val initiative = r.getJSONObject("iniciativa")
+            if (initiative.optString("categoria") == "ALARMA") return
+            store.cacheOfflineInitiative(session.id, initiative, initiative.optLong("entregarDesde", at))
+        }.onFailure { Log.w(TAG, "prefetch: ${it.javaClass.simpleName}") }
     }
 
     private fun wait(store: Me2InitiativeStore, userId: String, reason: String): Result {

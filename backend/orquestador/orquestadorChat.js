@@ -58,6 +58,18 @@ function ejecutarAcciones(userId, mensaje, persistir) {
   if (!userId || userId === "anonimo") return { acciones, resultado };
 
   const pedidoAlarma = detectarAlarma(mensaje);
+  // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
+  // sobrevive reinicios); el teléfono la sincroniza con el servidor cuando hay conexión.
+  if (persistir === false && pedidoAlarma?.accion === "crear" && pedidoAlarma.hora) {
+    resultado.alarma = { accion: "crear_local", hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null };
+    acciones.push(`Alarma CREADA en el teléfono para las ${pedidoAlarma.hora}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.`);
+    return { acciones, resultado };
+  }
+  if (persistir === false && pedidoAlarma?.accion === "cancelar") {
+    resultado.alarma = { accion: "cancelar_local", hora: pedidoAlarma.hora || null };
+    acciones.push(`Alarma CANCELADA en el teléfono${pedidoAlarma.hora ? ` (${pedidoAlarma.hora})` : " (la próxima)"}.`);
+    return { acciones, resultado };
+  }
   if (pedidoAlarma?.accion === "crear" && pedidoAlarma.hora && persistir !== false) {
     try {
       const alarma = gestorDeAlarmas.crearAlarma(userId, pedidoAlarma.hora, { titulo: pedidoAlarma.titulo });

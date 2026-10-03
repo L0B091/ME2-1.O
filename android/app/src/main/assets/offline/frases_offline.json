@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "estado": "BORRADOR",
+  "nota": "BORRADOR pendiente de aprobación del usuario. 'Promptblock offline': se usa SOLO sin red (con red el texto lo escribe el LLM/orquestador). Placeholders: {nombre}, {titulo}, {hora}. Si falta un dato, el placeholder se omite. Rotación sin repetir la última variante.",
+  "categorias": {
+    "alarma_aviso_1": {
+      "borrador": true,
+      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "AVISO_01", "intensidad": "NORMAL" },
+      "variantes": [
+        "Buen día, {nombre}. Son las {hora}: {titulo}.",
+        "{nombre}, ya son las {hora}. Arranquemos de a poco.",
+        "Hora de levantarse, {nombre}. Te espero en el chat.",
+        "Son las {hora}. Cuando abras los ojos, escribime así sé que estás.",
+        "Arriba, {nombre}. {titulo}."
+      ]
+    },
+    "alarma_aviso_2": {
+      "borrador": true,
+      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "AVISO_02", "intensidad": "MEDIO" },
+      "variantes": [
+        "Segundo aviso, {nombre}. Ya pasaron unos minutos de las {hora}.",
+        "{nombre}, sigo acá. Escribime algo así sé que te levantaste.",
+        "Dale, {nombre}, que se hace tarde. {titulo}.",
+        "No te vuelvas a dormir, {nombre}. Un mensaje y listo.",
+        "Todavía no me respondiste, {nombre}. ¿Estás despierto?"
+      ]
+    },
+    "alarma_final": {
+      "borrador": true,
+      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "ALARMA", "intensidad": "MAXIMO" },
+      "variantes": [
+        "Último aviso, {nombre}: la alarma sigue hasta que me escribas.",
+        "{nombre}, ¡arriba! Escribime en el chat para apagarla.",
+        "Ahora sí suena fuerte. Entrá al chat y mandame un mensaje.",
+        "Son más de las {hora}, {nombre}. Respondeme para cortar la alarma.",
+        "Alarma activa: {titulo}. Solo se apaga con tu mensaje."
+      ]
+    },
+    "recordatorio": {
+      "borrador": true,
+      "audiovisual": { "categoria": "CONVERSACION", "subcategoria": "ATENCION", "intensidad": "NORMAL" },
+      "variantes": [
+        "Recordatorio: {titulo} ({hora}).",
+        "{nombre}, te recuerdo: {titulo}.",
+        "Tenés agendado: {titulo}, a las {hora}.",
+        "No te olvides, {nombre}: {titulo}.",
+        "Aviso de agenda: {titulo}."
+      ]
+    },
+    "inicio_conversacion": {
+      "borrador": true,
+      "audiovisual": { "categoria": "REACCION", "subcategoria": "AFECTO", "intensidad": "NORMAL" },
+      "variantes": [
+        "Hola, {nombre}. ¿Cómo va todo?",
+        "{nombre}, me acordé de vos. ¿Qué andás haciendo?",
+        "¿Cómo venís hoy, {nombre}?",
+        "Hace un rato que no hablamos. ¿Todo bien, {nombre}?",
+        "Acá estoy, {nombre}. Cuando quieras, charlamos."
+      ],
+      "audiovisual_alternativos": [
+        { "categoria": "REACCION", "subcategoria": "CURIOSIDAD", "intensidad": "NORMAL" }
+      ]
+    }
+  }
+}
