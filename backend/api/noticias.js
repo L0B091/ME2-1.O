@@ -48,7 +48,7 @@ async function newsApi(ciudad, categorias, apiKey, timeoutMs, limite) {
   const url = new URL(consulta ? "https://newsapi.org/v2/everything" : "https://newsapi.org/v2/top-headlines");
   url.searchParams.set("pageSize", String(limite));
   url.searchParams.set("apiKey", apiKey);
-  if (consulta) { url.searchParams.set("q", consulta); url.searchParams.set("language", "es"); url.searchParams.set("sortBy", "publishedAt"); }
+  if (consulta) { url.searchParams.set("q", consulta); url.searchParams.set("language", "es"); url.searchParams.set("sortBy", "publishedAt"); url.searchParams.set("searchIn", "title"); }
   else url.searchParams.set("country", "ar");
   const res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   const data = await res.json().catch(() => null);

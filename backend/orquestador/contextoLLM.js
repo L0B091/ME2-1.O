@@ -43,7 +43,7 @@ export async function noticiasDeInteres(gustos = [], opciones = {}) {
   const lista = await cacheado(clave, 20 * 60 * 1000, () =>
     noticiasApi.obtenerNoticias("", gustos.slice(0, 5).map(g => (g.includes(" ") ? `"${g}"` : g)), { timeoutMs: opciones.timeoutMs || 6000, limite: 10 }));
   return lista
-    .map(n => ({ ...n, interes: interesCoincidente(n.titulo, gustos) }))
+    .map(n => ({ ...n, interes: interesCoincidente(`${n.titulo} ${n.descripcion || ""}`, gustos) }))
     .filter(n => n.interes)
     .slice(0, opciones.limite || 3);
 }
