@@ -549,11 +549,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!currentSession.isDemo && currentSession.authToken.isNullOrBlank()) {
-            appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+            replyOffline()
             return
         }
         if (!backendReady) {
-            appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+            replyOffline()
             return
         }
 
@@ -568,6 +568,7 @@ class MainActivity : AppCompatActivity() {
                     applyAdultModeFromChat(result)
                     adultUnlockedNow = result.adultMode?.unlocked == true
                     applyChatActions(result.actions)
+                    runCatching { localMemoryStore.clearPendingMessages(currentSession.id) }
                     result.weatherLabel?.let { label ->
                         runCatching {
                             sessionStorage.saveLastTemperature(label)
@@ -608,11 +609,24 @@ class MainActivity : AppCompatActivity() {
                             typewriter = true
                         )
                     } else {
-                        appendAssistantReply(getString(R.string.offline_memory_notice), "OFFLINE", "LOCAL")
+                        replyOffline()
                     }
                 }
             }
         }
+    }
+
+    /** Sin red: el mensaje del usuario queda guardado como pendiente y ME2 responde con el banco offline + clip. */
+    private fun replyOffline() {
+        val userId = currentSession.id
+        val reply = com.me2.android.offline.OfflineChatResponder(
+            pick = { cat, vars -> com.me2.android.offline.OfflinePhrases(this).pick(cat, vars) },
+            markPending = { localMemoryStore.markLastUserMessagePending(userId) }
+        ).respond(
+            nombre = currentSession.displayName.trim().substringBefore(' ').ifBlank { null },
+            fallbackText = getString(R.string.offline_memory_notice)
+        )
+        appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue)
     }
 
     private fun appendAssistantReply(

@@ -45,6 +45,8 @@ class OfflinePhraseBank(json: String) {
         const val ALARMA_FINAL = "alarma_final"
         const val RECORDATORIO = "recordatorio"
         const val INICIO = "inicio_conversacion"
+        /** Respuesta a un INPUT del chat sin red (el mensaje del usuario queda guardado como pendiente). */
+        const val SIN_RED_INPUT = "sin_red_input"
 
         fun alarmCategory(stage: Int) = when (stage) { 1 -> ALARMA_1; 2 -> ALARMA_2; else -> ALARMA_FINAL }
 

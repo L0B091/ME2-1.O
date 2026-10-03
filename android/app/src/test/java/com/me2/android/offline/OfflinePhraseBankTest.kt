@@ -20,10 +20,11 @@ class OfflinePhraseBankTest {
         .map(::File).first { it.exists() }.readText()
     private val bank = OfflinePhraseBank(json)
 
-    @Test fun assetEsBorradorConCincoVariantesPorCategoria() {
+    @Test fun assetAprobadoConCincoVariantesPorCategoria() {
         val root = JSONObject(json)
-        assertEquals("BORRADOR", root.getString("estado"))
-        val expected = setOf("alarma_aviso_1", "alarma_aviso_2", "alarma_final", "recordatorio", "inicio_conversacion")
+        assertEquals("APROBADO", root.getString("estado"))
+        assertFalse(json.contains("BORRADOR")); assertFalse(json.contains("\"borrador\""))
+        val expected = setOf("alarma_aviso_1", "alarma_aviso_2", "alarma_final", "recordatorio", "inicio_conversacion", "sin_red_input")
         assertEquals(expected, bank.categories())
         expected.forEach { c ->
             assertEquals(c, 5, root.getJSONObject("categorias").getJSONObject(c).getJSONArray("variantes").length())

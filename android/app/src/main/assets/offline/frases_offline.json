@@ -1,11 +1,14 @@
 {
   "version": 1,
-  "estado": "BORRADOR",
-  "nota": "BORRADOR pendiente de aprobación del usuario. 'Promptblock offline': se usa SOLO sin red (con red el texto lo escribe el LLM/orquestador). Placeholders: {nombre}, {titulo}, {hora}. Si falta un dato, el placeholder se omite. Rotación sin repetir la última variante.",
+  "estado": "APROBADO",
+  "nota": "Aprobado por el usuario (02/10/2026). 'Promptblock offline': se usa SOLO sin red (con red el texto lo escribe el LLM/orquestador). Placeholders: {nombre}, {titulo}, {hora}. Si falta un dato, el placeholder se omite. Rotación sin repetir la última variante (persistida).",
   "categorias": {
     "alarma_aviso_1": {
-      "borrador": true,
-      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "AVISO_01", "intensidad": "NORMAL" },
+      "audiovisual": {
+        "categoria": "DESPERTADOR",
+        "subcategoria": "AVISO_01",
+        "intensidad": "NORMAL"
+      },
       "variantes": [
         "Buen día, {nombre}. Son las {hora}: {titulo}.",
         "{nombre}, ya son las {hora}. Arranquemos de a poco.",
@@ -15,8 +18,11 @@
       ]
     },
     "alarma_aviso_2": {
-      "borrador": true,
-      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "AVISO_02", "intensidad": "MEDIO" },
+      "audiovisual": {
+        "categoria": "DESPERTADOR",
+        "subcategoria": "AVISO_02",
+        "intensidad": "MEDIO"
+      },
       "variantes": [
         "Segundo aviso, {nombre}. Ya pasaron unos minutos de las {hora}.",
         "{nombre}, sigo acá. Escribime algo así sé que te levantaste.",
@@ -26,8 +32,11 @@
       ]
     },
     "alarma_final": {
-      "borrador": true,
-      "audiovisual": { "categoria": "DESPERTADOR", "subcategoria": "ALARMA", "intensidad": "MAXIMO" },
+      "audiovisual": {
+        "categoria": "DESPERTADOR",
+        "subcategoria": "ALARMA",
+        "intensidad": "MAXIMO"
+      },
       "variantes": [
         "Último aviso, {nombre}: la alarma sigue hasta que me escribas.",
         "{nombre}, ¡arriba! Escribime en el chat para apagarla.",
@@ -37,8 +46,11 @@
       ]
     },
     "recordatorio": {
-      "borrador": true,
-      "audiovisual": { "categoria": "CONVERSACION", "subcategoria": "ATENCION", "intensidad": "NORMAL" },
+      "audiovisual": {
+        "categoria": "CONVERSACION",
+        "subcategoria": "ATENCION",
+        "intensidad": "NORMAL"
+      },
       "variantes": [
         "Recordatorio: {titulo} ({hora}).",
         "{nombre}, te recuerdo: {titulo}.",
@@ -48,8 +60,11 @@
       ]
     },
     "inicio_conversacion": {
-      "borrador": true,
-      "audiovisual": { "categoria": "REACCION", "subcategoria": "AFECTO", "intensidad": "NORMAL" },
+      "audiovisual": {
+        "categoria": "REACCION",
+        "subcategoria": "AFECTO",
+        "intensidad": "NORMAL"
+      },
       "variantes": [
         "Hola, {nombre}. ¿Cómo va todo?",
         "{nombre}, me acordé de vos. ¿Qué andás haciendo?",
@@ -58,7 +73,37 @@
         "Acá estoy, {nombre}. Cuando quieras, charlamos."
       ],
       "audiovisual_alternativos": [
-        { "categoria": "REACCION", "subcategoria": "CURIOSIDAD", "intensidad": "NORMAL" }
+        {
+          "categoria": "REACCION",
+          "subcategoria": "CURIOSIDAD",
+          "intensidad": "NORMAL"
+        }
+      ]
+    },
+    "sin_red_input": {
+      "audiovisual": {
+        "categoria": "REACCION",
+        "subcategoria": "EMPATIA",
+        "intensidad": "NORMAL"
+      },
+      "audiovisual_alternativos": [
+        {
+          "categoria": "SISTEMA",
+          "subcategoria": "SIN_CONEXION",
+          "intensidad": "NORMAL"
+        },
+        {
+          "categoria": "REACCION",
+          "subcategoria": "PREOCUPACION",
+          "intensidad": "NORMAL"
+        }
+      ],
+      "variantes": [
+        "Uy, {nombre}, ahora no tengo conexión. Tu mensaje quedó guardado; probá de nuevo cuando vuelva la red.",
+        "Me quedé sin red, {nombre}. No perdí lo que me escribiste: mandámelo otra vez cuando tengas conexión.",
+        "No llego a contestarte bien sin internet. Guardé tu mensaje; intentá de nuevo cuando estés conectado.",
+        "Se cortó la conexión, {nombre}. Lo tuyo quedó acá anotado; reintentá cuando vuelva la señal.",
+        "Estoy sin red en este momento. Tu mensaje no se perdió: volvé a mandarlo cuando haya conexión."
       ]
     }
   }

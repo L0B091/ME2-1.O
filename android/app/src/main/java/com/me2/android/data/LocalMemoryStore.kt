@@ -11,7 +11,9 @@ data class LocalConversationEntry(
     val timestamp: Long,
     val initiativeId: String? = null,
     /** Emoji con el que reaccionó el avatar (solo en mensajes del usuario). */
-    val reaction: String? = null
+    val reaction: String? = null,
+    /** Mensaje del usuario enviado sin red: guardado localmente, todavía no llegó al backend (no se reenvía solo). */
+    val pending: Boolean = false
 )
 
 data class LocalMemoryNote(
@@ -63,6 +65,7 @@ data class LocalMe2Memory(
                     put("timestamp", entry.timestamp)
                     entry.initiativeId?.let { put("initiativeId", it) }
                     entry.reaction?.let { put("reaction", it) }
+                    if (entry.pending) put("pendiente", true)
                 })
             }
         })
@@ -152,7 +155,8 @@ data class LocalMe2Memory(
                     text = item.optString("text", ""),
                     timestamp = item.optLong("timestamp", System.currentTimeMillis()),
                     initiativeId = item.optString("initiativeId").takeIf { it.isNotBlank() },
-                    reaction = item.optString("reaction").takeIf { it.isNotBlank() }
+                    reaction = item.optString("reaction").takeIf { it.isNotBlank() },
+                    pending = item.optBoolean("pendiente", false)
                 )
             }
             return result
@@ -263,6 +267,24 @@ class LocalMemoryStore(context: Context) {
             fiscalMemories = maybeAppendAsset(memory.fiscalMemories, focus == "fiscal", "fiscal", text)
         )
         save(updated)
+    }
+
+    /** Sin red: marca el último mensaje del usuario como pendiente (queda guardado, no se pierde ni se reenvía solo). */
+    fun markLastUserMessagePending(userId: String) {
+        val memory = load(userId)
+        val i = memory.conversation.indexOfLast { it.role == "user" }
+        if (i < 0 || memory.conversation[i].pending) return
+        val conv = memory.conversation.toMutableList().also { it[i] = it[i].copy(pending = true) }
+        save(memory.copy(conversation = conv))
+    }
+
+    fun pendingUserMessages(userId: String): List<LocalConversationEntry> = load(userId).conversation.filter { it.role == "user" && it.pending }
+
+    /** Tras un chat exitoso: los pendientes ya viajaron como contexto reciente al orquestador. */
+    fun clearPendingMessages(userId: String) {
+        val memory = load(userId)
+        if (memory.conversation.none { it.pending }) return
+        save(memory.copy(conversation = memory.conversation.map { if (it.pending) it.copy(pending = false) else it }.toMutableList()))
     }
 
     /** Premium local: guarda el estado nuevo de un módulo (fiscal | proyectos) devuelto por el orquestador. */
