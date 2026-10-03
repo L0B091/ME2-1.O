@@ -4,10 +4,10 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
 
-test("native beta evaluation endpoint works without Google, payment, cloud DB or provider keys", async () => {
+test("native beta evaluation endpoint works without Google, payment, cloud DB or provider keys (anónimo solo con ME2_ALLOW_ANONYMOUS=true)", async () => {
   const child = spawn(process.execPath, ["server.js"], {
     cwd: fileURLToPath(new URL("../", import.meta.url)),
-    env: { ...process.env, PORT: "0", OPENROUTER_API_KEY: "", NEWS_API_KEY: "", GOOGLE_AUTH_ENABLED: "false" },
+    env: { ...process.env, PORT: "0", OPENROUTER_API_KEY: "", NEWS_API_KEY: "", GOOGLE_AUTH_ENABLED: "false", ME2_ALLOW_ANONYMOUS: "true" },
     stdio: ["ignore", "pipe", "pipe"]
   });
   const exited = once(child, "exit");

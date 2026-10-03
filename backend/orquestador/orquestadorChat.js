@@ -118,7 +118,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // Nombre del personaje (dato, sin respuesta armada)
   const nombrePersonajeDetectado = preferenciaNombre.extraerNombrePersonaje(mensajeUsuario, { memoriaLocal });
-  if (nombrePersonajeDetectado && persistirEnServidor) {
+  if (nombrePersonajeDetectado && persistirEnServidor && userId !== "anonimo") {
     preferenciaNombre.guardarNombrePersonaje(userId, nombrePersonajeDetectado);
   }
 

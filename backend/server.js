@@ -549,8 +549,20 @@ app.post("/api/memoria/fiscal/:userId/:documentoId/programar-envio", requireAuth
   res.json({ ok: Boolean(data), data });
 }));
 
-app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAsync(async (req, res) => {
-  if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesion vencida" });
+// Identidad de /chat e iniciativas: SIEMPRE la del token. Nunca se acepta el userId del body.
+// Sin token: 401, salvo ME2_ALLOW_ANONYMOUS=true (solo dev/demo), y entonces la identidad es "anonimo" (sin persistencia).
+function anonimoPermitido() {
+  return String(process.env.ME2_ALLOW_ANONYMOUS || "").trim().toLowerCase() === "true";
+}
+
+function identidadObligatoria(req, res, next) {
+  if (req.authToken && !req.auth) return res.status(401).json({ ok: false, error: "Sesión vencida o inválida" });
+  if (!req.auth && !anonimoPermitido()) return res.status(401).json({ ok: false, error: "Autenticación requerida" });
+  req.identidad = req.auth?.userId || "anonimo";
+  return next();
+}
+
+app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, identidadObligatoria, handleAsync(async (req, res) => {
   // prefetch: el teléfono pide una iniciativa generada AHORA (con conexión) para entregarla más tarde sin red.
   // Se evalúa como si fuera `entregarDesde` (acotado a 5 min–6 h); el teléfono la descarta si el contexto cambia.
   const prefetch = req.body?.prefetch === true;
@@ -559,18 +571,18 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, handleAs
     ? Math.min(ahoraReal + 6 * 3600e3, Math.max(ahoraReal + 5 * 60e3, Number(req.body?.entregarDesde) || ahoraReal + 3600e3))
     : undefined;
   const data = await orquestadorNotificaciones.evaluarAutonomia({
-    ...req.body, userId: req.auth?.userId || req.body?.userId
+    ...req.body, userId: req.identidad
   }, prefetch ? { ahora: entregarDesde, prefetch: true } : {});
   return res.json({ ok: true, data });
 }));
 
-app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
-  const { mensaje, userId, contexto } = req.body || {};
+app.post("/chat", optionalAuth, identidadObligatoria, handleAsync(async (req, res) => {
+  const { mensaje, contexto } = req.body || {};
   if (!mensaje || typeof mensaje !== "string") {
     return res.status(400).json({ ok: false, error: "Mensaje inválido" });
   }
 
-  const effectiveUserId = req.auth?.userId || userId || "anonimo";
+  const effectiveUserId = req.identidad;
   const resultado = await orquestadorChat(mensaje, {
     ...contexto,
     userId: effectiveUserId,
