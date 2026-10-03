@@ -343,8 +343,11 @@ class MainActivity : AppCompatActivity() {
         super.onStart()
         if (!::binding.isInitialized) return
         // Barra superior con el estado real de red: ACTIVE ↔ OFFLINE (mismo estilo, solo cambia el texto).
+        // El mismo callback dispara el envío de los mensajes escritos sin red: al pasar a ACTIVE (y en el primer
+        // publish de start(), o sea al abrir la app con red) se mandan los pendientes al /chat.
         val monitor = networkMonitor ?: com.me2.android.net.NetworkStatusMonitor(this) { online ->
             if (::binding.isInitialized) binding.syncStatusText.setText(com.me2.android.net.NetworkStatusMonitor.labelFor(online))
+            if (online) runCatching { flushPendingOffline() }.onFailure { Log.e(TAG, "pendientes offline: no se pudo iniciar", it) }
         }.also { networkMonitor = it }
         monitor.start()
     }
@@ -681,40 +684,7 @@ class MainActivity : AppCompatActivity() {
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
-                    adultUnlockedNow = result.adultMode?.unlocked == true
-                    applyChatActions(result.actions)
-                    result.memoryFacts?.let { facts ->
-                        runCatching { localMemoryStore.applyBackendFacts(currentSession.id, facts.gustos, facts.disgustos, facts.ubicacion) }
-                    }
-                    runCatching { localMemoryStore.clearPendingMessages(currentSession.id) }
-                    result.weatherLabel?.let { label ->
-                        runCatching {
-                            sessionStorage.saveLastTemperature(label)
-                            Me2HomeWidgetProvider.refreshAll(this)
-                        }
-                    }
-                    val intensity = result.adultMode?.intensity
-                    val state = when {
-                        !intensity.isNullOrBlank() && intensity != "none" && result.adultMode?.unlocked == true ->
-                            "ADULT_${intensity.uppercase(Locale.getDefault())}"
-                        else -> result.tone?.uppercase(Locale.getDefault()) ?: "ONLINE"
-                    }
-                    val detail = result.videoEtiqueta?.uppercase(Locale.getDefault())
-                        ?: result.microExpression?.uppercase(Locale.getDefault())
-                        ?: "SYNC"
-                    // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
-                    if (result.reply.isNotBlank() || result.media == null) {
-                        appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual)
-                    } else {
-                        applyAssistantAvatarState(state, detail, result.audiovisual)
-                    }
-                    applyChatMedia(result)
-                    startedFromEmptyLocalMemory = false
-                    result.premiumUntilMillis?.let { premiumUntil ->
-                        updateCurrentSession(currentSession.copy(premiumUntilMillis = premiumUntil))
-                    }
-                    // El link de pago llega dentro del texto del LLM (clickeable en la burbuja); la palabra
-                    // clave del modo adulto no se guarda en el teléfono (el backend solo guarda su hash).
+                    applyChatResult(result)
                 }
             }.onFailure { error ->
                 // Nunca ocultar el error real detrás del aviso del demo.
@@ -734,6 +704,105 @@ class MainActivity : AppCompatActivity() {
                         replyOffline()
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * Respuesta del orquestador → chat/avatar/memoria (compartido por el envío normal y el de pendientes offline).
+     * [clearAllPending]: el envío normal desmarca todo lo pendiente (viajó como contexto reciente); el de pendientes
+     * ya desmarcó exactamente lo que mandó.
+     */
+    private fun applyChatResult(result: com.me2.android.net.BackendChatResult, clearAllPending: Boolean = true) {
+        adultUnlockedNow = result.adultMode?.unlocked == true
+        applyChatActions(result.actions)
+        result.memoryFacts?.let { facts ->
+            runCatching { localMemoryStore.applyBackendFacts(currentSession.id, facts.gustos, facts.disgustos, facts.ubicacion) }
+        }
+        if (clearAllPending) runCatching { localMemoryStore.clearPendingMessages(currentSession.id) }
+        result.weatherLabel?.let { label ->
+            runCatching {
+                sessionStorage.saveLastTemperature(label)
+                Me2HomeWidgetProvider.refreshAll(this)
+            }
+        }
+        val intensity = result.adultMode?.intensity
+        val state = when {
+            !intensity.isNullOrBlank() && intensity != "none" && result.adultMode?.unlocked == true ->
+                "ADULT_${intensity.uppercase(Locale.getDefault())}"
+            else -> result.tone?.uppercase(Locale.getDefault()) ?: "ONLINE"
+        }
+        val detail = result.videoEtiqueta?.uppercase(Locale.getDefault())
+            ?: result.microExpression?.uppercase(Locale.getDefault())
+            ?: "SYNC"
+        // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
+        if (result.reply.isNotBlank() || result.media == null) {
+            appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual)
+        } else {
+            applyAssistantAvatarState(state, detail, result.audiovisual)
+        }
+        applyChatMedia(result)
+        startedFromEmptyLocalMemory = false
+        result.premiumUntilMillis?.let { premiumUntil ->
+            updateCurrentSession(currentSession.copy(premiumUntilMillis = premiumUntil))
+        }
+        // El link de pago llega dentro del texto del LLM (clickeable en la burbuja); la palabra
+        // clave del modo adulto no se guarda en el teléfono (el backend solo guarda su hash).
+    }
+
+    /**
+     * Volvió la red: manda los mensajes escritos offline (cola persistida en la memoria local) por el camino normal
+     * del /chat, todos juntos y en orden, y muestra la respuesta real del avatar. Sin frases fijas ni promptBlocks.
+     * Mientras espera: mismo estado PENSANDO que un envío online; la respuesta se tipea (typewriter) como siempre.
+     * Si falla queda todo pendiente (sin texto de error) y se reintenta en el próximo cambio a ACTIVE o al abrir.
+     */
+    private fun flushPendingOffline() {
+        if (!::binding.isInitialized || !::currentSession.isInitialized || !::localMemoryStore.isInitialized) return
+        val session = currentSession
+        val ready = runCatching { backendClient.isConfigured() && backendClient.isOnline(this) }.getOrDefault(false)
+        if (!ready) return
+        if (!session.isDemo && session.authToken.isNullOrBlank()) return
+        if (com.me2.android.offline.PendingChatGate.inFlight.get()) return
+        val store = localMemoryStore
+        val userId = session.id
+        thread(name = "me2-pendientes-offline") {
+            val outcome = runCatching {
+                com.me2.android.offline.PendingChatFlusher(
+                    loadPending = { store.pendingUserMessages(userId) },
+                    send = { message ->
+                        val memory = store.load(userId)
+                        backendClient.sendChat(session, memory, message, null, effectiveLocation(memory))
+                    },
+                    markSent = { store.markPendingSent(userId, it) },
+                    onSending = { batch ->
+                        Log.i(TAG, "pendientes offline: enviando ${batch.count} mensaje(s)")
+                        runOnUiThread {
+                            if (isDestroyed || userId != currentSession.id) return@runOnUiThread
+                            binding.sendButton.isEnabled = false
+                            playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
+                        }
+                    }
+                ).flush()
+            }.getOrElse { com.me2.android.offline.PendingChatFlusher.Outcome.Failed(com.me2.android.offline.PendingChatFlusher.Batch("", emptySet(), 0), it) }
+            when (outcome) {
+                is com.me2.android.offline.PendingChatFlusher.Outcome.Sent -> runOnUiThread {
+                    if (isDestroyed || userId != currentSession.id) {
+                        // La pantalla ya no está: la respuesta igual queda en la memoria local (aparece al volver).
+                        runCatching { store.appendAssistantMessage(userId, outcome.result.reply) }
+                        return@runOnUiThread
+                    }
+                    binding.sendButton.isEnabled = true
+                    applyChatResult(outcome.result, clearAllPending = false)
+                }
+                is com.me2.android.offline.PendingChatFlusher.Outcome.Failed -> {
+                    Log.e(TAG, "pendientes offline: falló el envío (${outcome.error.javaClass.simpleName}); quedan pendientes", outcome.error)
+                    if (outcome.batch.count > 0) runOnUiThread {
+                        if (isDestroyed || userId != currentSession.id) return@runOnUiThread
+                        binding.sendButton.isEnabled = true
+                        fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+                    }
+                }
+                else -> Unit
             }
         }
     }

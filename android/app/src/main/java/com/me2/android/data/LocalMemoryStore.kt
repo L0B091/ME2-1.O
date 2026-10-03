@@ -12,7 +12,7 @@ data class LocalConversationEntry(
     val initiativeId: String? = null,
     /** Emoji con el que reaccionó el avatar (solo en mensajes del usuario). */
     val reaction: String? = null,
-    /** Mensaje del usuario enviado sin red: guardado localmente, todavía no llegó al backend (no se reenvía solo). */
+    /** Mensaje del usuario enviado sin red: guardado localmente, todavía no llegó al backend (se envía al volver la red, ver PendingChatFlusher). */
     val pending: Boolean = false
 )
 
@@ -122,6 +122,13 @@ data class LocalMe2Memory(
             .filter { it.length in 2..60 && it !in cleanDislikes }.distinct().takeLast(MAX_INTERESTS)
         return copy(interests = cleanInterests, dislikes = cleanDislikes, location = ubicacion ?: location)
     }
+
+    /** Desmarca como pendientes SOLO los mensajes del usuario con esos timestamps (ya enviados al volver la red). */
+    fun withPendingSent(timestamps: Set<Long>): LocalMe2Memory = copy(
+        conversation = conversation.map {
+            if (it.pending && it.role == "user" && it.timestamp in timestamps) it.copy(pending = false) else it
+        }.toMutableList()
+    )
 
     fun premiumLocalJson(): JSONObject = runCatching { JSONObject(premiumLocal) }.getOrDefault(JSONObject())
 
@@ -341,7 +348,7 @@ class LocalMemoryStore(context: Context) {
         save(memory.copy(presentationCompletedAt = at))
     }
 
-    /** Sin red: marca el último mensaje del usuario como pendiente (queda guardado, no se pierde ni se reenvía solo). */
+    /** Sin red: marca el último mensaje del usuario como pendiente (queda guardado; se envía al volver la red). */
     fun markLastUserMessagePending(userId: String) {
         val memory = load(userId)
         val i = memory.conversation.indexOfLast { it.role == "user" }
@@ -351,6 +358,14 @@ class LocalMemoryStore(context: Context) {
     }
 
     fun pendingUserMessages(userId: String): List<LocalConversationEntry> = load(userId).conversation.filter { it.role == "user" && it.pending }
+
+    /** Envío de pendientes al volver la red: desmarca exactamente los que viajaron (no toca los nuevos). */
+    fun markPendingSent(userId: String, timestamps: Set<Long>) {
+        if (timestamps.isEmpty()) return
+        val memory = load(userId)
+        if (memory.conversation.none { it.pending && it.timestamp in timestamps }) return
+        save(memory.withPendingSent(timestamps))
+    }
 
     /** Tras un chat exitoso: los pendientes ya viajaron como contexto reciente al orquestador. */
     fun clearPendingMessages(userId: String) {
