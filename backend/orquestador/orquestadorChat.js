@@ -18,6 +18,7 @@ import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import flujoPremium from "../modulos/premium/flujoPremium.js";
 import selectorMedia from "../modulos/media/selectorMedia.js";
+import reaccionAudiovisual from "../modulos/media/reaccionAudiovisual.js";
 import reacciones from "../modulos/interaccion/reacciones.js";
 import formatoAdulto from "../modulos/media/formatoAdulto.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
@@ -238,6 +239,13 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   const videoFinal = adultResult?.video?.categoria && adultResult?.adult?.unlocked ? { ...video, ...adultResult.video } : video;
   // Texto + clip siempre; GIF opcional solo en modo adulto (catálogo adulto con gating estricto).
   const { clip } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
+  // Biblioteca audiovisual V1: el orquestador decide categoría + intensidad; el cliente elige el recurso concreto.
+  const audiovisual = (respuesta || media) ? reaccionAudiovisual.decidir({ mensaje: mensajeUsuario, respuesta: respuesta || "" }) : null;
+  // Clima actual (ya obtenido para el contexto) → widget del cliente (hora + clima en el anillo inferior).
+  const climaH = herramientas?.clima;
+  const clima = climaH && climaH.disponible !== false && Number.isFinite(Number(climaH.temperatura))
+    ? { temperatura: Number(climaH.temperatura), descripcion: climaH.descripcion || null }
+    : null;
   // Reacción ocasional (emoji) sobre la burbuja del usuario, persistida en el historial.
   let reaccion = null;
   if ((respuesta || media) && userId !== "anonimo") {
@@ -252,6 +260,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     expresion: EXPRESION_NEUTRA,
     video: videoFinal,
     clip,
+    audiovisual,
+    clima,
     media,
     reaccion: reaccion ? { emoji: reaccion.emoji } : null,
     flujoPremium: { estado: flujo.estado, evento: flujo.evento },

@@ -49,7 +49,11 @@ data class BackendChatResult(
     val videoEtiqueta: String? = null,
     val clip: com.me2.android.ui.ChatMediaRouting.Clip? = null,
     val media: com.me2.android.ui.ChatMediaRouting.Media? = null,
-    val reaction: String? = null
+    val reaction: String? = null,
+    /** Pista audiovisual del orquestador (categoría + subcategoría + intensidad; nunca un archivo). */
+    val audiovisual: com.me2.android.media.AudiovisualCue? = null,
+    /** Clima actual para el widget (p. ej. "23°C"), si el backend lo tiene. */
+    val weatherLabel: String? = null
 )
 
 data class PremiumStatusResult(
@@ -223,8 +227,26 @@ class Me2BackendClient {
             media = json.optJSONObject("media")?.let {
                 com.me2.android.ui.ChatMediaRouting.Media(tipo = it.optString("tipo"), url = absoluteUrl(it.optString("url")))
             },
-            reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null }
+            reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null },
+            audiovisual = parseAudiovisual(json.optJSONObject("audiovisual")),
+            weatherLabel = parseWeatherLabel(json.optJSONObject("clima"))
         )
+    }
+
+    internal fun parseAudiovisual(o: JSONObject?): com.me2.android.media.AudiovisualCue? {
+        val categoria = o?.optString("categoria")?.ifBlank { null } ?: return null
+        return com.me2.android.media.AudiovisualCue(
+            categoria = categoria,
+            subcategoria = o.optString("subcategoria").ifBlank { null }?.takeIf { it != "null" },
+            intensidad = o.optString("intensidad").ifBlank { null }?.takeIf { it != "null" }
+        )
+    }
+
+    internal fun parseWeatherLabel(o: JSONObject?): String? {
+        o ?: return null
+        if (!o.has("temperatura") || o.isNull("temperatura")) return null
+        val t = o.optDouble("temperatura", Double.NaN)
+        return if (t.isNaN()) null else "${Math.round(t)}°C"
     }
 
     fun evaluateInitiative(

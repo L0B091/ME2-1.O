@@ -7,6 +7,7 @@ import memoriaConversacional from "../memoria/memoriaConversacional.js";
 
 const VIBRACION_INTERVALO_MS = 600;
 const MENSAJE_INTERVALO_MS = 1500;
+export const ESPERA_ENTRE_INTENTOS_MS = 5 * 60 * 1000;
 
 /**
 * Utilidad de espera
@@ -88,10 +89,8 @@ function obtenerDefinicionStages() {
       notificationType: stage >= 3 ? "alarm" : "message",
       vibration: stage >= 3 ? "alarm" : "double",
       sound: stage >= 3 ? "alarm" : "bubble",
-      delayToNextStageMs:
-        stage < 3
-          ? mensajes.length * (VIBRACION_INTERVALO_MS + MENSAJE_INTERVALO_MS)
-          : 0,
+      // Protocolo: intento 1 → 5 min → intento 2 → 5 min → intento 3 (alarma fuerte/persistente).
+      delayToNextStageMs: stage < 3 ? ESPERA_ENTRE_INTENTOS_MS : 0,
       mensajes
     };
   });

@@ -29,11 +29,13 @@
             android:paddingBottom="16dp"
             android:background="#66030506">
 
-            <TextView
+            <!-- TextClock: la hora se actualiza sola (RemoteViews lo soporta), sin alarmas extra. -->
+            <TextClock
                 android:id="@+id/widgetTime"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="00:00"
+                android:format12Hour="HH:mm"
+                android:format24Hour="HH:mm"
                 android:textColor="@color/me2_text_primary"
                 android:textSize="22sp"
                 android:textStyle="bold"

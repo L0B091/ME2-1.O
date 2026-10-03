@@ -559,6 +559,8 @@ app.post("/chat", optionalAuth, handleAsync(async (req, res) => {
     acciones: resultado?.acciones || null,
     video: resultado?.video || null,
     clip: resultado?.clip || null,
+    audiovisual: resultado?.audiovisual || null,
+    clima: resultado?.clima || null,
     media: resultado?.media || null,
     reaccion: resultado?.reaccion || null,
     expresion: resultado?.expresion || null,

@@ -128,7 +128,9 @@ class Me2NotificationCoordinator(private val context: Context) {
                     if (stage.notificationType == "alarm") NotificationCompat.CATEGORY_ALARM
                     else NotificationCompat.CATEGORY_MESSAGE
                 )
-                .setAutoCancel(true)
+                // Tercer intento = alarma fuerte/persistente: no se descarta sola y el sonido insiste hasta abrir el Chat.
+                .setAutoCancel(stage.notificationType != "alarm")
+                .setOngoing(stage.notificationType == "alarm")
                 .setContentIntent(
                     mainPendingIntent(
                         userId = userId,
@@ -141,6 +143,7 @@ class Me2NotificationCoordinator(private val context: Context) {
                 )
                 .applyPreOConfig(stage.notificationType == "alarm")
                 .build()
+                .apply { if (stage.notificationType == "alarm") flags = flags or Notification.FLAG_INSISTENT }
         )
     }
 

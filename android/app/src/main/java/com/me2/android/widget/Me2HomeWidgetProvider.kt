@@ -14,9 +14,6 @@ import com.me2.android.LoginActivity
 import com.me2.android.MainActivity
 import com.me2.android.R
 import com.me2.android.data.SessionStorage
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * Widget redondo tipo reloj: avatar teaser + hora + temperatura (última conocida / placeholder).
@@ -53,8 +50,6 @@ class Me2HomeWidgetProvider : AppWidgetProvider() {
                 return
             }
             views.setViewVisibility(R.id.widgetRoot, View.VISIBLE)
-            val clock = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-            views.setTextViewText(R.id.widgetTime, clock)
             views.setTextViewText(R.id.widgetTemp, storage.loadLastTemperature())
             val square = squareFor(context, manager, appWidgetId)
             val density = context.resources.displayMetrics.density

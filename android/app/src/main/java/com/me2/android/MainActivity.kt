@@ -44,6 +44,17 @@ import com.me2.android.data.UserSession
 import com.me2.android.databinding.ActivityMainBinding
 import com.me2.android.gallery.ClipCatalog
 import com.me2.android.gallery.GalleryClip
+import com.me2.android.media.AudiovisualCue
+import com.me2.android.media.AvatarCueMapper
+import com.me2.android.media.AvatarState
+import com.me2.android.media.AvatarStateMachine
+import com.me2.android.media.MediaCategoria
+import com.me2.android.media.MediaLibrary
+import com.me2.android.media.MediaPermisos
+import com.me2.android.media.MediaRequest
+import com.me2.android.media.MediaSelection
+import com.me2.android.media.MediaSelector
+import com.me2.android.media.MediaTipo
 import com.me2.android.net.Me2BackendClient
 import com.me2.android.notifications.Me2AlarmScheduler
 import com.me2.android.notifications.Me2NotificationChannels
@@ -65,12 +76,6 @@ class MainActivity : AppCompatActivity() {
         /** Post-presentation wait before silence check-in (product: ~45–60s). */
         private const val POST_PRESENTATION_SILENCE_MS = 50_000L
     }
-    private enum class AvatarMode { LOOP_NEUTRAL, CONTEXTUAL, PRESENTATION }
-
-    private data class AvatarSelection(
-        val label: String,
-        val gallery: List<GalleryClip>
-    )
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var sessionStorage: SessionStorage
@@ -90,7 +95,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clipCatalog: ClipCatalog
     private var currentAvatarClipId: String? = null
     private var lastAvatarClipId: String? = null
-    private var avatarMode: AvatarMode = AvatarMode.LOOP_NEUTRAL
+    private lateinit var mediaLibrary: MediaLibrary
+    private var avatarMode: AvatarState = AvatarState.LOOP_NEUTRAL
+    /** Pedido audiovisual activo (para repetir CONVERSACION/DESPERTADOR mientras corresponda). */
+    private var currentRequest: MediaRequest? = null
+    /** Modo adulto desbloqueado según la última respuesta del backend (solo en memoria, por sesión). */
+    private var adultUnlockedNow: Boolean = false
+    /** Alarma abierta pero aún no respondida: se considera respondida solo cuando el usuario envía un INPUT. */
+    private var pendingAlarm: Pair<String, Int>? = null
     private var currentAvatarGallery: List<GalleryClip> = emptyList()
     private var hasPlayedPresentation = false
     private var presentationClipIndex: Int = 0
@@ -110,22 +122,29 @@ class MainActivity : AppCompatActivity() {
         askPostPresentationSilenceCheckIn()
     }
 
-    // Mood galleries via ClipCatalog: filesDir/gallery → assets/videos → res/raw demos.
+    // Biblioteca V1 (assets/ME2_MEDIA + filesDir/ME2_MEDIA, descubrimiento dinámico); res/raw vía ClipCatalog
+    // queda solo como último recurso para que el contenedor del avatar nunca quede vacío.
     private val loopNeutralGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_LOOP_NEUTRAL)
+        get() = mediaLibrary.recursos()
+            .filter { it.categoria == MediaCategoria.LOOP_NEUTRAL && it.tipo == MediaTipo.VIDEO && mediaPermisos().permite(it) }
+            .map(mediaLibrary::toClip)
+            .ifEmpty { clipCatalog.listByMood(ClipCatalog.MOOD_LOOP_NEUTRAL) }
     private val presentationGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_PRESENTACION)
-    private val calidaGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_CALIDA)
-    private val alegreGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ALEGRE)
-    private val atentaGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ATENTA)
-    private val aliviadaGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_ALIVIADA)
-    private val agradecidaGallery: List<GalleryClip>
-        get() = clipCatalog.listByMood(ClipCatalog.MOOD_AGRADECIDA)
+        get() = MediaSelector.secuenciaPresentacion(mediaLibrary.recursos(), mediaPermisos())
+            .map(mediaLibrary::toClip)
+            .ifEmpty { clipCatalog.listByMood(ClipCatalog.MOOD_PRESENTACION) }
 
+    private fun mediaPermisos(): MediaPermisos {
+        val premium = ::currentSession.isInitialized && currentSession.isPremium
+        return MediaPermisos(premium = premium, adulto = premium && adultUnlockedNow)
+    }
+
+    private fun selectMedia(request: MediaRequest): MediaSelection? =
+        MediaSelector.select(mediaLibrary.recursos(), request, mediaPermisos(), previousId = currentMediaId())
+
+    /** id V1 del clip actual ("me2:02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4" → "ALEGRIA_MEDIO_001"). */
+    private fun currentMediaId(): String? =
+        currentAvatarClipId?.takeIf { it.startsWith("me2:") }?.substringAfterLast('/')?.substringBeforeLast('.')?.uppercase(Locale.ROOT)
 
     private val profilePhotoPicker =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
@@ -158,6 +177,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        mediaLibrary = MediaLibrary(this)
         clipCatalog = ClipCatalog(this).also { catalog ->
             runCatching { catalog.ensureDirs() }
             Log.i(TAG, "ClipCatalog ready; ApiConfig ${ApiConfig.readinessSummary()}")
@@ -248,6 +268,8 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         if (!::binding.isInitialized) return
         sessionStartedAt = SystemClock.elapsedRealtime()
+        // Clips nuevos (drop-in en filesDir/ME2_MEDIA) se descubren sin tocar código.
+        if (::mediaLibrary.isInitialized) runCatching { mediaLibrary.refrescar() }
         if (!presentationSequenceActive) {
             runCatching { restoreAvatarPresence(forceReload = currentAvatarClipId == null) }
         }
@@ -390,7 +412,7 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onPlayerError(error: PlaybackException) {
                         Log.e("Me2Avatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
-                        if (presentationSequenceActive && avatarMode == AvatarMode.PRESENTATION) {
+                        if (presentationSequenceActive && avatarMode == AvatarState.PRESENTACION) {
                             // Skip failed clip; continue sequence or finish so input is not stuck.
                             runCatching { handleAvatarPlaybackEnded() }
                         } else {
@@ -446,7 +468,7 @@ class MainActivity : AppCompatActivity() {
             fullConversation += message
             if (entry.timestamp > memory.hiddenConversationThrough) visibleConversation += message
         }
-        if (avatarMode == AvatarMode.LOOP_NEUTRAL) {
+        if (avatarMode == AvatarState.LOOP_NEUTRAL) {
         }
         renderConversation()
     }
@@ -467,7 +489,15 @@ class MainActivity : AppCompatActivity() {
         initiativeScheduler.cancelPostSilenceEval()
         initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
-        fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+        // Protocolo despertador: la alarma solo se considera respondida cuando el usuario envía un INPUT en el Chat.
+        pendingAlarm?.let { (alarmId, stage) ->
+            pendingAlarm = null
+            alarmScheduler.cancel(alarmId)
+            notificationCoordinator.cancelAlarmNotifications(alarmId)
+            resolveAlarmEvent(alarmId, stage)
+        }
+        // Mientras ME2 procesa: estado de conversación (PENSANDO → fallback neutral si no hay clip).
+        playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
         renderConversation()
         dispatchChat(content, initiative)
     }
@@ -525,6 +555,13 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
                     applyAdultModeFromChat(result)
+                    adultUnlockedNow = result.adultMode?.unlocked == true
+                    result.weatherLabel?.let { label ->
+                        runCatching {
+                            sessionStorage.saveLastTemperature(label)
+                            Me2HomeWidgetProvider.refreshAll(this)
+                        }
+                    }
                     val intensity = result.adultMode?.intensity
                     val state = when {
                         !intensity.isNullOrBlank() && intensity != "none" && result.adultMode?.unlocked == true ->
@@ -536,9 +573,9 @@ class MainActivity : AppCompatActivity() {
                         ?: "SYNC"
                     // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
                     if (result.reply.isNotBlank() || result.media == null) {
-                        appendAssistantReply(result.reply, state, detail, typewriter = true)
+                        appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual)
                     } else {
-                        applyAssistantAvatarState(state, detail)
+                        applyAssistantAvatarState(state, detail, result.audiovisual)
                     }
                     applyChatMedia(result)
                     startedFromEmptyLocalMemory = false
@@ -570,14 +607,15 @@ class MainActivity : AppCompatActivity() {
         reply: String,
         state: String,
         detail: String,
-        typewriter: Boolean = false
+        typewriter: Boolean = false,
+        cue: AudiovisualCue? = null
     ) {
         // Typewriter lo re-dispara el adapter en bind/tap para cualquier burbuja ME2.
         val me2Reply = ChatMessage(reply, true, animateTypewriter = true)
         fullConversation += me2Reply
         visibleConversation += me2Reply
         localMemoryStore.appendAssistantMessage(currentSession.id, reply)
-        applyAssistantAvatarState(state, detail)
+        applyAssistantAvatarState(state, detail, cue)
         renderConversation()
     }
 
@@ -784,14 +822,17 @@ class MainActivity : AppCompatActivity() {
             "alarm" -> {
                 appendAssistantReply(
                     message.ifBlank { getString(R.string.notification_alarm_opened) },
-                    "AWAKE",
+                    "NOTICE",
                     "STAGE_$stage"
                 )
                 if (!alarmId.isNullOrBlank()) {
-                    alarmScheduler.cancel(alarmId)
+                    // Abrir la notificación silencia el aviso actual, pero NO responde la alarma: los intentos
+                    // siguientes siguen programados hasta que el usuario envíe un INPUT (ver sendMessage).
                     notificationCoordinator.cancelAlarmNotifications(alarmId)
-                    resolveAlarmEvent(alarmId, stage)
+                    pendingAlarm = alarmId to stage
                 }
+                val sub = when (stage) { 1 -> "AVISO_01"; 2 -> "AVISO_02"; else -> "ALARMA" }
+                playAvatarRequest(MediaRequest(MediaCategoria.DESPERTADOR, sub))
             }
         }
 
@@ -836,7 +877,7 @@ class MainActivity : AppCompatActivity() {
         presentationSequenceActive = true
         presentationClipIndex = 0
         setChatInputEnabled(false)
-        avatarMode = AvatarMode.PRESENTATION
+        avatarMode = AvatarState.PRESENTACION
         currentAvatarGallery = gallery
         playAvatarClip(exoPlayer, gallery.first())
     }
@@ -891,74 +932,87 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun applyAssistantAvatarState(state: String, detail: String) {
-        val selection = resolveAvatarSelection(state, detail)
+    private fun applyAssistantAvatarState(state: String, detail: String, cue: AudiovisualCue? = null) {
+        val normalizedState = state.uppercase(Locale.getDefault())
+        // Modo adulto: 07_PREMIUM/ADULTO solo con permiso; si no hay recurso, la reacción COQUETA equivalente.
+        if (normalizedState.startsWith("ADULT_")) {
+            val adult = AvatarCueMapper.adultRequest(normalizedState)
+            if (adult != null) {
+                val selection = selectMedia(adult)
+                if (selection != null) playAvatarSelection(adult, selection)
+                else playAvatarRequest(AvatarCueMapper.adultFallback(adult))
+                return
+            }
+        }
+        val request = AvatarCueMapper.fromCue(cue) ?: AvatarCueMapper.fromLegacy(state, detail)
+        if (request == null) {
+            fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+            return
+        }
+        playAvatarRequest(request)
+    }
+
+    /** Pide categoría+intensidad al selector; si no hay nada válido, vuelve a LOOP_NEUTRAL (nunca vacío). */
+    private fun playAvatarRequest(request: MediaRequest) {
+        if (presentationSequenceActive) return
+        val selection = selectMedia(request)
         if (selection == null) {
             fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
             return
         }
-        val exoPlayer = player ?: return
-        val clip = resolveNextClip(selection.gallery, currentAvatarClipId)
-        if (clip == null) {
-            fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
-            return
-        }
-        avatarMode = AvatarMode.CONTEXTUAL
-        currentAvatarGallery = selection.gallery
-        playAvatarClip(exoPlayer, clip)
+        playAvatarSelection(request, selection)
     }
 
-    private fun resolveAvatarSelection(state: String, detail: String): AvatarSelection? {
-        val normalizedState = state.uppercase(Locale.getDefault())
-        val normalizedDetail = detail.uppercase(Locale.getDefault())
-        val tokens = "$normalizedState $normalizedDetail"
-        // Adult intensity → teasers locales existentes (sin biblioteca adulta Blender).
-        when {
-            tokens.contains("ADULT_EXPLICIT") -> return AvatarSelection("TEASER_EXPLICIT", loopNeutralGallery)
-            tokens.contains("ADULT_INTIMATE") -> return AvatarSelection("TEASER_INTIMATE", calidaGallery)
-            tokens.contains("ADULT_SUGGESTIVE") -> return AvatarSelection("TEASER_SUGGESTIVE", alegreGallery)
-            tokens.contains("ADULT_SOFT_FLIRT") || tokens.contains("ADULT_SOFT") ->
-                return AvatarSelection("TEASER_SOFT", calidaGallery)
+    private fun playAvatarSelection(request: MediaRequest, selection: MediaSelection) {
+        val exoPlayer = player ?: return
+        val recurso = selection.recurso
+        if (recurso.categoria == MediaCategoria.LOOP_NEUTRAL) {
+            avatarMode = AvatarState.LOOP_NEUTRAL
+            currentRequest = null
+            currentAvatarGallery = loopNeutralGallery
+        } else {
+            avatarMode = when (recurso.categoria) {
+                MediaCategoria.CONVERSACION -> AvatarState.CONVERSACION
+                MediaCategoria.DESPERTADOR -> AvatarState.DESPERTADOR
+                MediaCategoria.SISTEMA -> AvatarState.SISTEMA
+                else -> AvatarState.REACCION
+            }
+            currentRequest = request
+            currentAvatarGallery = listOf(mediaLibrary.toClip(recurso))
         }
-        return when {
-            normalizedState == "DEMO" -> AvatarSelection("DEMO_LOOP", loopNeutralGallery)
-            normalizedState == "OFFLINE" || normalizedState == "NOTICE" -> null
-            normalizedDetail == "LOCAL" || normalizedDetail == "SYNC" || normalizedDetail == "MESSAGE" || normalizedDetail.startsWith("STAGE_") -> null
-            tokens.contains("AGRADEC") -> AvatarSelection("AGRADECIDA", agradecidaGallery)
-            tokens.contains("ALEGRE") || tokens.contains("HAPPY") || tokens.contains("FELIZ") || tokens.contains("SONRISA") -> AvatarSelection("ALEGRE", alegreGallery)
-            tokens.contains("ATENTA") || tokens.contains("LISTENING") || tokens.contains("MIRADA_ATENTA") || tokens.contains("THINK") -> AvatarSelection("ATENTA", atentaGallery)
-            tokens.contains("ALIVIADA") || tokens.contains("CALMA") || tokens.contains("TRISTE") -> AvatarSelection("ALIVIADA", aliviadaGallery)
-            normalizedState.isNotBlank() || normalizedDetail.isNotBlank() -> AvatarSelection("CALIDA", calidaGallery)
-            else -> null
-        }
+        playAvatarClip(exoPlayer, mediaLibrary.toClip(recurso))
     }
 
     private fun handleAvatarPlaybackEnded() {
-        when (avatarMode) {
-            AvatarMode.PRESENTATION -> {
+        val gallery = currentAvatarGallery.ifEmpty { presentationGallery }
+        val transition = AvatarStateMachine.onClipEnded(
+            avatarMode,
+            presentationHasNext = avatarMode == AvatarState.PRESENTACION && presentationClipIndex + 1 < gallery.size,
+            alarmPending = pendingAlarm != null
+        )
+        when {
+            transition.advancePresentation -> {
                 val exoPlayer = player ?: run {
                     onPresentationSequenceCompleted()
                     return
                 }
-                val gallery = currentAvatarGallery.ifEmpty { presentationGallery }
-                val nextIndex = presentationClipIndex + 1
-                if (nextIndex < gallery.size) {
-                    presentationClipIndex = nextIndex
-                    playAvatarClip(exoPlayer, gallery[nextIndex])
-                } else {
-                    onPresentationSequenceCompleted()
-                }
+                presentationClipIndex += 1
+                playAvatarClip(exoPlayer, gallery[presentationClipIndex])
             }
-            AvatarMode.CONTEXTUAL -> fallbackToLoopNeutral(forceReload = true)
-            AvatarMode.LOOP_NEUTRAL -> {
+            transition.presentationCompleted -> onPresentationSequenceCompleted()
+            transition.next == AvatarState.CONVERSACION || transition.next == AvatarState.DESPERTADOR ->
+                currentRequest?.let { playAvatarRequest(it) } ?: fallbackToLoopNeutral(forceReload = true)
+            avatarMode == AvatarState.LOOP_NEUTRAL -> {
                 val exoPlayer = player ?: return
                 playAvatarClip(exoPlayer, pickNextClip(currentAvatarGallery, currentAvatarClipId))
             }
+            else -> fallbackToLoopNeutral(forceReload = true)
         }
     }
 
     private fun fallbackToLoopNeutral(forceReload: Boolean = false, resetStateLabel: Boolean = false) {
-        avatarMode = AvatarMode.LOOP_NEUTRAL
+        avatarMode = AvatarState.LOOP_NEUTRAL
+        currentRequest = null
         currentAvatarGallery = loopNeutralGallery
         if (resetStateLabel) {
         }
@@ -995,8 +1049,9 @@ class MainActivity : AppCompatActivity() {
     private fun galleryContainsCurrentClip(gallery: List<GalleryClip>): Boolean =
         clipCatalog.containsClip(gallery, currentAvatarClipId)
 
+    /** Anti-repetición inmediata: al azar entre los clips distintos del anterior (si hay más de uno). */
     private fun resolveNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip? =
-        clipCatalog.nextClip(gallery, previousClipId)
+        com.me2.android.gallery.ClipPicker.pickRandom(gallery, gallery.firstOrNull { it.id == previousClipId })
 
     private fun pickNextClip(gallery: List<GalleryClip>, previousClipId: String?): GalleryClip =
         resolveNextClip(gallery, previousClipId)
