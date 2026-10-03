@@ -34,11 +34,11 @@ class ClipCatalogTest {
         assertTrue(presentacion.isNotEmpty())
         assertTrue(presentacion.first().carriesVoice)
         assertTrue(catalog.runtimeGalleryRoot().exists())
-        // Bundled HOLA_01→03 under assets/videos/presentacion/ (sorted by name).
+        // Presentación: PRESENTACION_001→003 (ME2_MEDIA) o HOLA_* en assets/videos (orden por nombre).
         if (presentacion.any { it.source == GalleryClip.Source.ASSETS }) {
             assertTrue(presentacion.size >= 3)
             val names = presentacion.map { it.displayName.uppercase() }
-            assertTrue(names[0].contains("HOLA_01") || names[0].contains("HOLA_1") || names[0].startsWith("HOLA"))
+            assertTrue(names[0].contains("HOLA") || names[0] == "PRESENTACION_001")
             assertEquals(
                 names.sorted(),
                 names

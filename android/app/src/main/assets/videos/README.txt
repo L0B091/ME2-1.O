@@ -19,7 +19,7 @@ Priority when resolving a mood
 ------------------------------
 1) filesDir/gallery/{mood}/
 2) assets/videos/{mood}/
-3) res/raw demo clips (bundled fallbacks already in the APK)
+3) assets/ME2_MEDIA (biblioteca V1, fuente única; ya no hay mp4 en res/raw)
 
 How to add videos later
 -----------------------

@@ -1,27 +1,30 @@
 import path from "path";
 
+// Fuente única: android/app/src/main/assets/ME2_MEDIA (las rutas son relativas a assets/; el backend no abre los
+// archivos: informa la ruta y el id = nombre de archivo sin extensión, igual que el id V1 de MediaLibrary).
+
 const catalogo = {
   alegre: [
-    { etiqueta: "alegre", archivo: "avatar/galeria/alegre/ALEGRE_BASE.mp4" },
-    { etiqueta: "alegre", archivo: "avatar/galeria/alegre/ALEGRE_BRILLO.mp4" }
+    { etiqueta: "alegre", archivo: "ME2_MEDIA/02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4" },
+    { etiqueta: "alegre", archivo: "ME2_MEDIA/02_REACCIONES/ALEGRIA/ALEGRIA_MAXIMO_002.mp4" }
   ],
   atenta: [
-    { etiqueta: "atenta", archivo: "avatar/galeria/atenta/ATENTA_BASE.mp4" },
-    { etiqueta: "atenta", archivo: "avatar/galeria/atenta/ATENTA_THINK.mp4" }
+    { etiqueta: "atenta", archivo: "ME2_MEDIA/03_CONVERSACION/ATENCION/ATENCION_001.mp4" },
+    { etiqueta: "atenta", archivo: "ME2_MEDIA/03_CONVERSACION/PENSANDO/PENSANDO_001.mp4" }
   ],
   calida: [
-    { etiqueta: "calida", archivo: "avatar/galeria/calida/CALIDA_BASE.mp4" },
-    { etiqueta: "calida", archivo: "avatar/galeria/calida/CALIDA_CERCANA.mp4" }
+    { etiqueta: "calida", archivo: "ME2_MEDIA/01_LOOP_NEUTRAL/NEUTRAL_001.mp4" },
+    { etiqueta: "calida", archivo: "ME2_MEDIA/02_REACCIONES/AFECTO/AFECTO_NORMAL_001.mp4" }
   ],
   aliviada: [
-    { etiqueta: "aliviada", archivo: "avatar/galeria/aliviada/ALIVIADA_BASE.mp4" },
-    { etiqueta: "aliviada", archivo: "avatar/galeria/aliviada/ALIVIADA_CALMA.mp4" }
+    { etiqueta: "aliviada", archivo: "ME2_MEDIA/02_REACCIONES/EMPATIA/EMPATIA_NORMAL_001.mp4" },
+    { etiqueta: "aliviada", archivo: "ME2_MEDIA/02_REACCIONES/ALIVIO/ALIVIO_NORMAL_001.mp4" }
   ],
   agradecida: [
-    { etiqueta: "agradecida", archivo: "avatar/galeria/agradecida/AGRADECIDA_BASE.mp4" }
+    { etiqueta: "agradecida", archivo: "ME2_MEDIA/02_REACCIONES/AFECTO/AFECTO_NORMAL_002.mp4" }
   ],
   texting: [
-    { etiqueta: "texting", archivo: "avatar/galeria/TEXTING/TEXTING_01.mp4" }
+    { etiqueta: "texting", archivo: "ME2_MEDIA/03_CONVERSACION/PROCESANDO/PROCESANDO_001.mp4" }
   ]
 };
 
@@ -55,6 +58,7 @@ function seleccionarVideo(contexto = {}, expresion = {}) {
     etiqueta: seleccionado.etiqueta,
     assetPath: seleccionado.archivo,
     assetName: path.basename(seleccionado.archivo),
+    mediaId: path.basename(seleccionado.archivo, path.extname(seleccionado.archivo)),
     loop: true
   };
 }

@@ -19,4 +19,4 @@ Raíz empaquetada: `app/src/main/assets/ME2_MEDIA/` · drop-in en runtime: `file
   `{"recursos": {"ALEGRIA_NORMAL_002": {"habilitado": false, "prioridad": 2, "duracion_ms": 6000}}}` (premium/adulto solo pueden agregarse, no quitarse).
 - Selección: `media/MediaSelector.kt` (categoría → intensidad más cercana → categoría/fallbacks → LOOP_NEUTRAL → cualquier video no adulto; anti-repetición inmediata; prioridad). Último recurso: `res/raw` vía `gallery/ClipCatalog`.
 - Estado: `media/AvatarStateMachine.kt`; integración en `MainActivity` (fin de clip = `Player.STATE_ENDED`).
-- Los clips actuales son PROVISIONALES (copiados desde `avatar/galeria/`, que se conserva). Detalle en la auditoría.
+- Los clips actuales son PROVISIONALES. ME2_MEDIA es la fuente única: `avatar/galeria/` (copias idénticas) y los mp4 de `res/raw` se eliminaron; el respaldo de `ClipCatalog` apunta a ME2_MEDIA. Clip sin clasificar: `avatar/sin_clasificar/` (fuera del APK).

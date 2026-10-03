@@ -3,11 +3,11 @@ package com.me2.android.gallery
 import android.content.Context
 import android.net.Uri
 import android.util.Log
-import com.me2.android.R
 import java.io.File
 
 /**
- * Local clip catalog: lists drop-in gallery + assets, falls back to res/raw demos.
+ * Local clip catalog: lists drop-in gallery + assets/videos, falls back to the bundled ME2_MEDIA library
+ * (fuente única de clips de la app; ya no hay copias mp4 en res/raw).
  *
  * TODO(gallery-ui): wire a RecyclerView/grid to [listAll] when the gallery screen ships.
  * Until then MainActivity uses [listByMood] for avatar playback (offline-first).
@@ -35,7 +35,7 @@ class ClipCatalog(context: Context) : GalleryRepository {
         if (fromFiles.isNotEmpty()) return fromFiles
         val fromAssets = scanAssets(normalized)
         if (fromAssets.isNotEmpty()) return fromAssets
-        return demoRawClips(normalized)
+        return demoMediaClips(normalized)
     }
 
     override fun findById(id: String): GalleryClip? =
@@ -96,31 +96,21 @@ class ClipCatalog(context: Context) : GalleryRepository {
             }
     }
 
-    private fun demoRawClips(mood: String): List<GalleryClip> {
-        val resIds = DEMO_RAW_BY_MOOD[mood].orEmpty()
-        return resIds.mapNotNull { resId ->
-            if (!isRawAvailable(resId)) return@mapNotNull null
-            val name = runCatching { appContext.resources.getResourceEntryName(resId) }
-                .getOrDefault("raw_$resId")
+    /** Respaldo offline: clips de assets/ME2_MEDIA (mismo id que MediaLibrary.toClip → anti-repetición coherente). */
+    private fun demoMediaClips(mood: String): List<GalleryClip> =
+        DEMO_MEDIA_BY_MOOD[mood].orEmpty().filter(::isAssetAvailable).map { archivo ->
             GalleryClip(
-                id = "raw:$name",
+                id = "me2:$archivo",
                 mood = mood,
-                displayName = name,
-                uri = Uri.parse("android.resource://$packageName/$resId"),
-                source = GalleryClip.Source.RAW,
-                carriesVoice = mood == MOOD_PRESENTACION,
-                rawResId = resId
+                displayName = archivo.substringAfterLast('/').substringBeforeLast('.'),
+                uri = Uri.parse("asset:///$MEDIA_ROOT/$archivo"),
+                source = GalleryClip.Source.ASSETS,
+                carriesVoice = mood == MOOD_PRESENTACION
             )
         }
-    }
 
-    private fun isRawAvailable(resId: Int): Boolean =
-        runCatching {
-            // Prefer entry-name resolve (works under Robolectric); Fd validates on device.
-            appContext.resources.getResourceEntryName(resId)
-            runCatching { appContext.resources.openRawResourceFd(resId)?.close() }
-            true
-        }.getOrDefault(false)
+    private fun isAssetAvailable(archivo: String): Boolean =
+        runCatching { appContext.assets.open("$MEDIA_ROOT/$archivo").close(); true }.getOrDefault(false)
 
     companion object {
         private const val TAG = "Me2ClipCatalog"
@@ -146,21 +136,23 @@ class ClipCatalog(context: Context) : GalleryRepository {
             MOOD_AGRADECIDA
         )
 
-        private val DEMO_RAW_BY_MOOD: Map<String, List<Int>> = mapOf(
-            MOOD_LOOP_NEUTRAL to listOf(
-                R.raw.me2_texting,
-                R.raw.avatar_calida_01,
-                R.raw.avatar_atenta_01,
-                R.raw.avatar_alegre_01,
-                R.raw.avatar_aliviada_01,
-                R.raw.avatar_agradecida_01
-            ),
-            MOOD_PRESENTACION to listOf(R.raw.avatar_presentacion_01),
-            MOOD_CALIDA to listOf(R.raw.avatar_calida_01, R.raw.me2_texting),
-            MOOD_ALEGRE to listOf(R.raw.avatar_alegre_01, R.raw.avatar_agradecida_01),
-            MOOD_ATENTA to listOf(R.raw.avatar_atenta_01, R.raw.me2_texting),
-            MOOD_ALIVIADA to listOf(R.raw.avatar_aliviada_01, R.raw.avatar_calida_01),
-            MOOD_AGRADECIDA to listOf(R.raw.avatar_agradecida_01, R.raw.avatar_alegre_01)
+        const val MEDIA_ROOT = "ME2_MEDIA"
+        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_001.mp4"          // ex avatar_calida_01
+        private const val PROCESANDO = "03_CONVERSACION/PROCESANDO/PROCESANDO_001.mp4" // ex me2_texting
+        private const val ATENCION = "03_CONVERSACION/ATENCION/ATENCION_001.mp4"       // ex avatar_atenta_01
+        private const val ALEGRIA = "02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4"      // ex avatar_alegre_01
+        private const val EMPATIA = "02_REACCIONES/EMPATIA/EMPATIA_NORMAL_001.mp4"     // ex avatar_aliviada_01
+        private const val AFECTO = "02_REACCIONES/AFECTO/AFECTO_NORMAL_002.mp4"        // ex avatar_agradecida_01
+
+        /** Mismo mapeo que el viejo DEMO_RAW_BY_MOOD, apuntando a los originales de ME2_MEDIA (idénticos por hash). */
+        private val DEMO_MEDIA_BY_MOOD: Map<String, List<String>> = mapOf(
+            MOOD_LOOP_NEUTRAL to listOf(PROCESANDO, NEUTRAL, ATENCION, ALEGRIA, EMPATIA, AFECTO),
+            MOOD_PRESENTACION to listOf("00_PRESENTACION/PRESENTACION_001.mp4", "00_PRESENTACION/PRESENTACION_002.mp4", "00_PRESENTACION/PRESENTACION_003.mp4"),
+            MOOD_CALIDA to listOf(NEUTRAL, PROCESANDO),
+            MOOD_ALEGRE to listOf(ALEGRIA, AFECTO),
+            MOOD_ATENTA to listOf(ATENCION, PROCESANDO),
+            MOOD_ALIVIADA to listOf(EMPATIA, NEUTRAL),
+            MOOD_AGRADECIDA to listOf(AFECTO, ALEGRIA)
         )
 
         fun normalizeMood(mood: String): String {
