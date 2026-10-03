@@ -77,4 +77,5 @@ test("anónimo (dev): no lee memoria ni historial del servidor ni persiste accio
   const r = await orquestadorChat("poneme una alarma a las 7:30", { userId: "anonimo" });
   assert.ok(!/tenis/i.test(r.debug.contexto));
   assert.equal(gestorDeAlarmas.obtenerAlarmasPorUsuario("anonimo").length, antes);
+  assert.equal(r.acciones.alarma?.accion, "crear_local", "la alarma del demo vive solo en el teléfono");
 });

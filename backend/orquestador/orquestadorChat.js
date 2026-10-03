@@ -109,7 +109,7 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
 function ejecutarAcciones(userId, mensaje, persistir) {
   const acciones = [];
   const resultado = { alarma: null, evento: null };
-  if (!userId || userId === "anonimo") return { acciones, resultado };
+  if (!userId) return { acciones, resultado };
 
   const pedidoAlarma = detectarAlarma(mensaje);
   // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
@@ -122,6 +122,11 @@ function ejecutarAcciones(userId, mensaje, persistir) {
   if (persistir === false && pedidoAlarma?.accion === "cancelar") {
     resultado.alarma = { accion: "cancelar_local", hora: pedidoAlarma.hora || null };
     acciones.push(`Alarma CANCELADA en el teléfono${pedidoAlarma.hora ? ` (${pedidoAlarma.hora})` : " (la próxima)"}.`);
+    return { acciones, resultado };
+  }
+  // Anónimo (dev/demo): solo acciones que viven en el teléfono; nada se guarda en el servidor bajo "anonimo".
+  if (userId === "anonimo") {
+    if (pedidoAlarma || detectarEvento(mensaje)) acciones.push("Modo demo sin cuenta: esta acción no se pudo guardar; no se creó nada.");
     return { acciones, resultado };
   }
   if (pedidoAlarma?.accion === "crear" && pedidoAlarma.hora && persistir !== false) {
