@@ -26,6 +26,8 @@ class Me2App : Application() {
             val started = System.currentTimeMillis()
             runCatching { SecurePreferences.open(this, SESSION_PREFS, listOf("me2_session")) }
             runCatching { SecurePreferences.open(this, ALARM_PREFS) }
+            runCatching { com.me2.android.media.MediaLibrary(this).recursos() }
+                .onFailure { Log.w(TAG, "prewarm MediaLibrary falló", it) }
             runCatching { Me2MemoryDatabase.getInstance(this).openHelper.writableDatabase }
                 .onFailure { Log.w(TAG, "prewarm Room falló", it) }
             Log.i(TAG, "prewarm listo en ${System.currentTimeMillis() - started} ms")

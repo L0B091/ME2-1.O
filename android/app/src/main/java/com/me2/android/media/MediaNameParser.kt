@@ -8,6 +8,8 @@ import java.text.Normalizer
  */
 object MediaNameParser {
     private val VARIANTE = Regex("_(\\d{1,4})$")
+    // Precompilada: normalizar() corre por cada archivo de la biblioteca (compilar el regex en cada llamada era ANR).
+    private val MARCAS = Regex("\\p{M}+")
     private val EXT_VIDEO = setOf("mp4", "webm", "mkv", "3gp")
     private val EXT_GIF = setOf("gif", "webp")
     private val EXT_IMAGEN = setOf("png", "jpg", "jpeg")
@@ -25,7 +27,7 @@ object MediaNameParser {
     )
 
     fun normalizar(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARCAS, "")
             .uppercase().replace('-', '_').replace(' ', '_')
 
     fun tipoDe(nombre: String): MediaTipo? = when (nombre.substringAfterLast('.', "").lowercase()) {

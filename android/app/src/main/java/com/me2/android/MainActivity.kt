@@ -308,7 +308,10 @@ class MainActivity : AppCompatActivity() {
         if (!::binding.isInitialized) return
         sessionStartedAt = SystemClock.elapsedRealtime()
         // Clips nuevos (drop-in en filesDir/ME2_MEDIA) se descubren sin tocar código.
-        if (::mediaLibrary.isInitialized) runCatching { mediaLibrary.refrescar() }
+        if (::mediaLibrary.isInitialized) {
+            val library = mediaLibrary
+            lifecycleScope.launch(Dispatchers.IO) { runCatching { library.refrescar() } }
+        }
         if (!presentationSequenceActive) {
             runCatching { restoreAvatarPresence(forceReload = currentAvatarClipId == null) }
         }

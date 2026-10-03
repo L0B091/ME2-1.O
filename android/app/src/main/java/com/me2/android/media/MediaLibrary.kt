@@ -16,7 +16,11 @@ import java.io.File
  */
 class MediaLibrary(context: Context) {
     private val appContext = context.applicationContext
-    @Volatile private var cache: List<MediaResource>? = null
+    // Cache por proceso (por Application): Me2App la precalienta en segundo plano y el refresco de onResume corre
+    // en Dispatchers.IO, así el descubrimiento (assets.list recursivo + parseo) no bloquea el hilo principal.
+    private var cache: List<MediaResource>?
+        get() = synchronized(caches) { caches[appContext] }
+        set(value) { synchronized(caches) { if (value == null) caches.remove(appContext) else caches[appContext] = value } }
 
     fun recursos(): List<MediaResource> = cache ?: descubrir().also { cache = it }
 
@@ -72,6 +76,7 @@ class MediaLibrary(context: Context) {
 
     companion object {
         private const val TAG = "Me2MediaLibrary"
+        private val caches = java.util.WeakHashMap<Context, List<MediaResource>>()
         const val ROOT = "ME2_MEDIA"
         const val METADATA = "metadata.json"
 
