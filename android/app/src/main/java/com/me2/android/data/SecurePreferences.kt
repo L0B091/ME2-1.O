@@ -23,8 +23,30 @@ object SecurePreferences {
     @Volatile var lastOpenWasVolatile: Boolean = false
         private set
 
+    // Instancias ya abiertas por Application: crear MasterKey + EncryptedSharedPreferences cuesta operaciones de
+    // Keystore y disco (era causa de ANR al construir stores varias veces en el hilo principal).
+    private val opened = java.util.WeakHashMap<Context, MutableMap<String, SharedPreferences>>()
+
     fun open(context: Context, name: String, legacyPlainNames: List<String> = emptyList()): SharedPreferences {
         val appContext = context.applicationContext
+        synchronized(opened) { opened[appContext]?.get(name) }?.let { return it }
+        // Un lock por nombre: si el precalentamiento en segundo plano ya lo está abriendo, se espera esa misma instancia.
+        return synchronized(lockFor(name)) {
+            synchronized(opened) { opened[appContext]?.get(name) } ?: openUncached(appContext, name, legacyPlainNames).also { prefs ->
+                synchronized(opened) { opened.getOrPut(appContext) { mutableMapOf() }[name] = prefs }
+            }
+        }
+    }
+
+    /** Olvida la instancia cacheada (p. ej. tras borrar el archivo cifrado). */
+    fun forget(context: Context, name: String) {
+        synchronized(opened) { opened[context.applicationContext]?.remove(name) }
+    }
+
+    private val locks = mutableMapOf<String, Any>()
+    private fun lockFor(name: String): Any = synchronized(locks) { locks.getOrPut(name) { Any() } }
+
+    private fun openUncached(appContext: Context, name: String, legacyPlainNames: List<String>): SharedPreferences {
         legacyPlainNames.filter { it != name }.forEach { deleteLegacyPlain(appContext, it) }
         val encrypted = runCatching { create(appContext, name) }.recoverCatching {
             Log.w(TAG, "EncryptedSharedPreferences falló (${it.javaClass.simpleName}); se regenera")

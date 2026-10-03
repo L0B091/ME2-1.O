@@ -20,6 +20,11 @@ import com.me2.android.data.UserSession
 import com.me2.android.databinding.ActivityLoginBinding
 import com.me2.android.net.Me2BackendClient
 import kotlin.concurrent.thread
+import androidx.lifecycle.lifecycleScope
+import com.me2.android.data.SecurePreferences
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Product login is Google Sign-In only. No email/password UI.
@@ -59,9 +64,28 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
+        // Keystore/EncryptedSharedPreferences y lectura de sesión fuera del hilo principal (evita ANR en arranque en frío).
+        binding.googleButton.isEnabled = false
+        binding.previewDemoButton.isEnabled = false
+        lifecycleScope.launch {
+            val existing = withContext(Dispatchers.IO) { openSessionStorage() }
+            if (isFinishing || isDestroyed) return@launch
+            binding.googleButton.isEnabled = true
+            binding.previewDemoButton.isEnabled = true
+            if (existing != null) {
+                openMain(demoPreview = existing.isDemo)
+                return@launch
+            }
+            setupLoginUi()
+        }
+    }
+
+    /** Corre en Dispatchers.IO. Devuelve la sesión a reutilizar (o null si hay que mostrar el login). */
+    private fun openSessionStorage(): UserSession? {
         sessionStorage = runCatching { SessionStorage(this) }.getOrElse { firstError ->
             Log.e(TAG, "SessionStorage init failed", firstError)
             runCatching {
+                SecurePreferences.forget(this, "me2_session_secure")
                 deleteSharedPreferences("me2_session_secure")
             }
             SessionStorage(this)
@@ -74,14 +98,14 @@ class LoginActivity : AppCompatActivity() {
             existing = null
         }
         if (existing != null) {
-            if (!wasMainLaunchUnstable()) {
-                openMain(demoPreview = existing.isDemo)
-                return
-            }
+            if (!wasMainLaunchUnstable()) return existing
             Log.w(TAG, "Skipping auto-route after unstable Main launch; staying on login")
             runCatching { sessionStorage.clear() }
         }
+        return null
+    }
 
+    private fun setupLoginUi() {
         binding.googleButton.visibility = View.VISIBLE
         setupPreviewDemo()
 
@@ -139,10 +163,12 @@ class LoginActivity : AppCompatActivity() {
         }
         binding.previewDemoButton.visibility = View.VISIBLE
         binding.previewDemoButton.setOnClickListener {
-            val demo = UserSession.demoPreview()
-            sessionStorage.saveUserCommit(demo)
-            Toast.makeText(this, getString(R.string.login_preview_demo_toast), Toast.LENGTH_LONG).show()
-            openMain(demoPreview = true)
+            binding.previewDemoButton.isEnabled = false
+            lifecycleScope.launch {
+                withContext(Dispatchers.IO) { sessionStorage.saveUserCommit(UserSession.demoPreview()) }
+                Toast.makeText(this@LoginActivity, getString(R.string.login_preview_demo_toast), Toast.LENGTH_LONG).show()
+                openMain(demoPreview = true)
+            }
         }
     }
 
@@ -194,11 +220,12 @@ class LoginActivity : AppCompatActivity() {
                     premiumUntilMillis = 0L
                 )
                 val previousId = sessionStorage.loadUser()?.takeUnless { it.isDemo }?.id
+                // Escritura de sesión y migración de datos locales en este hilo de fondo, no en el principal.
+                sessionStorage.saveUserCommit(session)
+                UserIdMigration.migrate(this, fallbackSession.id, session.id)
+                UserIdMigration.migrate(this, previousId, session.id)
                 runOnUiThread {
-                    sessionStorage.saveUserCommit(session)
                     setAuthBusy(false)
-                    UserIdMigration.migrate(this, fallbackSession.id, session.id)
-                    UserIdMigration.migrate(this, previousId, session.id)
                     openMain(demoPreview = false)
                 }
             }.onFailure { error ->

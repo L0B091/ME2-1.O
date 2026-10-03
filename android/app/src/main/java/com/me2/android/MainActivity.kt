@@ -1,5 +1,8 @@
 package com.me2.android
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import androidx.lifecycle.lifecycleScope
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -244,18 +247,23 @@ class MainActivity : AppCompatActivity() {
             syncPremiumState()
             runCatching { handleIncomingIntent(intent) }
             // Alarmas/recordatorios/iniciativa: todo se re-arma desde disco (funciona offline y tras muerte del proceso).
-            runCatching { alarmScheduler.restoreAll() }
-            runCatching { Me2SyncWorker.enqueueIfPending(this) }
-            syncBackendAlarms()
-            runCatching {
-                if (initiativeStore.isEnabled(currentSession.id)) {
-                    Me2InitiativeTimer(this).restore(currentSession.id)
-                    initiativeScheduler.ensureScheduled()
-                    if (initiativeStore.snapshot(currentSession.id).optLong("ultimaInteraccion", 0L) <= 0L) {
-                        initiativeStore.observeInteraction(currentSession.id)
+            // Es trabajo de disco/AlarmManager sin UI: va a Dispatchers.IO para no bloquear el arranque (ANR).
+            // El video del avatar y las frases offline no dependen de esto y siguen arrancando igual en el hilo principal.
+            val bootSessionId = currentSession.id
+            lifecycleScope.launch(Dispatchers.IO) {
+                runCatching { alarmScheduler.restoreAll() }
+                runCatching { Me2SyncWorker.enqueueIfPending(this@MainActivity) }
+                runCatching {
+                    if (initiativeStore.isEnabled(bootSessionId)) {
+                        Me2InitiativeTimer(this@MainActivity).restore(bootSessionId)
+                        initiativeScheduler.ensureScheduled()
+                        if (initiativeStore.snapshot(bootSessionId).optLong("ultimaInteraccion", 0L) <= 0L) {
+                            initiativeStore.observeInteraction(bootSessionId)
+                        }
                     }
-                }
-            }.onFailure { Log.e(TAG, "initiative bootstrap failed", it) }
+                }.onFailure { Log.e(TAG, "initiative bootstrap failed", it) }
+            }
+            syncBackendAlarms()
             checkInHandler.postDelayed(checkInTick, 30_000L)
             // Mark launch stable after UI is up so a later crash does not immediately loop forever,
             // but a crash during onCreate leaves pending=true and Login stays put.
