@@ -21,7 +21,7 @@ class SessionStorage(context: Context) {
             .putString(KEY_NAME, session.displayName)
             .putString(KEY_EMAIL, session.email)
             .putString(KEY_ID, session.id)
-            .putString(KEY_AUTH_TOKEN, session.authToken)
+            .putString(KEY_AUTH_TOKEN, liveToken(session))
             .putString(KEY_PHOTO_URL, session.photoUrl)
             .putBoolean(KEY_EMAIL_VERIFIED, session.emailVerified)
             .putLong(KEY_PREMIUM_UNTIL, session.premiumUntilMillis)
@@ -38,13 +38,20 @@ class SessionStorage(context: Context) {
             .putString(KEY_NAME, session.displayName)
             .putString(KEY_EMAIL, session.email)
             .putString(KEY_ID, session.id)
-            .putString(KEY_AUTH_TOKEN, session.authToken)
+            .putString(KEY_AUTH_TOKEN, liveToken(session))
             .putString(KEY_PHOTO_URL, session.photoUrl)
             .putBoolean(KEY_EMAIL_VERIFIED, session.emailVerified)
             .putLong(KEY_PREMIUM_UNTIL, session.premiumUntilMillis)
             .putLong(KEY_USAGE_MINUTES, session.usageMinutes)
             .commit()
     }
+
+    /**
+     * Si el token se renovó en silencio (Me2SessionRecovery), una copia vieja de UserSession en memoria no debe pisar
+     * el token nuevo al guardarse (p. ej. updateCurrentSession con el premium del chat).
+     */
+    private fun liveToken(session: UserSession): String? =
+        com.me2.android.net.Me2SessionRecovery.currentToken(session.authToken)
 
     fun loadUser(): UserSession? {
         val id = preferences.getString(KEY_ID, null) ?: return null

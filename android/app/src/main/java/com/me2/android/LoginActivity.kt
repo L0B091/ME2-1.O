@@ -98,8 +98,12 @@ class LoginActivity : AppCompatActivity() {
         }
         if (existing != null) {
             if (!wasMainLaunchUnstable()) return existing
-            Log.w(TAG, "Skipping auto-route after unstable Main launch; staying on login")
-            runCatching { sessionStorage.clear() }
+            // Fallos repetidos al abrir Main: se muestra el login una vez como salvavidas, pero la sesión real NO se
+            // borra (regla: nunca pedir login de nuevo salvo cierre explícito). Se resetea el contador para que la
+            // próxima apertura vuelva directo al chat. La sesión demo sí se descarta.
+            Log.w(TAG, "Skipping auto-route after unstable Main launch; staying on login (session kept)")
+            if (existing.isDemo) runCatching { sessionStorage.clear() }
+            markMainLaunchStable(this)
         }
         return null
     }
@@ -147,12 +151,11 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun wasMainLaunchUnstable(): Boolean {
-        val prefs = getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
-        val pending = prefs.getBoolean(KEY_MAIN_PENDING, false)
-        val crashes = prefs.getInt(KEY_MAIN_CRASHES, 0)
-        return pending || crashes >= 1
-    }
+    private fun wasMainLaunchUnstable(): Boolean = isLaunchUnstable(
+        getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE).let {
+            it.getBoolean(KEY_MAIN_PENDING, false) to it.getInt(KEY_MAIN_CRASHES, 0)
+        }
+    )
 
     private fun setupPreviewDemo() {
         if (!ApiConfig.demoLoginEnabled) {
@@ -265,10 +268,22 @@ class LoginActivity : AppCompatActivity() {
         const val KEY_MAIN_PENDING = "main_pending"
         const val KEY_MAIN_CRASHES = "main_crashes"
 
+        /**
+         * Un arranque interrumpido (pending: p. ej. el sistema mató el proceso antes de 2,5 s) cuenta como un fallo;
+         * recién con 2 fallos seguidos se considera inestable. Antes un solo cierre a destiempo borraba la sesión.
+         */
+        fun isLaunchUnstable(state: Pair<Boolean, Int>): Boolean {
+            val (pending, crashes) = state
+            return crashes + (if (pending) 1 else 0) >= 2
+        }
+
         fun markMainLaunchStart(context: android.content.Context) {
-            context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
-                .edit()
+            val prefs = context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE)
+            // El arranque anterior nunca llegó a estable: se suma como fallo (detecta crash-loops nativos).
+            val crashes = prefs.getInt(KEY_MAIN_CRASHES, 0) + (if (prefs.getBoolean(KEY_MAIN_PENDING, false)) 1 else 0)
+            prefs.edit()
                 .putBoolean(KEY_MAIN_PENDING, true)
+                .putInt(KEY_MAIN_CRASHES, crashes)
                 .apply()
         }
 

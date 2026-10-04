@@ -345,7 +345,8 @@ class MainActivity : AppCompatActivity() {
         } catch (error: Throwable) {
             Log.e(TAG, "Main onCreate failed", error)
             LoginActivity.markMainLaunchFailed(this)
-            runCatching { sessionStorage.clear() }
+            // Una sesión real nunca se borra por un fallo de UI (solo el cierre explícito la borra); la demo sí.
+            if (currentSession.isDemo) runCatching { sessionStorage.clear() }
             Toast.makeText(this, "ME2 no pudo abrir la UI. Volvé a intentar desde login.", Toast.LENGTH_LONG).show()
             startActivity(Intent(this, LoginActivity::class.java))
             finish()
@@ -1457,6 +1458,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun completeSignOut() {
+        // Las sesiones no vencen solas: el cierre explícito las revoca en el backend (best effort, en segundo plano).
+        currentSession.authToken?.takeIf { it.isNotBlank() && !currentSession.isDemo && backendClient.isConfigured() }?.let { token ->
+            thread(name = "me2-logout") { runCatching { backendClient.logout(token) } }
+        }
+        com.me2.android.net.Me2SessionRecovery.reset()
         val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestEmail()
             .build()

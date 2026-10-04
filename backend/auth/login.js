@@ -2,14 +2,20 @@ import crypto from "crypto";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
 import storage from "../utils/jsonStorage.js";
 
-const DURACION_TOKEN = 1000 * 60 * 60 * 24 * 7;
+/**
+ * Regla de producto: una vez registrado, ME2 no vuelve a pedir login salvo que el usuario cierre sesión
+ * explícitamente (POST /api/auth/logout). Las sesiones NO vencen por tiempo: solo se revocan por logout, por
+ * reemplazo de la cuenta (userId distinto) o por superar el máximo de sesiones vivas por usuario (se descarta la
+ * más vieja; el teléfono la recupera en silencio con un ID token nuevo de Google).
+ */
+export const MAX_SESIONES_POR_USUARIO = 10;
 const SESSION_NAMESPACE = "sesiones_auth";
 const SESSION_KEY = "tokens";
 
 /**
  * Sesiones indexadas por SHA-256 del token: en memoria y en disco solo queda el hash (B4). Un volcado de
  * data/sesiones_auth no permite suplantar a nadie.
- * @type {Map<string, {tokenHash:string,userId:string,email:string,creado:number,expira:number}>}
+ * @type {Map<string, {tokenHash:string,userId:string,email:string,creado:number}>}
  */
 const sesiones = new Map();
 
@@ -37,7 +43,8 @@ function cargarSesiones() {
   let migradas = false;
   for (const [clave, sesion] of Object.entries(tokens)) {
     if (!sesion || typeof sesion !== "object") continue;
-    if (!Number.isFinite(sesion.expira) || sesion.expira <= ahora) continue;
+    // Sesiones guardadas con el vencimiento viejo de 7 días (campo `expira`) siguen valiendo: ya no vencen.
+    if ("expira" in sesion) migradas = true;
     // Formato viejo: la clave era el token en claro → se migra a su hash.
     const tokenHash = ES_HASH.test(clave) ? clave : hashToken(clave);
     if (tokenHash !== clave || sesion.token) migradas = true;
@@ -45,22 +52,16 @@ function cargarSesiones() {
       tokenHash,
       userId: String(sesion.userId || ""),
       email: String(sesion.email || ""),
-      creado: Number(sesion.creado) || ahora,
-      expira: Number(sesion.expira)
+      creado: Number(sesion.creado) || ahora
     });
   }
   if (migradas) persistirSesiones();
 }
 
 function persistirSesiones() {
-  const ahora = Date.now();
   const tokens = {};
   for (const [tokenHash, sesion] of sesiones.entries()) {
-    if (sesion.expira <= ahora) {
-      sesiones.delete(tokenHash);
-      continue;
-    }
-    tokens[tokenHash] = { userId: sesion.userId, email: sesion.email, creado: sesion.creado, expira: sesion.expira };
+    tokens[tokenHash] = { userId: sesion.userId, email: sesion.email, creado: sesion.creado };
   }
   storage.writeGlobalData(SESSION_NAMESPACE, SESSION_KEY, { tokens });
 }
@@ -76,24 +77,32 @@ function crearHash(password, salt = crypto.randomBytes(16).toString("hex")) {
   return { passwordHash, passwordSalt: salt };
 }
 
+/** Cada login nuevo (p. ej. re-login silencioso) suma una sesión: se conservan las N más recientes del usuario. */
+function podarSesionesDelUsuario(userId) {
+  const delUsuario = Array.from(sesiones.values())
+    .filter(sesion => sesion.userId === userId)
+    .sort((a, b) => b.creado - a.creado);
+  for (const vieja of delUsuario.slice(MAX_SESIONES_POR_USUARIO)) sesiones.delete(vieja.tokenHash);
+}
+
 function emitirSesion(usuario) {
   const token = generarToken();
   const creado = Date.now();
-  const expira = creado + DURACION_TOKEN;
 
   const tokenHash = hashToken(token);
   sesiones.set(tokenHash, {
     tokenHash,
     userId: usuario.id,
     email: usuario.email,
-    creado,
-    expira
+    creado
   });
+  podarSesionesDelUsuario(usuario.id);
   persistirSesiones();
 
   return {
     token,
-    expiraEn: expira,
+    // Sin vencimiento: la sesión dura hasta el logout explícito.
+    expiraEn: null,
     perfil: {
       userId: usuario.id,
       email: usuario.email,
@@ -165,12 +174,6 @@ function validarToken(token) {
   const sesion = buscarSesion(token);
   if (!sesion) return null;
 
-  if (Date.now() > sesion.expira) {
-    sesiones.delete(sesion.tokenHash);
-    persistirSesiones();
-    return null;
-  }
-
   const usuario = usuariosMemoria.obtenerUsuario(sesion.email);
   // El token pertenece a un usuario concreto: si el registro del email fue reemplazado (p. ej. una cuenta local
   // previa descartada al vincular Google), los tokens viejos dejan de valer.
@@ -185,18 +188,17 @@ function validarToken(token) {
       leyenda: usuario.leyenda,
       premiumUntil: usuario.premiumUntil
     },
-    expira: sesion.expira
+    expira: null
   };
 }
 
 function sesionesActivas() {
-  const ahora = Date.now();
   return Array.from(sesiones.values())
-    .filter(sesion => sesion.expira > ahora)
     .map(sesion => ({
       userId: sesion.userId,
       email: sesion.email,
-      expira: new Date(sesion.expira).toISOString()
+      creado: new Date(sesion.creado).toISOString(),
+      expira: null
     }));
 }
 
@@ -210,6 +212,11 @@ function cerrarSesion(token) {
 /** Login local (email + contraseña): solo desarrollo/pruebas. Producción: Google es el único método. */
 export function localAuthEnabled() {
   return String(process.env.LOCAL_AUTH_ENABLED || "").trim().toLowerCase() === "true";
+}
+
+/** Solo tests: relee las sesiones desde disco (simula un reinicio del servidor). */
+export function _recargarSesionesDesdeDisco() {
+  cargarSesiones();
 }
 
 export default {

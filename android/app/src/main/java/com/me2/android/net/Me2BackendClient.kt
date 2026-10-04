@@ -134,17 +134,28 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
 
     /** Descarga autenticada (medios del chat protegidos por sesión). */
     fun fetchBytes(url: String, authToken: String?): ByteArray {
+        val attach = BackendUrlPolicy.mayAttachToken(baseUrl, url)
+        return Me2SessionRecovery.withRecovery(authToken?.takeIf { attach }) { token -> fetchBytesOnce(url, token) }
+    }
+
+    private fun fetchBytesOnce(url: String, authToken: String?): ByteArray {
         val c = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000; readTimeout = 20_000
             // El token de sesión solo viaja al origen del backend.
             authToken?.takeIf { BackendUrlPolicy.mayAttachToken(baseUrl, url) }?.let { setRequestProperty("Authorization", "Bearer $it") }
         }
         try {
+            if (c.responseCode == 401) throw AuthRequiredException("HTTP 401")
             if (c.responseCode !in 200..299) error("HTTP ${c.responseCode}")
             return c.inputStream.use { it.readBytes() }
         } finally {
             c.disconnect()
         }
+    }
+
+    /** Cierre de sesión explícito: revoca el token en el backend (best effort; las sesiones no vencen solas). */
+    fun logout(authToken: String) {
+        request(method = "POST", path = LOGOUT_PATH, authToken = authToken)
     }
 
     fun isConfigured(): Boolean = ApiConfig.isBackendReady() && baseUrl.isNotEmpty()
@@ -485,11 +496,25 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         return if (data.optBoolean("premiumActivo", false)) betaPremiumMillis else null
     }
 
+    /**
+     * Toda llamada autenticada usa el token vigente (Me2SessionRecovery) y, ante un 401, recupera la sesión en
+     * silencio y reintenta una vez: nunca se le vuelve a pedir login al usuario. El logout no se reintenta.
+     */
     private fun request(
         method: String,
         path: String,
         authToken: String? = null,
         body: JSONObject? = null
+    ): JSONObject {
+        if (path == LOGOUT_PATH) return requestOnce(method, path, Me2SessionRecovery.currentToken(authToken), body)
+        return Me2SessionRecovery.withRecovery(authToken) { token -> requestOnce(method, path, token, body) }
+    }
+
+    private fun requestOnce(
+        method: String,
+        path: String,
+        authToken: String?,
+        body: JSONObject?
     ): JSONObject {
         check(isConfigured()) { "BACKEND_BASE_URL no configurada." }
         val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
@@ -520,9 +545,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             val responseJson = responseText.takeIf { it.isNotBlank() }?.let(::JSONObject) ?: JSONObject()
 
             if (responseCode !in 200..299) {
-                throw IllegalStateException(responseJson.optString("error").ifBlank {
-                    "Error HTTP $responseCode"
-                })
+                val message = responseJson.optString("error").ifBlank { "Error HTTP $responseCode" }
+                if (responseCode == 401) throw AuthRequiredException(message)
+                throw IllegalStateException(message)
             }
             return responseJson
         } finally {
@@ -545,5 +570,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             }
         }
         return null
+    }
+
+    private companion object {
+        const val LOGOUT_PATH = "/api/auth/logout"
     }
 }

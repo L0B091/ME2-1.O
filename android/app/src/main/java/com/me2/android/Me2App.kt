@@ -19,6 +19,8 @@ class Me2App : Application() {
         val underTest = Build.FINGERPRINT == "robolectric"
         if (BuildConfig.DEBUG && !underTest) enableStrictMode()
         if (!underTest) prewarm()
+        // Ante un 401 la sesión se recupera en silencio (nunca se vuelve a pedir login salvo cierre explícito).
+        com.me2.android.net.Me2SessionRecovery.renewer = com.me2.android.auth.GoogleSilentRenewer(this)
     }
 
     private fun prewarm() {
