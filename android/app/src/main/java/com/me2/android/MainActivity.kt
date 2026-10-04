@@ -595,13 +595,13 @@ class MainActivity : AppCompatActivity() {
         initiative?.let { initiativeStore.responded(currentSession.id, it.getString("id"), responseText = content) }
         binding.messageInput.text?.clear()
         // Protocolo despertador: la alarma solo se considera respondida cuando el usuario envía un INPUT en el Chat.
-        answerPendingAlarms()
+        val alarmaRespondida = answerPendingAlarms()
         runCatching { Me2InitiativeTimer(this).arm(currentSession.id) }
         // Mientras ME2 procesa: estado de conversación (PENSANDO → fallback neutral si no hay clip).
         // Sin red no hay "pensando": el contenedor queda en el pool neutral/escribiendo (replyOffline).
         if (backendClient.isOnline(this)) playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
         renderConversation()
-        dispatchChat(content, initiative)
+        dispatchChat(content, initiative, alarmaRespondida)
     }
 
     private fun renderConversation() {
@@ -650,7 +650,7 @@ class MainActivity : AppCompatActivity() {
         hydrateConversation()
     }
 
-    private fun dispatchChat(content: String, initiative: JSONObject? = null) {
+    private fun dispatchChat(content: String, initiative: JSONObject? = null, alarmaRespondida: JSONObject? = null) {
         val backendReady = backendClient.isConfigured() && backendClient.isOnline(this)
         // Demo opens without Google. If backend is up, still hit /chat so LLM can be tested.
         // If backend is down, keep a local demo reply (no crash).
@@ -682,7 +682,7 @@ class MainActivity : AppCompatActivity() {
         binding.sendButton.isEnabled = false
         thread {
             runCatching {
-                backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot))
+                backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot), alarmaRespondida)
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
@@ -1298,13 +1298,15 @@ class MainActivity : AppCompatActivity() {
 
     /**
      * Protocolo despertador: el INPUT del usuario responde las escalaciones en curso (estado persistido).
-     * Con red se informa al backend (devuelve el clima); sin red queda pendiente de sync y se muestra el clima cacheado.
+     * Con red (también en demo, sin cuenta) la respuesta la redacta Dolphin en este mismo turno: se le pasa la alarma
+     * respondida como dato y, si hay cuenta, se informa al backend. Sin red queda pendiente de sync y se muestra el
+     * clima cacheado. Devuelve la alarma respondida para el contexto de /chat.
      */
-    private fun answerPendingAlarms() {
+    private fun answerPendingAlarms(): JSONObject? {
         val answered = runCatching { alarmScheduler.answerActive(currentSession.id) }.getOrDefault(emptyList())
-        if (answered.isEmpty()) return
+        if (answered.isEmpty()) return null
         answered.forEach { notificationCoordinator.cancelAlarmNotifications(it.id) }
-        val online = !currentSession.authToken.isNullOrBlank() && backendClient.isConfigured() && backendClient.isOnline(this)
+        val online = backendClient.isConfigured() && backendClient.isOnline(this)
         if (online) {
             answered.filter { it.syncState == StoredAlarmRecord.SYNC_ANSWER && it.remoteId != null }.forEach { r ->
                 resolveAlarmEvent(r.remoteId!!, r.firedStage) { Me2AlarmStore(this).remove(r.id) }
@@ -1315,6 +1317,7 @@ class MainActivity : AppCompatActivity() {
             val cached = sessionStorage.loadLastTemperature()
             if (cached.any(Char::isDigit)) appendAssistantReply(cached, "NOTICE", "CLIMA")
         }
+        return alarmaRespondidaContext(answered)
     }
 
     /** Acciones del turno: alarma creada/cancelada en el teléfono, alarma del servidor, evento → recordatorio local. */
@@ -1326,7 +1329,11 @@ class MainActivity : AppCompatActivity() {
                     "crear_local" -> {
                         val hora = a.optString("hora")
                         if (hora.isNotBlank()) {
-                            alarmScheduler.createLocalAlarm(currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty())
+                            // Textos de los 3 intentos = plan del orquestador (sin red, banco offline al sonar).
+                            alarmScheduler.createLocalAlarm(
+                                currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty(),
+                                com.me2.android.net.AlarmDispatchStage.parsePlan(a.optJSONArray("dispatchPlan"))
+                            )
                             // Sin permiso de notificaciones la alarma no se ve: se vuelve a pedir en este momento.
                             ensureNotificationPermission()
                         }
@@ -1528,4 +1535,12 @@ class MainActivity : AppCompatActivity() {
         sessionStorage.saveUser(currentSession)
     }
 
+}
+
+/** Dato para /chat: la alarma más reciente que el INPUT respondió (hora, título, último intento que sonó). */
+internal fun alarmaRespondidaContext(answered: List<StoredAlarmRecord>): JSONObject? {
+    val r = answered.filter { it.kind == StoredAlarmRecord.KIND_ALARM }.maxByOrNull { it.firedStage } ?: return null
+    return runCatching {
+        JSONObject().put("hora", r.hour).put("titulo", r.title).put("intento", r.firedStage.coerceIn(1, 3))
+    }.getOrNull()
 }

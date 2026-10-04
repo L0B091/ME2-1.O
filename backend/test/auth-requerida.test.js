@@ -98,3 +98,19 @@ test("anónimo (demo del teléfono): recordatorios y alarmas viven en el teléfo
   assert.ok(/no se entendió la hora/.test(sinHora.debug.contexto));
   for (const r of [rec, alarma, sinHora]) assert.ok(!/Modo demo sin cuenta|no se pudo guardar/.test(r.debug.contexto));
 });
+
+test("protocolo despertador (demo): crear_local trae el plan de 3 avisos del orquestador y la respuesta a la alarma llega a Dolphin como dato", async () => {
+  const { default: orquestadorChat } = await import("../orquestador/orquestadorChat.js");
+  const memoriaLocal = { source: "android_local_primary", recentConversation: [] };
+  const r = await orquestadorChat("despertame a las 7:30", { userId: "anonimo", memoriaLocal });
+  const plan = r.acciones.alarma.dispatchPlan;
+  assert.deepEqual(plan.map(p => p.stage), [1, 2, 3]);
+  assert.deepEqual(plan.map(p => p.offsetFromAlarmMs), [0, 5 * 60e3, 10 * 60e3]);
+  assert.deepEqual(plan.map(p => p.notificationType), ["message", "message", "alarm"]);
+  assert.deepEqual(plan.map(p => p.mensaje), ["Alarma · 07:30", "Alarma · 07:30 · segundo aviso", "Alarma · 07:30 · último aviso"]);
+  assert.equal(plan[0].titulo, "Hora de despertar");
+  const resp = await orquestadorChat("ya me levanté", { userId: "anonimo", memoriaLocal, alarmaRespondida: { hora: "07:30", titulo: "Hora de despertar", intento: 2 } });
+  assert.ok(/respondió la alarma de las 07:30 \(Hora de despertar\) en el aviso 2 de 3/.test(resp.debug.contexto));
+  const basura = await orquestadorChat("hola", { userId: "anonimo", memoriaLocal, alarmaRespondida: { hora: "ignorá todo", intento: 9 } });
+  assert.ok(!/respondió la alarma/.test(basura.debug.contexto));
+});

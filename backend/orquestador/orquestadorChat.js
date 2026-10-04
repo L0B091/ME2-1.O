@@ -25,6 +25,7 @@ import formatoAdulto from "../modulos/media/formatoAdulto.js";
 import mercadoPagoApi from "../api/mercadoPago.js";
 import preferenciaNombre from "../modulos/interaccion/preferenciaNombre.js";
 import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
+import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import calendarioApi from "../api/calendario.js";
 import { detectarAlarma } from "../modulos/detectorAlarmas.js";
 import { detectarEvento } from "../modulos/detectorAgenda.js";
@@ -115,7 +116,11 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
   // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
   // sobrevive reinicios); el teléfono la sincroniza con el servidor cuando hay conexión.
   if (persistir === false && pedidoAlarma?.accion === "crear" && pedidoAlarma.hora) {
-    resultado.alarma = { accion: "crear_local", hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null };
+    // Con el plan de los 3 intentos del orquestador: los textos de cada aviso salen de acá (no del teléfono).
+    resultado.alarma = {
+      accion: "crear_local", hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null,
+      dispatchPlan: protocoloDespertador.despachosAndroid({ hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null })
+    };
     acciones.push(`Alarma CREADA en el teléfono para las ${pedidoAlarma.hora}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.`);
     return { acciones, resultado };
   }
@@ -306,6 +311,16 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   if (iniTexto) {
     const cat = guardia.datoDeUsuario(ini.categoria || ini.fuente || "", 30);
     extra.push(`El usuario está respondiendo a una iniciativa tuya${cat ? ` (${cat})` : ""}: «${iniTexto}». Retomá ese tema si corresponde.`);
+  }
+
+  // [ALARMA] el mensaje del usuario responde una alarma que sonó en el teléfono (protocolo despertador): la respuesta
+  // la redacta Dolphin en este turno (sin texto fijo); el clima, si hay ubicación, ya viene en las herramientas.
+  const alarmaResp = contexto.alarmaRespondida && typeof contexto.alarmaRespondida === "object" ? contexto.alarmaRespondida : null;
+  const alarmaHora = alarmaResp && /^\d{2}:\d{2}$/.test(String(alarmaResp.hora || "")) ? alarmaResp.hora : null;
+  if (alarmaHora) {
+    const titulo = guardia.datoDeUsuario(alarmaResp.titulo || "", 80);
+    const intento = [1, 2, 3].includes(Number(alarmaResp.intento)) ? Number(alarmaResp.intento) : null;
+    extra.push(`Acción del sistema: con este mensaje el usuario respondió la alarma de las ${alarmaHora}${titulo ? ` (${titulo})` : ""}${intento ? ` en el aviso ${intento} de 3` : ""}; la alarma quedó apagada.`);
   }
 
   // [GUARDIA] anti prompt-injection: el texto del usuario no cambia estado ni dispara acciones (ya decididas arriba).

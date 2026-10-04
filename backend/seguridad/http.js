@@ -91,7 +91,7 @@ export function authPorDefecto(req, res, next) {
 
 // ---------------------------------------------------------------- validación de /chat
 export const LIMITES_CHAT = Object.freeze({ mensaje: 4000, contextoBytes: 256 * 1024, historial: 60, memorias: 300 });
-const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "ciudad", "iniciativa"]);
+const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "ciudad", "iniciativa", "alarmaRespondida"]);
 
 /** Valida el cuerpo de /chat y devuelve SOLO los campos de contexto admitidos (nunca userId/premium/adulto del cliente). */
 export function validarCuerpoChat(body = {}) {

@@ -481,27 +481,9 @@ export async function evaluarAutonomia(body, opciones = {}) {
   }
 }
 
+// Mismo plan que viaja en la acción crear_local del chat (ver protocoloDespertador.despachosAndroid).
 function construirDespachosAndroid(alarma) {
- if (!alarma) return [];
- let offsetMs = 0;
- return protocoloDespertador.obtenerDefinicionStages(alarma.hora || null).map((stage) => {
-   const despacho = {
-     stage: stage.stage,
-     offsetFromAlarmMs: offsetMs,
-     channelId: stage.channelId,
-     notificationType: stage.notificationType,
-     vibration: stage.vibration,
-     sound: stage.sound,
-     titulo:
-       alarma.titulo || "Alarma",
-     mensaje:
-       stage.mensajes[0] ||
-       alarma.mensaje ||
-       "ME2 registró tu protocolo de despertar."
-   };
-   offsetMs += stage.delayToNextStageMs;
-   return despacho;
- });
+  return protocoloDespertador.despachosAndroid(alarma);
 }
 
 export default {

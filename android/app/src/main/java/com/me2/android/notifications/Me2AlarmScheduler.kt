@@ -51,10 +51,14 @@ class Me2AlarmScheduler(
     }
 
     /** Alarma pedida en el chat con memoria local primaria: vive en el teléfono y se sube al backend al haber red. */
-    fun createLocalAlarm(userId: String, hour: String, title: String): StoredAlarmRecord {
+    fun createLocalAlarm(
+        userId: String, hour: String, title: String,
+        /** Textos de cada intento del orquestador (acción crear_local). Sin plan: título + hora. */
+        dispatchPlan: List<com.me2.android.net.AlarmDispatchStage> = emptyList()
+    ): StoredAlarmRecord {
         val record = StoredAlarmRecord(
             id = "local-${UUID.randomUUID()}", userId = userId, hour = hour, title = title, message = "",
-            state = "ACTIVE", triggerAtMillis = nextTriggerMillis(hour), dispatchPlan = emptyList(),
+            state = "ACTIVE", triggerAtMillis = nextTriggerMillis(hour), dispatchPlan = dispatchPlan,
             remoteId = null, syncState = StoredAlarmRecord.SYNC_CREATE
         )
         store.upsert(record)

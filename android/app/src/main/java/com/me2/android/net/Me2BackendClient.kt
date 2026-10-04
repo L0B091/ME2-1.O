@@ -80,7 +80,27 @@ data class AlarmDispatchStage(
     val sound: String,
     val title: String,
     val message: String
-)
+) {
+    companion object {
+        /** Plan de intentos del orquestador (`dispatchPlan` de /api/alarmas o de la acción crear_local del chat). */
+        fun parsePlan(array: JSONArray?): List<AlarmDispatchStage> {
+            if (array == null) return emptyList()
+            return (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                AlarmDispatchStage(
+                    stage = item.optInt("stage", 1),
+                    offsetFromAlarmMs = item.optLong("offsetFromAlarmMs", 0L),
+                    channelId = item.optString("channelId", "ME2_MESSAGES"),
+                    notificationType = item.optString("notificationType", "message"),
+                    vibration = item.optString("vibration", "double"),
+                    sound = item.optString("sound", "bubble"),
+                    title = item.optString("titulo", "Hora de despertar"),
+                    message = item.optString("mensaje", "ME2 registró tu protocolo de despertar.")
+                )
+            }
+        }
+    }
+}
 
 data class AlarmRecord(
     val id: String,
@@ -155,7 +175,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         message: String,
         initiative: JSONObject? = null,
         /** Ubicación efectiva (teléfono fresco > ciudad del chat), ver DeviceLocationPolicy.effective. */
-        location: com.me2.android.data.LocalLocation? = memory.location
+        location: com.me2.android.data.LocalLocation? = memory.location,
+        /** Alarma que este mensaje respondió (protocolo despertador): {hora, titulo, intento}. */
+        alarmaRespondida: JSONObject? = null
     ): BackendChatResult {
         val json = request(
             method = "POST",
@@ -169,6 +191,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
                     // Premium local (gestor monotributista + proyectos): el orquestador lo transforma y devuelve el estado nuevo.
                     put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
+                    if (alarmaRespondida != null) put("alarmaRespondida", alarmaRespondida)
                     // Herramientas (clima/hora): zona del teléfono + coordenadas conocidas de la memoria local.
                     put("zonaHoraria", location?.timeZone ?: TimeZone.getDefault().id)
                     location?.let { loc ->
@@ -427,23 +450,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
 
     private fun parseAlarmRecord(json: JSONObject?): AlarmRecord? {
         if (json == null || json.optString("id").isBlank()) return null
-        val dispatchArray = json.optJSONArray("dispatchPlan")
-        val dispatchPlan = mutableListOf<AlarmDispatchStage>()
-        if (dispatchArray != null) {
-            for (index in 0 until dispatchArray.length()) {
-                val item = dispatchArray.optJSONObject(index) ?: continue
-                dispatchPlan += AlarmDispatchStage(
-                    stage = item.optInt("stage", 1),
-                    offsetFromAlarmMs = item.optLong("offsetFromAlarmMs", 0L),
-                    channelId = item.optString("channelId", "ME2_MESSAGES"),
-                    notificationType = item.optString("notificationType", "message"),
-                    vibration = item.optString("vibration", "double"),
-                    sound = item.optString("sound", "bubble"),
-                    title = item.optString("titulo", "Hora de despertar"),
-                    message = item.optString("mensaje", "ME2 registró tu protocolo de despertar.")
-                )
-            }
-        }
+        val dispatchPlan = AlarmDispatchStage.parsePlan(json.optJSONArray("dispatchPlan"))
         return AlarmRecord(
             id = json.optString("id"),
             userId = json.optString("userID", json.optString("userId")),

@@ -41,6 +41,26 @@ function obtenerDefinicionStages(hora = null) {
   });
 }
 
+/** Plan de los 3 intentos para Android (etiquetas del orquestador; offset desde la hora de la alarma). */
+function despachosAndroid(alarma) {
+  if (!alarma) return [];
+  let offsetMs = 0;
+  return obtenerDefinicionStages(alarma.hora || null).map((stage) => {
+    const despacho = {
+      stage: stage.stage,
+      offsetFromAlarmMs: offsetMs,
+      channelId: stage.channelId,
+      notificationType: stage.notificationType,
+      vibration: stage.vibration,
+      sound: stage.sound,
+      titulo: alarma.titulo || "Alarma",
+      mensaje: stage.mensajes[0] || alarma.mensaje || "ME2 registró tu protocolo de despertar."
+    };
+    offsetMs += stage.delayToNextStageMs;
+    return despacho;
+  });
+}
+
 /** Clima como DATO (sin frase armada) para que Dolphin lo use si corresponde. */
 async function climaComoDato(coords = null) {
   if (!Number.isFinite(Number(coords?.lat)) || !Number.isFinite(Number(coords?.lon))) return null;
@@ -91,6 +111,7 @@ function registrarDisparoAndroid(userID, stage, alarmId = null) {
 
 export default {
   obtenerDefinicionStages,
+  despachosAndroid,
   registrarRespuestaUsuario,
   registrarDisparoAndroid
 }; 
