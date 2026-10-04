@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Looper
 import com.me2.android.data.SessionStorage
 import com.me2.android.data.UserSession
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -22,7 +23,8 @@ class LaunchSmokeTest {
         val activity = Robolectric.buildActivity(LoginActivity::class.java).setup().get()
         assertNotNull(activity)
         assertFalse(activity.isFinishing)
-        assertNotNull(activity.findViewById(R.id.previewDemoButton))
+        // Sin modo demo: el botón «Ver UI (demo)» no se muestra.
+        assertEquals(android.view.View.GONE, activity.findViewById<android.view.View>(R.id.previewDemoButton).visibility)
         assertNotNull(activity.findViewById(R.id.logoImage))
     }
 

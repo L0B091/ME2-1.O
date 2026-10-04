@@ -184,6 +184,22 @@ app.post("/api/auth/google", authRateLimit, handleAsync(async (req, res) => {
   return res.status(200).json({ ok: true, ...resultado });
 }));
 
+// Verificación de edad bajo demanda (Premium / Modo Adulto): Android pide el scope de fecha de nacimiento con
+// autorización incremental y manda el serverAuthCode; acá se canjea y se lee la fecha (People API).
+app.post("/api/auth/google/edad", authRateLimit, requireAuth, handleAsync(async (req, res) => {
+  const code = req.body?.serverAuthCode;
+  if (typeof code !== "string" || !code || code.length > 2048) return res.status(400).json({ ok: false, error: "serverAuthCode requerido" });
+  let sync;
+  try {
+    sync = await verificacionEdad.sincronizarDesdeLogin(req.auth.userId, code);
+  } catch (error) {
+    console.error("[edad] no se pudo leer la fecha de nacimiento:", error.message);
+    return res.status(502).json({ ok: false, error: "No se pudo leer la fecha de nacimiento de Google" });
+  }
+  const ev = verificacionEdad.evaluar(req.auth.userId);
+  return res.json({ ok: true, data: { estado: ev.estado, sincronizado: sync.sincronizado, motivo: sync.motivo || null } });
+}));
+
 app.get("/api/auth/me", requireAuth, (req, res) => {
   const { token: _token, ...publico } = req.auth;
   res.json({ ok: true, data: publico });

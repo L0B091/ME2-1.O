@@ -12,7 +12,6 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.Scope
 import com.me2.android.config.ApiConfig
 import com.me2.android.data.UserIdMigration
 import com.me2.android.data.SessionStorage
@@ -28,7 +27,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * Product login is Google Sign-In only. No email/password UI.
- * Temporary "Ver UI (demo)" link opens MainActivity with a local demo session.
+ * El acceso demo ("Ver UI (demo)") está apagado en todos los builds (BuildConfig.DEMO_LOGIN_ENABLED = false).
  */
 class LoginActivity : AppCompatActivity() {
     private lateinit var binding: ActivityLoginBinding
@@ -125,11 +124,10 @@ class LoginActivity : AppCompatActivity() {
 
         runCatching {
             val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                // Solo la cuenta básica (ID token + email + perfil): sin pantallas de permisos extra. La fecha de
+                // nacimiento (18+) se pide recién cuando Premium / Modo Adulto la necesita (AgeVerification).
                 .requestEmail()
                 .requestIdToken(clientId)
-                // Fecha de nacimiento de la cuenta Google (People API) para verificar 18+ antes de Premium.
-                .requestScopes(Scope(BIRTHDAY_SCOPE))
-                .requestServerAuthCode(clientId)
                 .build()
             googleSignInClient = GoogleSignIn.getClient(this, gso)
             binding.googleButton.setOnClickListener {
@@ -207,7 +205,7 @@ class LoginActivity : AppCompatActivity() {
 
         thread {
             runCatching {
-                backendClient.authenticateWithGoogle(idToken, account.serverAuthCode)
+                backendClient.authenticateWithGoogle(idToken)
             }.onSuccess { auth ->
                 val session = UserSession(
                     displayName = auth.displayName.ifBlank { fallbackSession.displayName },
@@ -262,7 +260,6 @@ class LoginActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "Me2Login"
-        private const val BIRTHDAY_SCOPE = "https://www.googleapis.com/auth/user.birthday.read"
         const val EXTRA_DEMO_PREVIEW = "demo_preview"
         const val PREFS_LAUNCH_GUARD = "me2_launch_guard"
         const val KEY_MAIN_PENDING = "main_pending"

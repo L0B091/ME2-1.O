@@ -70,7 +70,7 @@ function lineasOferta(feature, primeraVez = false) {
 function lineasEdad(ev) {
   if (ev.estado === "sin_dato") return [
     "Premium: el usuario aceptó suscribirse. Verificación de edad: la cuenta de Google NO tiene fecha de nacimiento disponible.",
-    "Premium sigue bloqueado hasta que cargue su fecha de nacimiento en su cuenta de Google y vuelva a iniciar sesión con Google (no se genera link de pago)."
+    "Premium sigue bloqueado hasta verificar la edad (no se genera link de pago): el teléfono le pide ahora permiso para leer la fecha de nacimiento de su cuenta de Google. Si lo autoriza, que te avise (por ejemplo \"listo\") para seguir; si lo rechaza o la cuenta no tiene la fecha cargada, Premium y el Modo Adulto siguen bloqueados."
   ];
   if (ev.estado === "menor") return [
     "Premium: verificación de edad FALLIDA — la fecha de nacimiento de la cuenta de Google indica menos de 18 años.",

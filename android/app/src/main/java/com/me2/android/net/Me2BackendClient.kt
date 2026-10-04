@@ -156,7 +156,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
-    /** serverAuthCode (scope user.birthday.read): el backend lo canjea para leer la fecha de nacimiento (verificación 18+). */
+    /** Login con la cuenta básica. serverAuthCode opcional (compatibilidad); la edad se verifica con [submitAgeAuthCode]. */
     fun authenticateWithGoogle(idToken: String, serverAuthCode: String? = null): BackendAuthResult {
         val json = request(
             method = "POST",
@@ -164,6 +164,20 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             body = JSONObject().put("idToken", idToken).apply { serverAuthCode?.let { put("serverAuthCode", it) } }
         )
         return Me2AuthContract.parseGoogleAuth(json)
+    }
+
+    /**
+     * Verificación de edad bajo demanda: serverAuthCode del scope de fecha de nacimiento (autorización incremental).
+     * Devuelve el estado del backend: "mayor" | "menor" | "sin_dato".
+     */
+    fun submitAgeAuthCode(session: UserSession, serverAuthCode: String): String {
+        val json = request(
+            method = "POST",
+            path = "/api/auth/google/edad",
+            authToken = session.authToken,
+            body = JSONObject().put("serverAuthCode", serverAuthCode)
+        )
+        return json.optJSONObject("data")?.optString("estado").orEmpty().ifBlank { "sin_dato" }
     }
 
     /** userId autenticado según el backend (para corregir sesiones guardadas con el id de Google). */

@@ -36,10 +36,10 @@ class StartupOffMainThreadTest {
         val activity = Robolectric.buildActivity(LoginActivity::class.java).setup().get()
         // La sesión se lee en Dispatchers.IO; al volver al hilo principal la UI queda habilitada.
         val deadline = System.currentTimeMillis() + 5_000
-        while (!activity.findViewById<android.view.View>(com.me2.android.R.id.previewDemoButton).isEnabled &&
+        while (!activity.findViewById<android.view.View>(com.me2.android.R.id.googleButton).isEnabled &&
             System.currentTimeMillis() < deadline) {
             Thread.sleep(20); shadowOf(Looper.getMainLooper()).idle()
         }
-        assertTrue(activity.findViewById<android.view.View>(com.me2.android.R.id.previewDemoButton).isEnabled)
+        assertTrue(activity.findViewById<android.view.View>(com.me2.android.R.id.googleButton).isEnabled)
     }
 }

@@ -178,3 +178,36 @@ test("bitácora: solo campos de perfil, acotados; premium no se puede escribir d
     assert.equal(p.data.premiumActivo, false);
   });
 });
+
+test("edad bajo demanda: /api/auth/google/edad exige token, valida el código y canjea → fecha → estado (sin romper sin secret)", async () => {
+  const u = usuarioGoogle("edad");
+  const realFetch = globalThis.fetch;
+  const secretPrevio = process.env.GOOGLE_CLIENT_SECRET;
+  const idPrevio = process.env.GOOGLE_CLIENT_ID;
+  try {
+    await conServidor(async url => {
+      assert.equal((await req(url, "/api/auth/google/edad", { method: "POST", body: { serverAuthCode: "c" } })).status, 401);
+      assert.equal((await req(url, "/api/auth/google/edad", { method: "POST", token: u.token, body: {} })).status, 400);
+      delete process.env.GOOGLE_CLIENT_SECRET;
+      const sinSecret = await (await req(url, "/api/auth/google/edad", { method: "POST", token: u.token, body: { serverAuthCode: "c" } })).json();
+      assert.deepEqual(sinSecret.data, { estado: "sin_dato", sincronizado: false, motivo: "adaptador_no_configurado" });
+      process.env.GOOGLE_CLIENT_ID = "web.apps.googleusercontent.com";
+      process.env.GOOGLE_CLIENT_SECRET = "s";
+      globalThis.fetch = async (destino, opciones) => {
+        const d = String(destino);
+        if (d.startsWith("https://oauth2.googleapis.com/token")) return new Response(JSON.stringify({ access_token: "at" }), { status: 200 });
+        if (d.startsWith("https://people.googleapis.com/")) return new Response(JSON.stringify({ birthdays: [{ date: { year: 1990, month: 1, day: 15 } }] }), { status: 200 });
+        return realFetch(destino, opciones);
+      };
+      const ok = await (await req(url, "/api/auth/google/edad", { method: "POST", token: u.token, body: { serverAuthCode: "c" } })).json();
+      assert.equal(ok.data.estado, "mayor");
+      globalThis.fetch = async (destino, opciones) => String(destino).startsWith("https://oauth2.googleapis.com/")
+        ? new Response("{}", { status: 400 }) : realFetch(destino, opciones);
+      assert.equal((await req(url, "/api/auth/google/edad", { method: "POST", token: u.token, body: { serverAuthCode: "c" } })).status, 502);
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+    if (secretPrevio === undefined) delete process.env.GOOGLE_CLIENT_SECRET; else process.env.GOOGLE_CLIENT_SECRET = secretPrevio;
+    if (idPrevio === undefined) delete process.env.GOOGLE_CLIENT_ID; else process.env.GOOGLE_CLIENT_ID = idPrevio;
+  }
+});

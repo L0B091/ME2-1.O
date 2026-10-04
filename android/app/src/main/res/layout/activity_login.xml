@@ -72,7 +72,7 @@
         android:textColor="@color/me2_accent"
         android:textSize="15sp"
         android:letterSpacing="0.06"
-        android:visibility="visible"
+        android:visibility="gone"
         app:backgroundTint="@android:color/transparent"
         app:rippleColor="@color/me2_accent"
         app:layout_constraintBottom_toTopOf="@+id/loginHintText"

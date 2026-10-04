@@ -166,4 +166,43 @@ class PendingChatFlusherTest {
         assertFalse("sin promptBlocks", bodies.single().contains("promptBlock"))
         assertTrue(store.pendingUserMessages(user).isEmpty())
     }
+
+    /** Cuenta Google: viaja con Bearer; con la sesión vencida (401) no se pierde nada ni crashea, queda pendiente. */
+    @Test fun conCuentaViajaConTokenYConSesionVencidaQuedaPendiente() {
+        val user = "pend-cuenta"
+        val store = LocalMemoryStore(context)
+        store.appendUserMessage(user, "hola"); store.markLastUserMessagePending(user)
+        val server = ServerSocket(0)
+        val heads = mutableListOf<String>()
+        val t = thread {
+            runCatching {
+                repeat(2) { i ->
+                    server.accept().use { s ->
+                        val input = java.io.DataInputStream(s.getInputStream().buffered())
+                        val head = StringBuilder()
+                        while (!head.endsWith("\r\n\r\n")) head.append(input.readUnsignedByte().toChar())
+                        val len = head.lines().firstOrNull { it.lowercase().startsWith("content-length:") }?.substringAfter(':')?.trim()?.toInt() ?: 0
+                        input.readFully(ByteArray(len))
+                        synchronized(heads) { heads += head.toString() }
+                        val (status, resp) = if (i == 0) "401 Unauthorized" to """{"ok":false,"error":"Autenticación requerida"}""" else "200 OK" to """{"ok":true,"respuesta":"hola de nuevo"}"""
+                        s.getOutputStream().write("HTTP/1.1 $status\r\nContent-Type: application/json\r\nContent-Length: ${resp.toByteArray().size}\r\nConnection: close\r\n\r\n$resp".toByteArray())
+                    }
+                }
+            }
+        }
+        val client = Me2BackendClient("http://127.0.0.1:${server.localPort}")
+        val session = UserSession("Ana", "ana@x.com", user, authToken = "tok-vencido")
+        fun flusher() = PendingChatFlusher(
+            loadPending = { store.pendingUserMessages(user) },
+            send = { m -> client.sendChat(session, store.load(user), m, null) },
+            markSent = { store.markPendingSent(user, it) },
+            gate = AtomicBoolean()
+        )
+        assertTrue(flusher().flush() is PendingChatFlusher.Outcome.Failed)
+        assertEquals(listOf("hola"), store.pendingUserMessages(user).map { it.text })
+        assertTrue(flusher().flush() is PendingChatFlusher.Outcome.Sent)
+        assertTrue(store.pendingUserMessages(user).isEmpty())
+        server.close(); t.join(2000)
+        assertTrue(heads.all { it.contains("Authorization: Bearer tok-vencido") })
+    }
 }

@@ -41,12 +41,8 @@ val mercadoPagoUrl = firstNonBlank(
 
 // LLM keys (OpenRouter/Groq/Dolphin) viven SOLO en el backend: nunca se compilan en el APK.
 
-// Login demo ("Ver UI (demo)"): solo builds debug (ME2_DEMO_LOGIN=false lo apaga también en debug). Release: siempre off.
-val demoLoginDebug = firstNonBlank(
-    findProperty("ME2_DEMO_LOGIN") as String?,
-    System.getenv("ME2_DEMO_LOGIN"),
-    "true"
-).toBoolean()
+// Login demo ("Ver UI (demo)") apagado en todos los builds: el acceso es solo con Google. Una sesión demo guardada
+// por versiones anteriores se borra al abrir el login (LoginActivity.openSessionStorage).
 
 plugins {
     id("com.android.application")
@@ -76,7 +72,7 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("boolean", "DEMO_LOGIN_ENABLED", demoLoginDebug.toString())
+            buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
         }
         release {
             buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")

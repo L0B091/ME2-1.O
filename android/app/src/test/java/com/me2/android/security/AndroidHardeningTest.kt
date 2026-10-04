@@ -64,7 +64,9 @@ class AndroidHardeningTest {
         assertTrue(release.contains("\"DEMO_LOGIN_ENABLED\", \"false\""))
         assertFalse(gradle.contains("OPENROUTER_API_KEY"))
         assertTrue("este test corre sobre debug", BuildConfig.DEBUG)
-        assertTrue(BuildConfig.DEMO_LOGIN_ENABLED)
+        // Sin modo demo: apagado también en debug (solo login con Google).
+        assertTrue(gradle.substringAfter("debug {").substringBefore("}").contains("\"DEMO_LOGIN_ENABLED\", \"false\""))
+        assertFalse(BuildConfig.DEMO_LOGIN_ENABLED)
     }
 
     @Test fun urlsDeMediosSoloDelBackendYTokenSoloASuOrigen() {

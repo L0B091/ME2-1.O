@@ -62,7 +62,7 @@
     <string name="premium_required">FUNCIÓN PREMIUM. ACTIVÁ EL PLAN PARA CONTINUAR.</string>
     <string name="premium_tools">HERRAMIENTAS PREMIUM</string>
     <string name="login_google_only_hint">ÚNICO MÉTODO DE ACCESO.</string>
-    <string name="login_google_client_id_missing">Google no configurado. Usá «Ver UI (demo)» para mirar la interfaz.</string>
+    <string name="login_google_client_id_missing">Google no configurado en esta versión.</string>
     <string name="login_google_failed">No se pudo iniciar con Google (código %1$d).</string>
     <string name="login_google_invalid_account">Cuenta de Google inválida.</string>
     <string name="login_google_token_missing">Google no devolvió idToken. Verificá que GOOGLE_WEB_CLIENT_ID sea el Web Client ID de OAuth.</string>

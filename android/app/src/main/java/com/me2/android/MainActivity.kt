@@ -171,6 +171,24 @@ class MainActivity : AppCompatActivity() {
                 }
         }
 
+    /** Verificación de edad en curso (un pedido de permiso por vez). */
+    private var ageAuthInFlight = false
+
+    /** Pantalla de Google del permiso de fecha de nacimiento. Rechazado/cancelado → Premium y Modo Adulto siguen bloqueados. */
+    private val ageAuthLauncher =
+        registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+            ageAuthInFlight = false
+            if (res.resultCode != RESULT_OK) {
+                Log.i(TAG, "edad: permiso de fecha de nacimiento no concedido (${res.resultCode})")
+                return@registerForActivityResult
+            }
+            val code = runCatching {
+                com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(this)
+                    .getAuthorizationResultFromIntent(res.data).serverAuthCode
+            }.onFailure { Log.w(TAG, "edad: resultado inválido (${it.javaClass.simpleName})") }.getOrNull()
+            submitAgeCode(code)
+        }
+
     private val notificationPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted) {
@@ -1344,6 +1362,8 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             actions.optJSONObject("evento")?.optJSONObject("evento")?.let(::scheduleReminderFrom)
+            // Premium / Modo Adulto exige 18+ y la cuenta no tiene la fecha: se pide ahora el permiso (incremental).
+            if (actions.optBoolean("verificarEdad")) requestAgeVerification()
             // Premium local: el estado nuevo (fiscal | proyectos) queda en la memoria local del teléfono (y en el respaldo).
             actions.optJSONObject("premium")?.let { p ->
                 val estado = p.optJSONObject("estado")
@@ -1351,6 +1371,42 @@ class MainActivity : AppCompatActivity() {
             }
             Me2SyncWorker.enqueueIfPending(this)
         }.onFailure { Log.w(TAG, "acciones: ${it.javaClass.simpleName}") }
+    }
+
+    /**
+     * Autorización incremental del scope de fecha de nacimiento + serverAuthCode (el login no lo pide). Nunca crashea:
+     * sin Play Services, sin cuenta o con error, Premium / Modo Adulto quedan bloqueados como antes.
+     */
+    private fun requestAgeVerification() {
+        val webId = ApiConfig.googleWebClientId
+        if (ageAuthInFlight || webId.isBlank() || currentSession.authToken.isNullOrBlank()) return
+        ageAuthInFlight = true
+        runCatching {
+            com.google.android.gms.auth.api.identity.Identity.getAuthorizationClient(this)
+                .authorize(com.me2.android.auth.AgeVerification.request(webId, currentSession.email))
+                .addOnSuccessListener { r ->
+                    val pending = r.pendingIntent
+                    if (r.hasResolution() && pending != null) {
+                        runCatching { ageAuthLauncher.launch(androidx.activity.result.IntentSenderRequest.Builder(pending.intentSender).build()) }
+                            .onFailure { ageAuthInFlight = false; Log.w(TAG, "edad: no se pudo abrir el permiso (${it.javaClass.simpleName})") }
+                    } else {
+                        ageAuthInFlight = false
+                        submitAgeCode(r.serverAuthCode)
+                    }
+                }
+                .addOnFailureListener { ageAuthInFlight = false; Log.w(TAG, "edad: autorización falló (${it.javaClass.simpleName})") }
+        }.onFailure { ageAuthInFlight = false; Log.w(TAG, "edad: autorización no disponible (${it.javaClass.simpleName})") }
+    }
+
+    /** El backend canjea el código y lee la fecha (People API); el próximo turno del flujo Premium ya la usa. */
+    private fun submitAgeCode(code: String?) {
+        if (code.isNullOrBlank() || currentSession.authToken.isNullOrBlank()) return
+        val session = currentSession
+        thread {
+            runCatching { backendClient.submitAgeAuthCode(session, code) }
+                .onSuccess { Log.i(TAG, "edad: verificación = $it") }
+                .onFailure { Log.w(TAG, "edad: el backend no pudo verificar (${it.javaClass.simpleName})") }
+        }
     }
 
     private fun scheduleReminderFrom(evento: JSONObject) {

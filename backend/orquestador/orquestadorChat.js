@@ -288,7 +288,10 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   }
 
   // [ACTIONS] alarmas / agenda (deterministas)
-  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo, contexto.zonaHoraria || null);
+  const { acciones, resultado: accionesEjecutadas } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo, contexto.zonaHoraria || null);
+  // Verificación de edad (Premium exige 18+): la cuenta no tiene fecha → el teléfono pide en ese momento el permiso de
+  // fecha de nacimiento de Google (autorización incremental; el login solo pide la cuenta básica).
+  const accionesResultado = flujo.evento === "edad_sin_dato" ? { ...(accionesEjecutadas || {}), verificarEdad: true } : accionesEjecutadas;
 
   // [ONBOARDING] datos básicos faltantes (uno por vez, como hecho de contexto)
   let characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({

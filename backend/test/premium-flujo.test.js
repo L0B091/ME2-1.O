@@ -94,3 +94,18 @@ test("intentos Premium detectados (no confunde charla común)", () => {
   assert.equal(flujoPremium.detectarIntento("me gusta el código limpio"), null);
   assert.equal(flujoPremium.detectarIntento("hola, ¿cómo andás?"), null);
 });
+
+test("Premium sin fecha de nacimiento → el chat le pide al teléfono la verificación de edad (acciones.verificarEdad)", async () => {
+  const { default: orquestadorChat } = await import("../orquestador/orquestadorChat.js");
+  const id = u();
+  const memoriaLocal = { source: "android_local_primary", recentConversation: [] };
+  const a = await orquestadorChat("activá el modo adulto", { userId: id, memoriaLocal });
+  assert.ok(!a.acciones?.verificarEdad);
+  const b = await orquestadorChat("sí, dale", { userId: id, memoriaLocal });
+  assert.equal(b.acciones.verificarEdad, true);
+  assert.match(b.debug.contexto, /permiso para leer la fecha de nacimiento/);
+  verificacionEdad.guardar(id, "1990-01-15", "test");
+  const c = await orquestadorChat("listo", { userId: id, memoriaLocal });
+  assert.ok(!c.acciones?.verificarEdad);
+  assert.match(c.debug.contexto, /edad por cuenta de Google OK/);
+});
