@@ -46,7 +46,7 @@ class PresentationExclusiveTest {
         assertFalse(PresentationGate.shouldPlay(false, true, 0L, true))   // prefs (reinicio)
         assertFalse(PresentationGate.shouldPlay(false, false, 99L, true)) // memoria restaurada (reinstalar)
         assertFalse(PresentationGate.shouldPlay(false, false, 0L, false)) // ya hubo conversación
-        assertFalse(PresentationGate.shouldPlay(true, false, 0L, true))   // demo
+        assertTrue(PresentationGate.shouldPlay(true, false, 0L, true))    // demo/sin login: también primer contacto
         val m = LocalMe2Memory(userId = "u", presentationCompletedAt = 1234L)
         val restored = LocalMe2Memory.fromJson(m.toJson())
         assertEquals(1234L, restored.presentationCompletedAt)

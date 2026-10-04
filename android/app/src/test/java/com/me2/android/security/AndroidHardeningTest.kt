@@ -30,6 +30,14 @@ class AndroidHardeningTest {
         assertEquals(listOf(".LoginActivity"), exportados)
     }
 
+    @Test fun permisosDeAlarmasYNotificacionesParaAndroid12a14() {
+        val permisos = xml("src/main/AndroidManifest.xml").children("uses-permission").associate { it.getAttributeNS(ns, "name") to it.getAttributeNS(ns, "maxSdkVersion") }
+        assertTrue("POST_NOTIFICATIONS (Android 13+)", "android.permission.POST_NOTIFICATIONS" in permisos)
+        assertTrue("USE_EXACT_ALARM: despertador exacto en Android 13/14 sin depender de Ajustes", "android.permission.USE_EXACT_ALARM" in permisos)
+        assertEquals("SCHEDULE_EXACT_ALARM solo hasta Android 12L", "32", permisos["android.permission.SCHEDULE_EXACT_ALARM"])
+        assertFalse("sin pantalla completa (restringida en Android 14)", "android.permission.USE_FULL_SCREEN_INTENT" in permisos)
+    }
+
     @Test fun releaseSinTraficoEnClaroYDebugAcotadoAlBackendLocal() {
         val release = xml("src/main/res/xml/network_security_config.xml")
         assertEquals("false", release.children("base-config").single().getAttribute("cleartextTrafficPermitted"))

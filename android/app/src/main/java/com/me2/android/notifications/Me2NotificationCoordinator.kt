@@ -100,14 +100,11 @@ class Me2NotificationCoordinator(private val context: Context) {
         Me2NotificationChannels.ensure(context)
         val channel = if (stage.notificationType == "alarm") Me2NotificationChannels.CHANNEL_ALARMS
             else Me2NotificationChannels.CHANNEL_MESSAGES
+        // La vibración no depende del permiso de notificaciones: sin él, al menos el teléfono vibra en la hora.
+        runCatching { if (stage.notificationType == "alarm") haptics.vibrateAlarm() else haptics.vibrateMessage() }
         if (!canPost(channel)) {
-            Log.w("Me2Notifications", "Canal de alarma no disponible")
+            Log.w("Me2Notifications", "Notificaciones de ME2 bloqueadas (permiso o canal): la alarma solo vibra")
             return
-        }
-        if (stage.notificationType == "alarm") {
-            haptics.vibrateAlarm()
-        } else {
-            haptics.vibrateMessage()
         }
 
         post(

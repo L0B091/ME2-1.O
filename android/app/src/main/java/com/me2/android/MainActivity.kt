@@ -195,7 +195,7 @@ class MainActivity : AppCompatActivity() {
     private fun maybeRequestLocationPermission() {
         if (presentationSequenceActive || notificationPermissionPending || isFinishing) return
         // Primer contacto (Google): esperar a que la presentación termine o se descarte (maybePlayPresentation).
-        if (::currentSession.isInitialized && !currentSession.isDemo && ::sessionStorage.isInitialized &&
+        if (::currentSession.isInitialized && ::sessionStorage.isInitialized &&
             !sessionStorage.isPresentationIntroCompleted()) return
         val prefs = getSharedPreferences(PREFS_PERMISSIONS, MODE_PRIVATE)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) return
@@ -277,7 +277,6 @@ class MainActivity : AppCompatActivity() {
             initiativeScheduler = Me2InitiativeScheduler(this)
 
             runCatching { Me2NotificationChannels.ensure(this) }
-            ensureNotificationPermission()
 
             setupToolbar()
             setupChat()
@@ -292,6 +291,8 @@ class MainActivity : AppCompatActivity() {
             val launchedWithEvent = intent?.getStringExtra(Me2NotificationCoordinator.EXTRA_EVENT_TYPE) != null
             runCatching { hydrateConversation() }.onFailure { Log.e(TAG, "hydrateConversation failed", it) }
             if (!launchedWithEvent) runCatching { maybePlayPresentation() }
+            // Permisos (notificaciones → ubicación) nunca durante la presentación: si arrancó, se piden al terminar.
+            ensureNotificationPermission()
             runCatching {
                 localMemoryStore.observe(currentSession.id).observe(this) { record ->
                     if (record != null) runCatching { hydrateConversation() }
@@ -547,8 +548,9 @@ class MainActivity : AppCompatActivity() {
     private fun hydrateConversation() {
         val memory = localMemoryStore.load(currentSession.id)
         if (memory.conversation.isEmpty()) {
-            // Google first-interaction: leave chat empty (videos + silence). Demo keeps seed for UI preview.
-            if (currentSession.isDemo) {
+            // Primer contacto: chat vacío (presentación + silencio). El demo agrega su saludo recién cuando la
+            // presentación ya se vio (si no, el saludo haría creer que ya hubo conversación y la salteaba).
+            if (currentSession.isDemo && sessionStorage.isPresentationIntroCompleted()) {
                 seedConversation()
             } else {
                 fullConversation.clear()
@@ -965,13 +967,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private fun ensureNotificationPermission() {
+        if (presentationSequenceActive || notificationPermissionPending || isFinishing) return
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
             maybeRequestLocationPermission()
             return
         }
         notificationPermissionPending = true
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        runCatching { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
+            .onFailure { notificationPermissionPending = false }
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
@@ -1028,8 +1032,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun maybePlayPresentation() {
-        // First-interaction sequence: Google path only (demo keeps chat usable for UI preview).
-        if (currentSession.isDemo) return
+        // Primer contacto (Google y demo/sin login): PRESENTACION_001 → 002 → 003 desde assets/ME2_MEDIA.
         if (hasPlayedPresentation || sessionStorage.isPresentationIntroCompleted()) {
             setChatInputEnabled(true)
             return
@@ -1040,8 +1043,7 @@ class MainActivity : AppCompatActivity() {
                 memory?.presentationCompletedAt ?: 0L, memory?.conversation?.isEmpty() ?: true)) {
             markPresentationSeen()
             setChatInputEnabled(true)
-            maybeRequestLocationPermission()
-            return
+            return // permisos: ensureNotificationPermission() en onCreate (notificaciones → ubicación)
         }
         val gallery = presentationGallery
         val exoPlayer = player
@@ -1087,8 +1089,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun onPresentationSequenceCompleted() {
         presentationSequenceActive = false
-        maybeRequestLocationPermission()
         markPresentationSeen()
+        // Recién ahora: notificaciones (alarmas/avisos) y después ubicación, un diálogo por vez.
+        ensureNotificationPermission()
         setChatInputEnabled(true)
         runCatching { initiativeStore.observeInteraction(currentSession.id) }
         schedulePostPresentationSilence()
@@ -1322,7 +1325,11 @@ class MainActivity : AppCompatActivity() {
                 when (a.optString("accion")) {
                     "crear_local" -> {
                         val hora = a.optString("hora")
-                        if (hora.isNotBlank()) alarmScheduler.createLocalAlarm(currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty())
+                        if (hora.isNotBlank()) {
+                            alarmScheduler.createLocalAlarm(currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty())
+                            // Sin permiso de notificaciones la alarma no se ve: se vuelve a pedir en este momento.
+                            ensureNotificationPermission()
+                        }
                     }
                     "cancelar_local" -> alarmScheduler.findByHour(currentSession.id, a.optString("hora").takeIf { !a.isNull("hora") })
                         .forEach { alarmScheduler.cancelAndSync(it.id); notificationCoordinator.cancelAlarmNotifications(it.id) }

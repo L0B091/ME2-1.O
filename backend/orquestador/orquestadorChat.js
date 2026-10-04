@@ -106,12 +106,12 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
 }
 
 // Acciones deterministas del orquestador (el LLM solo las confirma con su voz).
-function ejecutarAcciones(userId, mensaje, persistir) {
+function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
   const acciones = [];
   const resultado = { alarma: null, evento: null };
   if (!userId) return { acciones, resultado };
 
-  const pedidoAlarma = detectarAlarma(mensaje);
+  const pedidoAlarma = detectarAlarma(mensaje, { zonaHoraria });
   // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
   // sobrevive reinicios); el teléfono la sincroniza con el servidor cuando hay conexión.
   if (persistir === false && pedidoAlarma?.accion === "crear" && pedidoAlarma.hora) {
@@ -283,7 +283,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   }
 
   // [ACTIONS] alarmas / agenda (deterministas)
-  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo);
+  const { acciones, resultado: accionesResultado } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo, contexto.zonaHoraria || null);
 
   // [ONBOARDING] datos básicos faltantes (uno por vez, como hecho de contexto)
   let characterName = nombrePersonajeDetectado || preferenciaNombre.obtenerNombrePersonaje({

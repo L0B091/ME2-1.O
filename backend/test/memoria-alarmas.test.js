@@ -19,3 +19,18 @@ test("detecta alarmas en lenguaje natural", () => {
   assert.equal(detectarAlarma("cancelá la alarma de las 7:30").accion, "cancelar");
   assert.equal(detectarAlarma("recordame comprar pan"), null);
 });
+
+test("alarma relativa ('en 10 minutos', 'en media hora') → hora local del teléfono, redondeada hacia arriba", async () => {
+  const { detectarAlarma, horaRelativa } = await import("../modulos/detectorAlarmas.js");
+  const ahora = Date.parse("2026-10-03T23:58:30Z"); // 20:58:30 en Buenos Aires
+  const tz = { ahora, zonaHoraria: "America/Argentina/Buenos_Aires" };
+  assert.equal(detectarAlarma("ponme alarma en 10 minutos", tz).hora, "21:09");
+  assert.equal(detectarAlarma("poné una alarma en 2 min", tz).hora, "21:01");
+  assert.equal(detectarAlarma("alarma en media hora", tz).hora, "21:29");
+  assert.equal(detectarAlarma("despertame en una hora", tz).titulo, "Hora de despertar");
+  assert.equal(detectarAlarma("poneme una alarma a las 7", tz).hora, "07:00"); // la hora explícita gana
+  assert.equal(horaRelativa("en 5 minutos", ahora, "Europe/Madrid"), "02:04");
+  assert.equal(horaRelativa("en 5 minutos", ahora, "Zona/Invalida"), "21:04");
+  assert.equal(horaRelativa("en 0 minutos", ahora), null);
+  assert.equal(detectarAlarma("despertame mañana temprano", tz).hora, null);
+});

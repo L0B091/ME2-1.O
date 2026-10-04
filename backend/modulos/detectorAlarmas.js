@@ -11,7 +11,23 @@ function aMinutos(fraccion = "") {
   return n ? Number(n[0]) : 0;
 }
 
-export function detectarAlarma(mensaje = "") {
+// "en 10 minutos", "en 2 min", "en una hora", "en media hora", "en 1 hora y media": hora local HH:mm del usuario
+// (zona del teléfono). Se redondea al minuto siguiente para no sonar antes de lo pedido.
+const RELATIVA = /\ben\s+(?:(\d{1,3})|(un|una)|(media))\s*(minutos?|mins?|horas?|hs?)\b(\s+y\s+media)?/;
+
+export function horaRelativa(texto = "", ahora = Date.now(), zonaHoraria = null) {
+  const m = String(texto).toLowerCase().match(RELATIVA);
+  if (!m) return null;
+  const n = m[1] ? Number(m[1]) : m[2] ? 1 : 0.5;
+  const minutos = /^h/.test(m[4]) ? n * 60 + (m[5] ? 30 : 0) : n;
+  if (!(minutos >= 1 && minutos <= 24 * 60)) return null;
+  const objetivo = Math.ceil((ahora + minutos * 60e3) / 60e3) * 60e3;
+  const zona = zonaHoraria || process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
+  const fmt = (tz) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(objetivo);
+  try { return fmt(zona); } catch { return fmt("America/Argentina/Buenos_Aires"); }
+}
+
+export function detectarAlarma(mensaje = "", { ahora = Date.now(), zonaHoraria = null } = {}) {
   const texto = String(mensaje).toLowerCase().normalize("NFC");
   if (CANCELAR.test(texto)) {
     const h = parsearHora(texto);
@@ -20,9 +36,9 @@ export function detectarAlarma(mensaje = "") {
   if (!VERBOS.test(texto)) return null;
   // Para "recordame/avisame" exigimos la palabra alarma o despertar para no pisar recordatorios
   if (/\b(avis[aá]me|recordame|record[aá]me)\b/.test(texto) && !/alarma|despert/.test(texto)) return null;
-  const hora = parsearHora(texto);
+  const hora = parsearHora(texto) || horaRelativa(texto, ahora, zonaHoraria);
   if (!hora) {
-    if (!/despert|levant|pon[eé]|program|cre[aá]|necesito una alarma|quiero una alarma/.test(texto)) return null;
+    if (!/despert|levant|\bpon|program|cre[aá]|necesito una alarma|quiero una alarma/.test(texto)) return null;
     return { accion: "crear", hora: null, motivo: "hora_no_entendida" };
   }
   const titulo = /despert|levant/.test(texto) ? "Hora de despertar" : "Alarma";
@@ -44,4 +60,4 @@ export function parsearHora(texto = "") {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-export default { detectarAlarma, parsearHora };
+export default { detectarAlarma, parsearHora, horaRelativa };
