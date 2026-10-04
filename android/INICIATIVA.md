@@ -153,8 +153,10 @@ no cancela alarmas explicitas.
 
 Opciones: `GOOGLE_AUTH_ENABLED=true` (por defecto; el login con Google es la identidad del
 backend) y `BETA_PREMIUM_DEFAULT=false` fuera de desarrollo.
-Configure `ME2_BACKEND_BASE_URL` (Gradle) o
-`ME2_ANDROID_BACKEND_BASE_URL` (entorno) para conectar el backend.
+Configure `ME2_BACKEND_URL` (entorno, `-P`, `gradle.properties` o `android/local.properties`;
+alias legacy `ME2_BACKEND_BASE_URL` / `ME2_ANDROID_BACKEND_BASE_URL`) para conectar el backend.
+Release la exige (https, sin 10.0.2.2 ni túnel) o el build falla; debug sin valor usa `http://10.0.2.2:3000`.
+Ver `docs/DEPLOY_PENDIENTES.md`.
 Las claves `OPENROUTER_API_KEY` y `NEWS_API_KEY` permanecen exclusivamente
 en el entorno del servidor; no se compilan en el APK.
 

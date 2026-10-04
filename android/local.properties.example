@@ -3,8 +3,10 @@
 
 sdk.dir=/path/to/Android/Sdk
 
-# Backend (emulator default is http://10.0.2.2:3000 if unset)
-# ME2_BACKEND_BASE_URL=http://10.0.2.2:3000
+# Backend: URL de TU servidor (sin túneles). Release la exige (https); si falta, el build release falla.
+# Debug sin valor usa el emulador http://10.0.2.2:3000 (loopback al host).
+# También vale como env ME2_BACKEND_URL o -PME2_BACKEND_URL. Alias legacy: ME2_BACKEND_BASE_URL.
+# ME2_BACKEND_URL=https://api.tu-dominio.com
 
 # Google OAuth (Web client ID for requestIdToken)
 # ME2_GOOGLE_WEB_CLIENT_ID=YOUR_ID.apps.googleusercontent.com

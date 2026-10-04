@@ -12,8 +12,8 @@ import com.me2.android.BuildConfig
  * - Set in ~/.gradle/gradle.properties or android/local.properties (gitignored):
  *     ME2_GOOGLE_WEB_CLIENT_ID=....apps.googleusercontent.com
  *     ME2_MERCADO_PAGO_PUBLIC_KEY=APP_USR-...
- *     ME2_BACKEND_BASE_URL=https://your-api.example
- * - Or export env: ME2_ANDROID_GOOGLE_WEB_CLIENT_ID, ME2_ANDROID_MERCADO_PAGO_PUBLIC_KEY, etc.
+ *     ME2_BACKEND_URL=https://your-api.example   (release: obligatoria y https; debug sin valor = 10.0.2.2:3000)
+ * - Or export env: ME2_BACKEND_URL, ME2_ANDROID_GOOGLE_WEB_CLIENT_ID, ME2_ANDROID_MERCADO_PAGO_PUBLIC_KEY, etc.
  * - Rebuild: ./gradlew :app:assembleDebug
  *
  * Product rule: full API wiring AFTER the video gallery is finished.

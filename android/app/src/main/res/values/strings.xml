@@ -66,7 +66,7 @@
     <string name="login_google_failed">No se pudo iniciar con Google (código %1$d).</string>
     <string name="login_google_invalid_account">Cuenta de Google inválida.</string>
     <string name="login_google_token_missing">Google no devolvió idToken. Verificá que GOOGLE_WEB_CLIENT_ID sea el Web Client ID de OAuth.</string>
-    <string name="login_backend_url_missing">Falta BACKEND_BASE_URL. Configurá ME2_BACKEND_BASE_URL.</string>
+    <string name="login_backend_url_missing">Falta BACKEND_BASE_URL. Configurá ME2_BACKEND_URL.</string>
     <string name="login_offline">Sin conexión. El inicio de sesión con Google requiere red.</string>
     <string name="login_google_backend_failed">El backend rechazó el inicio de sesión con Google.</string>
 

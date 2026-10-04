@@ -1,16 +1,47 @@
+import java.net.URI
+import java.util.Properties
+
 fun String.gradleQuoted(): String =
     "\"" + replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 fun firstNonBlank(vararg values: String?): String =
     values.firstOrNull { !it.isNullOrBlank() }.orEmpty()
 
-val backendBaseUrl = firstNonBlank(
+// local.properties (gitignored) también puede definir la URL del backend.
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.isFile) f.inputStream().use { load(it) }
+}
+
+// URL del backend: SOLO desde configuración de build (nunca hardcodeada, nunca un túnel).
+// Orden: env ME2_BACKEND_URL → -PME2_BACKEND_URL / gradle.properties → ME2_BACKEND_BASE_URL (gradle/local.properties)
+//        → local.properties ME2_BACKEND_URL → env ME2_ANDROID_BACKEND_BASE_URL.
+val explicitBackendUrl = firstNonBlank(
     System.getenv("ME2_BACKEND_URL"),
+    findProperty("ME2_BACKEND_URL") as String?,
     findProperty("ME2_BACKEND_BASE_URL") as String?,
-    System.getenv("ME2_ANDROID_BACKEND_BASE_URL"),
-    // Emulator loopback to host machine; override with ME2_BACKEND_URL for physical device LAN IP.
-    "http://10.0.2.2:3000"
-)
+    localProps.getProperty("ME2_BACKEND_URL"),
+    localProps.getProperty("ME2_BACKEND_BASE_URL"),
+    System.getenv("ME2_ANDROID_BACKEND_BASE_URL")
+).trim().trimEnd('/')
+
+// SOLO debug: si no hay URL, loopback del emulador al host (comportamiento previo). Release NO tiene default.
+val debugBackendUrl = explicitBackendUrl.ifBlank { "http://10.0.2.2:3000" }
+
+/** Motivo por el que la URL no sirve para release (null = OK). Release no permite cleartext ni túneles efímeros. */
+fun releaseBackendUrlProblem(url: String): String? {
+    if (url.isBlank()) return "falta ME2_BACKEND_URL"
+    val uri = runCatching { URI(url) }.getOrNull() ?: return "URL inválida: $url"
+    val host = uri.host?.lowercase().orEmpty()
+    return when {
+        uri.scheme?.lowercase() != "https" -> "release exige https (sin cleartext): $url"
+        host.isBlank() -> "URL sin host: $url"
+        host == "10.0.2.2" || host == "localhost" || host == "127.0.0.1" -> "host local/emulador no válido en release: $url"
+        host.endsWith("trycloudflare.com") -> "túnel efímero de Cloudflare no permitido en release: $url"
+        else -> null
+    }
+}
+val releaseBackendUrlError = releaseBackendUrlProblem(explicitBackendUrl)
 
 val googleWebClientId = firstNonBlank(
     findProperty("ME2_GOOGLE_WEB_CLIENT_ID") as String?,
@@ -64,7 +95,6 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "MERCADO_PAGO_URL", mercadoPagoUrl.gradleQuoted())
         buildConfigField("String", "MERCADO_PAGO_PUBLIC_KEY", mercadoPagoPublicKey.gradleQuoted())
-        buildConfigField("String", "BACKEND_BASE_URL", backendBaseUrl.gradleQuoted())
         buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", googleWebClientId.gradleQuoted())
         buildConfigField("boolean", "ENABLE_GOOGLE_AUTH", enableGoogleAuth.toString())
         buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
@@ -73,9 +103,12 @@ android {
     buildTypes {
         debug {
             buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
+            buildConfigField("String", "BACKEND_BASE_URL", debugBackendUrl.gradleQuoted())
         }
         release {
             buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
+            // Sin default: la validación de abajo corta el empaquetado si falta o es inválida.
+            buildConfigField("String", "BACKEND_BASE_URL", explicitBackendUrl.gradleQuoted())
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -100,6 +133,33 @@ android {
 
     testOptions {
         unitTests.isIncludeAndroidResources = true
+    }
+}
+
+// Falla de build clara (no silenciosa) si se empaqueta un release sin URL propia del backend.
+val verificarBackendUrlRelease = tasks.register("verificarBackendUrlRelease") {
+    group = "verification"
+    description = "Exige ME2_BACKEND_URL https propia (sin 10.0.2.2 ni túnel) para builds release."
+    val error = releaseBackendUrlError
+    doLast {
+        if (error != null) {
+            throw GradleException(
+                "ME2 release: $error. Definí ME2_BACKEND_URL=https://tu-servidor (env, -P, gradle.properties " +
+                    "o android/local.properties). Ver docs/DEPLOY_PENDIENTES.md."
+            )
+        }
+    }
+}
+// Si se pidió empaquetar release (assembleRelease, bundleRelease, assemble, build…) se valida ANTES de compilar;
+// las tareas de empaquetado también dependen de la validación como red de seguridad. Los tests unitarios no se ven afectados.
+val pideReleaseEmpaquetado = gradle.startParameter.taskNames.any {
+    val n = it.substringAfterLast(':')
+    n == "assemble" || n == "build" || n == "bundle" || Regex("(assemble|bundle|package|install)Release.*").matches(n)
+}
+tasks.configureEach {
+    val esEmpaquetado = name in setOf("assembleRelease", "bundleRelease", "packageRelease", "packageReleaseBundle", "installRelease")
+    if (esEmpaquetado || (pideReleaseEmpaquetado && name == "preReleaseBuild")) {
+        dependsOn(verificarBackendUrlRelease)
     }
 }
 
