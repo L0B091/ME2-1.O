@@ -53,7 +53,7 @@ export function verificarFirmaWebhook({ headers = {}, query = {}, body = {} } = 
 }
 const MOCK_NS = "mercadopago_mock";
 function baseUrl() {
-  return (process.env.BACKEND_PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, "");
+  return (String(process.env.BACKEND_PUBLIC_URL || "").trim() || `http://localhost:${process.env.PORT || 3000}`).replace(/\/+$/, "");
 }
 
 const API_BASE = "https://api.mercadopago.com";
@@ -103,15 +103,31 @@ async function mercadoPagoRequest(path, options = {}) {
 }
 
 function construirUrlsRetorno() {
-  const success = process.env.MERCADO_PAGO_SUCCESS_URL;
-  const pending = process.env.MERCADO_PAGO_PENDING_URL;
-  const failure = process.env.MERCADO_PAGO_FAILURE_URL;
+  const success = String(process.env.MERCADO_PAGO_SUCCESS_URL || "").trim();
+  const pending = String(process.env.MERCADO_PAGO_PENDING_URL || "").trim();
+  const failure = String(process.env.MERCADO_PAGO_FAILURE_URL || "").trim();
 
   if (!success || !pending || !failure) {
     return undefined;
   }
 
   return { success, pending, failure };
+}
+
+/**
+ * URLs de la preferencia (Checkout Pro), 100% por entorno:
+ * - notification_url = <BACKEND_PUBLIC_URL>/api/mercadopago/webhook (sin BACKEND_PUBLIC_URL no se envía).
+ * - back_urls = MERCADO_PAGO_SUCCESS_URL / _PENDING_URL / _FAILURE_URL (las tres o ninguna).
+ * - auto_return solo con back_urls: Mercado Pago rechaza la preferencia si hay auto_return sin back_urls.success.
+ */
+export function urlsPreferencia() {
+  const backUrls = construirUrlsRetorno();
+  const publica = String(process.env.BACKEND_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+  return {
+    back_urls: backUrls,
+    auto_return: backUrls ? "approved" : undefined,
+    notification_url: publica ? `${publica}/api/mercadopago/webhook` : undefined
+  };
 }
 
 function explicarPremium(feature = "M/A") {
@@ -153,11 +169,7 @@ async function generarLinkPago(userId, feature = "M/A") {
       feature,
       plan: "premium_30_dias"
     },
-    auto_return: "approved",
-    back_urls: construirUrlsRetorno(),
-    notification_url: process.env.BACKEND_PUBLIC_URL
-      ? `${process.env.BACKEND_PUBLIC_URL.replace(/\/$/, "")}/api/mercadopago/webhook`
-      : undefined
+    ...urlsPreferencia()
   };
 
   const payload = Object.fromEntries(
@@ -297,6 +309,7 @@ async function procesarWebhook(body = {}, query = {}, headers = {}) {
 
 export default {
   modoMock,
+  urlsPreferencia,
   exigirMayorDeEdad,
   verificarFirmaWebhook,
   pagarMock,
