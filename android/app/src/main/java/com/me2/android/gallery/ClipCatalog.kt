@@ -137,7 +137,7 @@ class ClipCatalog(context: Context) {
         )
 
         const val MEDIA_ROOT = "ME2_MEDIA"
-        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_001.mp4"          // ex avatar_calida_01
+        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_005.mp4"          // ex avatar_calida_01 (NEUTRAL_001 eliminado)
         private const val PROCESANDO = "03_CONVERSACION/PROCESANDO/PROCESANDO_001.mp4" // ex me2_texting
         private const val ATENCION = "03_CONVERSACION/ATENCION/ATENCION_001.mp4"       // ex avatar_atenta_01
         private const val ALEGRIA = "02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4"      // ex avatar_alegre_01

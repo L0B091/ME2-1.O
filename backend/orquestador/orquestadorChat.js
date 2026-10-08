@@ -180,8 +180,8 @@ function memoriaVacia(userId) {
 }
 
 const VIDEO_BASE = Object.freeze({
-  categoria: "calida", etiqueta: "calida", assetPath: "ME2_MEDIA/01_LOOP_NEUTRAL/NEUTRAL_001.mp4",
-  assetName: "NEUTRAL_001.mp4", mediaId: "NEUTRAL_001", loop: true
+  categoria: "calida", etiqueta: "calida", assetPath: "ME2_MEDIA/01_LOOP_NEUTRAL/NEUTRAL_005.mp4",
+  assetName: "NEUTRAL_005.mp4", mediaId: "NEUTRAL_005", loop: true
 });
 
 async function orquestador(mensajeUsuario, contexto = {}) {
