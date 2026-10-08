@@ -148,6 +148,20 @@ class MainActivity : AppCompatActivity() {
             .filter { it.categoria == MediaCategoria.LOOP_NEUTRAL && it.tipo == MediaTipo.VIDEO && mediaPermisos().permite(it) }
             .map(mediaLibrary::toClip)
             .ifEmpty { clipCatalog.listByMood(ClipCatalog.MOOD_LOOP_NEUTRAL) }
+    /** Estado de red para el loop de reposo (null hasta el primer aviso del NetworkStatusMonitor). */
+    private var deviceOnline: Boolean? = null
+
+    /**
+     * Loop de reposo del contenedor: con red 01_LOOP_NEUTRAL; sin red 09_SIN_CONEXION y, si esa carpeta está vacía,
+     * 01_LOOP_NEUTRAL como siempre (OfflineAvatarPool.reposo). Nunca vacío: último recurso [loopNeutralGallery].
+     */
+    private val idleGallery: List<GalleryClip>
+        get() {
+            val online = deviceOnline ?: runCatching { backendClient.isOnline(this) }.getOrDefault(true)
+            return OfflineAvatarPool.reposo(mediaLibrary.recursos(), mediaPermisos(), online)
+                .map(mediaLibrary::toClip)
+                .ifEmpty { loopNeutralGallery }
+        }
     private val presentationGallery: List<GalleryClip>
         get() = MediaSelector.secuenciaPresentacion(mediaLibrary.recursos(), mediaPermisos())
             .map(mediaLibrary::toClip)
@@ -375,6 +389,7 @@ class MainActivity : AppCompatActivity() {
         // publish de start(), o sea al abrir la app con red) se mandan los pendientes al /chat.
         val monitor = networkMonitor ?: com.me2.android.net.NetworkStatusMonitor(this) { online ->
             if (::binding.isInitialized) binding.syncStatusText.setText(com.me2.android.net.NetworkStatusMonitor.labelFor(online))
+            runCatching { onIdleLoopConnectivity(online) }
             if (online) runCatching { flushPendingOffline() }.onFailure { Log.e(TAG, "pendientes offline: no se pudo iniciar", it) }
         }.also { networkMonitor = it }
         monitor.start()
@@ -871,10 +886,16 @@ class MainActivity : AppCompatActivity() {
             playAvatarClip(exoPlayer, mediaLibrary.toClip(tipeo))
             return
         }
+        val idle = idleGallery
+        if (avatarMode == AvatarState.LOOP_NEUTRAL && galleryContainsCurrentClip(idle) && exoPlayer.isPlaying) {
+            // Ya está en el loop de reposo sin red: sigue el clip en curso (cortarlo en cada frase era un salto).
+            currentAvatarGallery = idle
+            return
+        }
         avatarMode = AvatarState.LOOP_NEUTRAL
         currentRequest = null
-        currentAvatarGallery = loopNeutralGallery
-        val clip = plan.neutral?.let(mediaLibrary::toClip) ?: pickNextClip(loopNeutralGallery, currentAvatarClipId) ?: return
+        currentAvatarGallery = idle
+        val clip = plan.neutral?.let(mediaLibrary::toClip) ?: pickNextClip(idle, currentAvatarClipId) ?: return
         Log.i(TAG, "offline neutral clip=${clip.id}")
         playAvatarClip(exoPlayer, clip)
     }
@@ -1166,7 +1187,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         fallbackToLoopNeutral(
-            forceReload = forceReload || !galleryContainsCurrentClip(loopNeutralGallery),
+            forceReload = forceReload || !galleryContainsCurrentClip(idleGallery),
             resetStateLabel = currentAvatarClipId == null
         )
     }
@@ -1303,7 +1324,7 @@ class MainActivity : AppCompatActivity() {
         if (recurso.categoria == MediaCategoria.LOOP_NEUTRAL) {
             avatarMode = AvatarState.LOOP_NEUTRAL
             currentRequest = null
-            currentAvatarGallery = loopNeutralGallery
+            currentAvatarGallery = idleGallery
         } else {
             avatarMode = when (recurso.categoria) {
                 MediaCategoria.CONVERSACION -> AvatarState.CONVERSACION
@@ -1338,16 +1359,37 @@ class MainActivity : AppCompatActivity() {
                 currentRequest?.let { playAvatarRequest(it) } ?: fallbackToLoopNeutral(forceReload = true)
             avatarMode == AvatarState.LOOP_NEUTRAL -> {
                 val exoPlayer = player ?: return
-                pickNextClip(currentAvatarGallery, currentAvatarClipId)?.let { playAvatarClip(exoPlayer, it) }
+                val next = pickNextClip(currentAvatarGallery, currentAvatarClipId) ?: return
+                if (next.id == currentAvatarClipId) {
+                    // Un solo clip en el loop: se rebobina en vez de recargarlo (sin cuadro congelado entre vueltas).
+                    exoPlayer.seekTo(0)
+                    exoPlayer.playWhenReady = true
+                } else {
+                    playAvatarClip(exoPlayer, next)
+                }
             }
             else -> fallbackToLoopNeutral(forceReload = true)
         }
     }
 
+    /**
+     * Cambio de red: el loop de reposo pasa a 09_SIN_CONEXION (sin red) o vuelve a 01_LOOP_NEUTRAL (con red) al
+     * terminar el clip en curso, sin cortarlo. Reacciones/presentación/despertador no se tocan.
+     */
+    private fun onIdleLoopConnectivity(online: Boolean) {
+        deviceOnline = online
+        if (presentationSequenceActive || avatarMode != AvatarState.LOOP_NEUTRAL || !::mediaLibrary.isInitialized) return
+        currentAvatarGallery = idleGallery
+        Log.i(TAG, "loop de reposo ${if (online) "con red (neutral)" else "sin red"}: ${currentAvatarGallery.size} clips")
+        val exoPlayer = player ?: return
+        // Solo si el reproductor quedó detenido (terminado/sin medio); si está reproduciendo, sigue hasta el fin del clip.
+        if (exoPlayer.playbackState == Player.STATE_ENDED || exoPlayer.playbackState == Player.STATE_IDLE) ensureAvatarPlayback()
+    }
+
     private fun fallbackToLoopNeutral(forceReload: Boolean = false, resetStateLabel: Boolean = false) {
         avatarMode = AvatarState.LOOP_NEUTRAL
         currentRequest = null
-        currentAvatarGallery = loopNeutralGallery
+        currentAvatarGallery = idleGallery
         if (resetStateLabel) {
         }
         ensureAvatarPlayback(forceReload = forceReload)

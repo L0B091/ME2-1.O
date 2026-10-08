@@ -46,7 +46,9 @@ object MediaSelector {
         val sub = req.subcategoria?.let(MediaNameParser::normalizar)
         // "Escribiendo mensaje" solo mientras ME2 tipea una respuesta (pedido explícito): nunca por ampliación/fallback.
         val pideEscribiendo = req.categoria == MediaCategoria.CONVERSACION && sub?.startsWith("ESCRIBIENDO") == true
+        // 09_SIN_CONEXION es exclusiva del reposo sin red (OfflineAvatarPool): nunca por fallback/último recurso con red.
         val validos = recursos.filter { permisos.permite(it) && it.tipo in req.tipos && (it.categoria != MediaCategoria.PRESENTACION || req.categoria == MediaCategoria.PRESENTACION) &&
+            (it.categoria != MediaCategoria.SIN_CONEXION || req.categoria == MediaCategoria.SIN_CONEXION) &&
             (pideEscribiendo || !OfflineAvatarPool.esEscribiendo(it)) }
         val deCat = validos.filter { it.categoria == req.categoria }
         val niveles = mutableListOf<List<MediaResource>>()

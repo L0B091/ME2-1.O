@@ -23,7 +23,8 @@ object MediaNameParser {
         "ALARMA" to MediaCategoria.DESPERTADOR,
         "DESPERTANDO" to MediaCategoria.DESPERTADOR,
         "POST_ALARMA" to MediaCategoria.DESPERTADOR,
-        "PREMIUM" to MediaCategoria.PREMIUM
+        "PREMIUM" to MediaCategoria.PREMIUM,
+        "SIN_CONEXION" to MediaCategoria.SIN_CONEXION
     )
 
     fun normalizar(s: String): String =
@@ -69,7 +70,7 @@ object MediaNameParser {
             intensidad = if (categoria == MediaCategoria.REACCION) intensidad ?: MediaIntensidad.NORMAL else intensidad,
             variante = variante,
             tipo = tipo,
-            loop = categoria == MediaCategoria.LOOP_NEUTRAL || categoria == MediaCategoria.WIDGET,
+            loop = categoria == MediaCategoria.LOOP_NEUTRAL || categoria == MediaCategoria.SIN_CONEXION || categoria == MediaCategoria.WIDGET,
             audio = tipo == MediaTipo.VIDEO || tipo == MediaTipo.AUDIO,
             premium = categoria == MediaCategoria.PREMIUM,
             adulto = adulto,
@@ -82,7 +83,7 @@ object MediaNameParser {
     private fun subDesdeNombre(categoria: MediaCategoria, tokens: List<String>): String? {
         val t = tokens.toMutableList()
         when (categoria) {
-            MediaCategoria.PRESENTACION, MediaCategoria.LOOP_NEUTRAL -> return null
+            MediaCategoria.PRESENTACION, MediaCategoria.LOOP_NEUTRAL, MediaCategoria.SIN_CONEXION -> return null
             MediaCategoria.WIDGET, MediaCategoria.PREMIUM -> if (t.firstOrNull() == categoria.name) t.removeAt(0)
             MediaCategoria.DESPERTADOR -> {
                 if (t.size > 1 && t.first() == "ALARMA") t.removeAt(0)

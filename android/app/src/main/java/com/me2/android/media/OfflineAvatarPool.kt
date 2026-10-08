@@ -5,7 +5,9 @@ import kotlin.random.Random
 /**
  * Contenedor del avatar SIN RED (regla de producto):
  *  - mientras ME2 tipea la frase offline: un clip "escribiendo mensaje" (CONVERSACION/ESCRIBIENDO*), si existe;
- *  - después: solo variantes de 01_LOOP_NEUTRAL, sin repetir la anterior, hasta el próximo input del usuario.
+ *  - en reposo: variantes de [CARPETA_SIN_CONEXION] (loop propio de "sin conexión"), sin repetir la anterior, mientras
+ *    dure la falta de red. Si esa carpeta está vacía, el respaldo es el loop de siempre: 01_LOOP_NEUTRAL.
+ *  - al volver la red: de nuevo 01_LOOP_NEUTRAL ([reposo] con online = true).
  * Los clips "escribiendo" NUNCA se usan en reposo (ni offline ni online): solo con una respuesta en curso.
  * Sin reacciones ni otros estados offline.
  */
@@ -13,14 +15,28 @@ object OfflineAvatarPool {
     fun esEscribiendo(r: MediaResource): Boolean =
         r.categoria == MediaCategoria.CONVERSACION && r.subcategoria?.startsWith("ESCRIBIENDO") == true
 
-    /** Pool de reposo offline: solo LOOP_NEUTRAL (nunca escribiendo). */
+    /** Carpeta de clips de reposo sin red (assets/ME2_MEDIA o filesDir/ME2_MEDIA). */
+    const val CARPETA_SIN_CONEXION = "09_SIN_CONEXION"
+
+    private fun deCategoria(recursos: List<MediaResource>, permisos: MediaPermisos, categoria: MediaCategoria) =
+        recursos.filter { permisos.permite(it) && it.tipo == MediaTipo.VIDEO && !it.adulto && it.categoria == categoria }
+
+    /** Clips de 09_SIN_CONEXION disponibles (vacío hasta que se agreguen). */
+    fun sinConexion(recursos: List<MediaResource>, permisos: MediaPermisos = MediaPermisos()): List<MediaResource> =
+        deCategoria(recursos, permisos, MediaCategoria.SIN_CONEXION)
+
+    /** Pool de reposo offline: 09_SIN_CONEXION; si está vacía, 01_LOOP_NEUTRAL (nunca escribiendo). */
     fun pool(recursos: List<MediaResource>, permisos: MediaPermisos = MediaPermisos()): List<MediaResource> =
-        recursos.filter { permisos.permite(it) && it.tipo == MediaTipo.VIDEO && !it.adulto && it.categoria == MediaCategoria.LOOP_NEUTRAL }
+        sinConexion(recursos, permisos).ifEmpty { deCategoria(recursos, permisos, MediaCategoria.LOOP_NEUTRAL) }
+
+    /** Loop de reposo del contenedor según la red: con red 01_LOOP_NEUTRAL; sin red [pool]. */
+    fun reposo(recursos: List<MediaResource>, permisos: MediaPermisos = MediaPermisos(), online: Boolean): List<MediaResource> =
+        if (online) deCategoria(recursos, permisos, MediaCategoria.LOOP_NEUTRAL) else pool(recursos, permisos)
 
     fun escribiendo(recursos: List<MediaResource>, permisos: MediaPermisos = MediaPermisos()): List<MediaResource> =
         recursos.filter { permisos.permite(it) && it.tipo == MediaTipo.VIDEO && !it.adulto && esEscribiendo(it) }
 
-    /** Plan de una respuesta offline: clip de tipeo (opcional) y luego neutral. */
+    /** Plan de una respuesta offline: clip de tipeo (opcional) y luego el loop de reposo sin red. */
     data class Plan(val tipeo: MediaResource?, val neutral: MediaResource?)
 
     fun planRespuesta(
@@ -34,7 +50,7 @@ object OfflineAvatarPool {
         return Plan(tipeo, neutral)
     }
 
-    /** Próximo clip de reposo (neutral) sin repetir el anterior. */
+    /** Próximo clip de reposo sin red (09_SIN_CONEXION o, si está vacía, neutral) sin repetir el anterior. */
     fun siguiente(
         recursos: List<MediaResource>,
         permisos: MediaPermisos = MediaPermisos(),

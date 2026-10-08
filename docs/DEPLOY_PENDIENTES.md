@@ -98,7 +98,13 @@ Clips faltantes (lo que el código/orquestador ya puede pedir y no existe; hoy c
 - `03_CONVERSACION/DESPEDIDA/DESPEDIDA_001.mp4`.
 - `05_DESPERTADOR/` completo: `AVISO_01/`, `AVISO_02/` (escalaciones 1 y 2), `ALARMA/` (escalación final),
   `POST_ALARMA/` (despierto), y según `MEDIA_V1.md` también `AVISO_03/`, `DESPERTANDO/`.
-- `08_SISTEMA/ERROR/`, `08_SISTEMA/SIN_CONEXION/`, `08_SISTEMA/CARGANDO/`.
+- `09_SIN_CONEXION/SIN_CONEXION_001.mp4`, `_002`, … — **loop de reposo sin red** (carpeta ya creada, vacía, con `README.md`).
+  Mientras el teléfono no tiene conexión el contenedor rota estos clips (al azar sin repetir; con uno solo, se repite
+  rebobinando) y vuelve a `01_LOOP_NEUTRAL` al terminar el clip en curso cuando vuelve la red. Vacía → sin red se usa
+  `01_LOOP_NEUTRAL` como hasta ahora. Formato igual a los neutrales actuales: **1264 × 1120, H.264, 24 fps, sin audio**,
+  mp4 con faststart; cada clip debería empezar y terminar en la misma pose para encadenar sin saltos.
+- `08_SISTEMA/ERROR/`, `08_SISTEMA/CARGANDO/` (y `08_SISTEMA/SIN_CONEXION/`, aviso puntual que hoy nadie pide; el loop
+  sin red es `09_SIN_CONEXION`).
 - `02_REACCIONES` sin ningún clip: CURIOSIDAD, PENSATIVA, DUDA, CONFUSION, TRISTEZA, PREOCUPACION, ENOJO, MOLESTIA,
   VERGUENZA, CANSANCIO (las 10 las emite `backend/modulos/media/reaccionAudiovisual.js`; CURIOSIDAD es la de “pregunta”).
 - `02_REACCIONES` incompletas: EMPATIA (MEDIO, MAXIMO), ORGULLO (NORMAL, MAXIMO), SARCASMO (MAXIMO), TIMIDEZ (MAXIMO).

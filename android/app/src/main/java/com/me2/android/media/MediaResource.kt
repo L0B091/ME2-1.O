@@ -36,7 +36,9 @@ enum class MediaCategoria(val carpetas: Set<String>) {
     DESPERTADOR(setOf("DESPERTADOR", "ALARMA")),
     TRANSICION(setOf("TRANSICIONES", "TRANSICION")),
     PREMIUM(setOf("PREMIUM")),
-    SISTEMA(setOf("SISTEMA"));
+    SISTEMA(setOf("SISTEMA")),
+    /** 09_SIN_CONEXION: loop de reposo SOLO sin red (reemplaza a 01_LOOP_NEUTRAL mientras no hay conexión). */
+    SIN_CONEXION(setOf("SIN_CONEXION"));
 
     companion object {
         /** "02_REACCIONES" → REACCION (el prefijo numérico solo ordena carpetas). */

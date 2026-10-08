@@ -12,11 +12,14 @@ Raíz empaquetada: `app/src/main/assets/ME2_MEDIA/` · drop-in en runtime: `file
 06_TRANSICIONES/<ENTRADA|SALIDA|NEUTRAL|CAMBIO_ESTADO>/...
 07_PREMIUM/ESPECIALES/...   07_PREMIUM/ADULTO/... (solo Premium + modo adulto desbloqueado)
 08_SISTEMA/<ERROR|CARGANDO|SIN_CONEXION>/...
+09_SIN_CONEXION/SIN_CONEXION_001.mp4             (loop de reposo SOLO sin red; vacía → 01_LOOP_NEUTRAL)
 ```
 
 - Agregar/reemplazar un clip = copiar el archivo con la nomenclatura (p. ej. `ALEGRIA_NORMAL_002.mp4`). Sin cambios de código.
 - Metadatos: se derivan de ruta+nombre (`media/MediaNameParser.kt`). Overrides opcionales en `ME2_MEDIA/metadata.json`:
   `{"recursos": {"ALEGRIA_NORMAL_002": {"habilitado": false, "prioridad": 2, "duracion_ms": 6000}}}` (premium/adulto solo pueden agregarse, no quitarse).
 - Selección: `media/MediaSelector.kt` (categoría → intensidad más cercana → categoría/fallbacks → LOOP_NEUTRAL → cualquier video no adulto; anti-repetición inmediata; prioridad). Último recurso: `res/raw` vía `gallery/ClipCatalog`.
+- Sin red: `media/OfflineAvatarPool.kt` (`reposo(online)`): el loop de reposo usa `09_SIN_CONEXION` (1264×1120, H.264, 24 fps,
+  sin audio) y vuelve a `01_LOOP_NEUTRAL` con red; esos clips nunca salen por fallback con red.
 - Estado: `media/AvatarStateMachine.kt`; integración en `MainActivity` (fin de clip = `Player.STATE_ENDED`).
 - Los clips actuales son PROVISIONALES. ME2_MEDIA es la fuente única: `avatar/galeria/` (copias idénticas) y los mp4 de `res/raw` se eliminaron; el respaldo de `ClipCatalog` apunta a ME2_MEDIA. Clip sin clasificar: `avatar/sin_clasificar/` (fuera del APK).

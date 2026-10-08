@@ -35,6 +35,29 @@ class MediaLibraryTest {
         nuevo.delete()
     }
 
+    @Test fun carpetaSinConexionConPlaceholderNoRompeElDescubrimiento() {
+        // assets/ME2_MEDIA/09_SIN_CONEXION solo tiene README.md: la biblioteca lo ignora y sigue descubriendo todo.
+        val lib = MediaLibrary(app)
+        val recursos = lib.refrescar()
+        assertTrue(recursos.any { it.categoria == MediaCategoria.LOOP_NEUTRAL })
+        assertTrue(recursos.none { it.archivo.endsWith(".md") })
+        val empaquetados = recursos.filter { it.categoria == MediaCategoria.SIN_CONEXION && it.origen == MediaResource.Origen.ASSETS }
+        // Vacía → sin red el reposo es el loop neutral; con un clip drop-in pasa a sin conexión.
+        if (empaquetados.isEmpty()) {
+            assertTrue(OfflineAvatarPool.reposo(recursos, online = false).all { it.categoria == MediaCategoria.LOOP_NEUTRAL })
+        }
+        val clip = File(lib.filesRoot(), "09_SIN_CONEXION/SIN_CONEXION_001.mp4").apply { parentFile!!.mkdirs(); writeBytes(ByteArray(8)) }
+        try {
+            val conClip = lib.refrescar()
+            val reposo = OfflineAvatarPool.reposo(conClip, online = false)
+            assertTrue(reposo.isNotEmpty() && reposo.all { it.categoria == MediaCategoria.SIN_CONEXION })
+            assertTrue(lib.toClip(reposo.first { it.origen == MediaResource.Origen.FILES_DIR }).uri.toString().endsWith("09_SIN_CONEXION/SIN_CONEXION_001.mp4"))
+            assertTrue(OfflineAvatarPool.reposo(conClip, online = true).all { it.categoria == MediaCategoria.LOOP_NEUTRAL })
+        } finally {
+            clip.delete(); lib.refrescar()
+        }
+    }
+
     @Test fun overrideNoPuedeQuitarRestriccionAdulta() {
         val adulto = MediaNameParser.parse("07_PREMIUM/ADULTO/ADULTO_001.mp4")!!
         val o = MediaLibrary.aplicarOverride(adulto, JSONObject("""{"adulto":false,"premium":false,"prioridad":3}"""))
