@@ -76,14 +76,39 @@ class Me2AlarmScheduler(
         return arm(record)
     }
 
-    /** Recordatorio/evento de agenda guardado localmente (título = texto del usuario). Un solo intento. */
+    /**
+     * Recordatorio de un evento de agenda (título = texto del usuario), con el sonido ME2 (no la alarma fuerte):
+     * - aviso 24 h ANTES del evento (texto = fecha y hora del evento), salvo que el evento falte menos de 24 h;
+     * - aviso a la hora del evento (texto = hora).
+     * Ambos persistidos: sobreviven cierre/reinicio y se re-arman ante cambios de hora/zona ([restoreAll]).
+     */
     fun scheduleReminder(userId: String, remoteId: String?, title: String, atMillis: Long): StoredAlarmRecord? {
         if (atMillis <= clock() - AlarmEscalation.STALE_MS) return null
-        val id = "evt-${remoteId ?: UUID.randomUUID()}"
+        val key = remoteId ?: UUID.randomUUID().toString()
+        val hourFmt = SimpleDateFormat("HH:mm", Locale.ROOT).apply { timeZone = Me2Clock.ZONE }
+        val dayBeforeAt = atMillis - DAY_BEFORE_MS
+        if (dayBeforeAt > clock()) {
+            val dateFmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply { timeZone = Me2Clock.ZONE }
+            upsertReminder(DAY_BEFORE_PREFIX + key, userId, remoteId, title, dayBeforeAt, hourFmt.format(atMillis), dateFmt.format(atMillis))
+        } else {
+            cancel(DAY_BEFORE_PREFIX + key) // reprogramado a menos de 24 h: el aviso previo ya no corresponde
+        }
+        return upsertReminder(EVENT_PREFIX + key, userId, remoteId, title, atMillis, hourFmt.format(atMillis), "")
+    }
+
+    /** Evento borrado por chat: se cancelan sus dos avisos (24 h antes y a la hora). */
+    fun cancelReminder(remoteId: String) {
+        cancel(EVENT_PREFIX + remoteId)
+        cancel(DAY_BEFORE_PREFIX + remoteId)
+    }
+
+    private fun upsertReminder(
+        id: String, userId: String, remoteId: String?, title: String, atMillis: Long, hour: String, message: String
+    ): StoredAlarmRecord {
         val existing = store.find(id)
-        val record = if (existing != null && existing.triggerAtMillis == atMillis) existing.copy(title = title)
+        val record = if (existing != null && existing.triggerAtMillis == atMillis) existing.copy(title = title, message = message)
         else StoredAlarmRecord(
-            id = id, userId = userId, hour = SimpleDateFormat("HH:mm", Locale.ROOT).apply { timeZone = Me2Clock.ZONE }.format(atMillis), title = title, message = "", state = "ACTIVE",
+            id = id, userId = userId, hour = hour, title = title, message = message, state = "ACTIVE",
             triggerAtMillis = atMillis, dispatchPlan = emptyList(), kind = StoredAlarmRecord.KIND_REMINDER,
             remoteId = remoteId, syncState = StoredAlarmRecord.SYNC_OK
         )
@@ -263,6 +288,9 @@ class Me2AlarmScheduler(
 
     companion object {
         private const val TAG = "Me2AlarmScheduler"
+        const val EVENT_PREFIX = "evt-"
+        const val DAY_BEFORE_PREFIX = "evt24-"
+        const val DAY_BEFORE_MS = 24L * 60 * 60 * 1000
         fun requestCode(alarmId: String): Int = "alarm-$alarmId".hashCode()
 
         /**

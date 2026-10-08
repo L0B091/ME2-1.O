@@ -114,4 +114,42 @@ class DespertadorIniciativaDisenoTest {
         // Viaja como recuerdo real a las iniciativas (memoriaLocal.persistentMemories).
         assertTrue(store.load(user).toBackendContext().getJSONArray("persistentMemories").toString().contains("Cómo durmió"))
     }
+
+    @Test fun recordatorioDeEvento24hAntesYALaHoraConSonidoMe2YBorradoCancelaAmbos() {
+        val scheduler = Me2AlarmScheduler(context, isOnline = { true })
+        val evento = serverNow + 3 * 24 * 3600_000L // dentro de 3 días
+        scheduler.scheduleReminder(user, "ev1", "turno dentista", evento)
+        val armadas = shadowOf(am).scheduledAlarms.map { it.triggerAtTime }.sorted()
+        // Exactas (setExactAndAllowWhileIdle) y en el reloj del teléfono (−4 min respecto de ME2).
+        assertEquals(listOf(evento - 24 * 3600_000L - 240_000L, evento - 240_000L), armadas)
+        val previo = Me2AlarmStore(context).find(Me2AlarmScheduler.DAY_BEFORE_PREFIX + "ev1")!!
+        assertEquals("2026-10-11 14:23", previo.message) // dato: fecha y hora del evento (sin texto inventado)
+        me2 = previo.triggerAtMillis; scheduler.fire(previo.id, 1)
+        assertEquals(Me2NotificationChannels.CHANNEL_MESSAGES, notif(previo.id, 1).channelId)
+        assertEquals("turno dentista", notif(previo.id, 1).extras.getString("android.title"))
+        me2 = evento; scheduler.fire(Me2AlarmScheduler.EVENT_PREFIX + "ev1", 1)
+        assertEquals(Me2NotificationChannels.CHANNEL_MESSAGES, notif(Me2AlarmScheduler.EVENT_PREFIX + "ev1", 1).channelId)
+
+        scheduler.scheduleReminder(user, "ev2", "cena", serverNow + 5 * 24 * 3600_000L)
+        scheduler.cancelReminder("ev2")
+        assertNull(Me2AlarmStore(context).find(Me2AlarmScheduler.EVENT_PREFIX + "ev2"))
+        assertNull(Me2AlarmStore(context).find(Me2AlarmScheduler.DAY_BEFORE_PREFIX + "ev2"))
+    }
+
+    @Test fun eventoAMenosDe24hSoloAvisaALaHora() {
+        val scheduler = Me2AlarmScheduler(context, isOnline = { true })
+        val evento = serverNow + 5 * 3600_000L
+        scheduler.scheduleReminder(user, "ev3", "reunión", evento)
+        assertNull(Me2AlarmStore(context).find(Me2AlarmScheduler.DAY_BEFORE_PREFIX + "ev3"))
+        assertEquals(listOf(evento - 240_000L), shadowOf(am).scheduledAlarms.map { it.triggerAtTime })
+    }
+
+    @Test fun reinicioYCambioDeHoraReArmanLosDosAvisos() {
+        val scheduler = Me2AlarmScheduler(context, isOnline = { true })
+        val evento = serverNow + 2 * 24 * 3600_000L
+        scheduler.scheduleReminder(user, "ev4", "cumple", evento)
+        shadowOf(am).scheduledAlarms.toList().forEach { am.cancel(it.operation) } // reinicio: AlarmManager vacío
+        Me2BootReceiver().onReceive(context, android.content.Intent(android.content.Intent.ACTION_BOOT_COMPLETED))
+        assertEquals(2, shadowOf(am).scheduledAlarms.size)
+    }
 }

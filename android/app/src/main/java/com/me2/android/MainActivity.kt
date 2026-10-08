@@ -329,6 +329,9 @@ class MainActivity : AppCompatActivity() {
             val bootSessionId = currentSession.id
             lifecycleScope.launch(Dispatchers.IO) {
                 runCatching { alarmScheduler.restoreAll() }
+                // Eventos del calendario del teléfono: aseguran sus avisos (24 h antes y a la hora), idempotente; cubre
+                // eventos guardados antes de que existiera el aviso previo.
+                runCatching { calendarStore.upcoming(bootSessionId).forEach { scheduleReminderFrom(it.toBackendJson()) } }
                 runCatching { Me2SyncWorker.enqueueIfPending(this@MainActivity) }
                 runCatching {
                     if (initiativeStore.isEnabled(bootSessionId)) {
@@ -1490,7 +1493,12 @@ class MainActivity : AppCompatActivity() {
                 if (evento.optString("accion") == "eliminar_local") {
                     val ids = evento.optJSONArray("ids")
                     for (i in 0 until (ids?.length() ?: 0)) ids?.optString(i)?.takeIf { it.isNotBlank() }?.let { id ->
-                        runCatching { alarmScheduler.cancel("evt-$id"); notificationCoordinator.cancelAlarmNotifications("evt-$id") }
+                        runCatching {
+                            // Borrado por chat: se cancelan los dos avisos del evento (24 h antes y a la hora).
+                            alarmScheduler.cancelReminder(id)
+                            notificationCoordinator.cancelAlarmNotifications(Me2AlarmScheduler.EVENT_PREFIX + id)
+                            notificationCoordinator.cancelAlarmNotifications(Me2AlarmScheduler.DAY_BEFORE_PREFIX + id)
+                        }
                     }
                 }
             }

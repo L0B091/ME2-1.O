@@ -29,6 +29,7 @@ import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import calendarioApi from "../api/calendario.js";
 import { detectarAlarma } from "../modulos/detectorAlarmas.js";
 import { detectarEvento, detectarEliminacion, detectarConsulta, lineaEvento } from "../modulos/detectorAgenda.js";
+import fechaProgramada from "../utils/fechaProgramada.js";
 import contextoLLM from "./contextoLLM.js";
 import perfilBasico from "../modulos/onboarding/perfilBasico.js";
 import estadoEmocional from "../memoria/estadoEmocional.js";
@@ -147,8 +148,18 @@ function accionesAgenda(userId, mensaje, enTelefono, zonaHoraria, eventosTelefon
 // Acciones deterministas del orquestador (el LLM solo las confirma con su voz).
 function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, eventosTelefono = null) {
   const acciones = [];
-  const resultado = { alarma: null, evento: null };
+  const resultado = { alarma: null, evento: null, programados: [] };
   if (!userId) return { acciones, resultado, agenda: null };
+  // Fecha/hora EXACTA de lo programado (reloj del servidor, zona ME2): dato obligatorio para la respuesta del avatar.
+  const programado = (epoch) => {
+    if (!Number.isFinite(epoch)) return null;
+    const d = fechaProgramada.describirProgramado(epoch, Date.now());
+    resultado.programados.push(d);
+    return d;
+  };
+  const datoObligatorio = (d) => d
+    ? ` DATO OBLIGATORIO para tu respuesta: decí la fecha y hora exactas en que quedó programado: «${d.texto}» (día de la semana, ${d.ddmm} y ${d.hhmm}).`
+    : "";
   const enTelefono = persistir === false;
   const agendaTurno = (creado = null, borrados = []) => enTelefono
     ? calendarioApi.agendaCombinada(userId, [...(eventosTelefono || []).filter(e => !borrados.includes(e.id)), ...(creado ? [creado] : [])], { limite: 10 })
@@ -175,7 +186,8 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, evento
       disparoEpochMs: pedidoAlarma.epochMs ?? null, servidorAhoraMs: Date.now(),
       dispatchPlan: protocoloDespertador.despachosAndroid({ hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null })
     };
-    acciones.push(`Alarma CREADA en el teléfono para las ${pedidoAlarma.hora}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.`);
+    const d = programado(pedidoAlarma.epochMs);
+    acciones.push(`Alarma CREADA en el teléfono para ${d ? `el ${d.texto}` : `las ${pedidoAlarma.hora}`}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.${datoObligatorio(d)}`);
     return { acciones, resultado, agenda: agendaTurno() };
   }
   if (persistir === false && pedidoAlarma?.accion === "cancelar") {
@@ -197,7 +209,10 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, evento
         descripcion: pedido.descripcion, notas: null, creadoPor: "chat", creadoEn: new Date().toISOString()
       };
       resultado.evento = { exito: true, local: true, accion: "crear_local", evento: creado };
-      acciones.push(`Evento AGENDADO en el calendario del teléfono: ${lineaEvento(creado)}${pedido.horaIndicada ? "" : " (el usuario no dijo la hora; quedó a las 09:00)"}; avisa a esa hora aunque no haya conexión.`);
+      const at = fechaProgramada.epochDeFechaHora(creado.fecha, creado.hora);
+      const d = programado(at);
+      const aviso = at && at - Date.now() > 24 * 3600e3 ? "avisa 24 h antes y a esa hora" : "avisa a esa hora";
+      acciones.push(`Evento AGENDADO en el calendario del teléfono: ${lineaEvento(creado)}${pedido.horaIndicada ? "" : " (el usuario no dijo la hora; quedó a las 09:00)"}; ${aviso} aunque no haya conexión.${datoObligatorio(d)}`);
     }
     return { acciones, resultado, agenda: agendaTurno(creado) };
   }
@@ -205,7 +220,8 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, evento
     try {
       const alarma = gestorDeAlarmas.crearAlarma(userId, pedidoAlarma.hora, { titulo: pedidoAlarma.titulo });
       resultado.alarma = { accion: "creada", ...alarma };
-      acciones.push(`Alarma CREADA y guardada para las ${alarma.hora} (${alarma.titulo}); se sincroniza con el teléfono.`);
+      const d = programado(pedidoAlarma.epochMs);
+      acciones.push(`Alarma CREADA y guardada para ${d ? `el ${d.texto}` : `las ${alarma.hora}`} (${alarma.titulo}); se sincroniza con el teléfono.${datoObligatorio(d)}`);
     } catch (error) {
       resultado.alarma = { accion: "error", error: error.message };
       acciones.push(`No se pudo crear la alarma: ${error.message}`);
@@ -226,8 +242,9 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, evento
   if (pedidoEvento) {
     const r = calendarioApi.agregarEvento(userId, pedidoEvento);
     resultado.evento = r;
+    const d = r.exito ? programado(fechaProgramada.epochDeFechaHora(r.evento.fecha, r.evento.hora)) : null;
     acciones.push(r.exito
-      ? `Evento AGENDADO: ${lineaEvento(r.evento)}`
+      ? `Evento AGENDADO: ${lineaEvento(r.evento)}.${datoObligatorio(d)}`
       : `No se pudo agendar el evento: ${r.mensaje}`);
   }
   return { acciones, resultado, agenda: null };
@@ -436,6 +453,32 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     respuesta = r.respuesta;
   } catch (error) {
     debugLLM = { ...debugLLM, used: false, error: error.message };
+  }
+
+  // [VALIDACIÓN] alarma/evento creado: la respuesta debe decir la fecha y hora exactas programadas. Si falta, se
+  // regenera UNA vez con una instrucción más estricta; no se agrega texto enlatado (si sigue faltando, queda registrado).
+  const programados = accionesEjecutadas?.programados || [];
+  if (respuesta && programados.length) {
+    const falta = (t) => programados.filter(d => !fechaProgramada.contieneFechaHora(t, d));
+    fechaProgramada.ESTADISTICAS_FECHA.validadas++;
+    if (falta(respuesta).length) {
+      fechaProgramada.ESTADISTICAS_FECHA.regeneradas++;
+      const estricta = {
+        role: "system",
+        content: `Tu respuesta anterior no dijo la fecha y hora exactas de lo que quedó programado. Reescribí tu respuesta incluyendo TEXTUALMENTE ${falta(respuesta).map(d => `«${d.texto}»`).join(" y ")} (día de la semana, día/mes y hora HH:mm).`
+      };
+      try {
+        const r2 = await dolphinClient.chat([...mensajes, { role: "assistant", content: respuesta }, estricta]);
+        if (r2?.respuesta && falta(r2.respuesta).length < falta(respuesta).length) respuesta = r2.respuesta;
+      } catch (error) {
+        debugLLM = { ...debugLLM, reintentoFechaError: error.message };
+      }
+      if (falta(respuesta).length) {
+        fechaProgramada.ESTADISTICAS_FECHA.faltanteTrasReintento++;
+        console.log(`[fecha-obligatoria] faltante tras reintento (${fechaProgramada.ESTADISTICAS_FECHA.faltanteTrasReintento}/${fechaProgramada.ESTADISTICAS_FECHA.validadas})`);
+      }
+    }
+    debugLLM = { ...debugLLM, fechaProgramada: programados.map(d => d.texto), fechaIncluida: !falta(respuesta).length };
   }
 
   // [FORMATO] modo adulto: texto | gif | texto+gif (validado por el orquestador). Fuera: siempre texto.
