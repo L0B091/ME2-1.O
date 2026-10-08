@@ -12,6 +12,9 @@ import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.tasks.Tasks
+import com.me2.android.net.BackendAuthResult
+import java.util.concurrent.TimeUnit
 import com.me2.android.config.ApiConfig
 import com.me2.android.data.UserIdMigration
 import com.me2.android.data.SessionStorage
@@ -34,6 +37,8 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var googleSignInClient: GoogleSignInClient
     private lateinit var sessionStorage: SessionStorage
     private val backendClient = Me2BackendClient()
+    /** Sesión real guardada que NO se abrió sola porque Main falló 2 veces seguidas: el botón reabre Main sin Google. */
+    private var keptSession: UserSession? = null
 
     private val googleSignInLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -64,10 +69,15 @@ class LoginActivity : AppCompatActivity() {
         }
 
         // Keystore/EncryptedSharedPreferences y lectura de sesión fuera del hilo principal (evita ANR en arranque en frío).
+        // Mientras se lee la sesión solo se ve el logo: el botón de Google y la leyenda arrancan ocultos (layout) y
+        // aparecen recién si NO hay sesión. Antes el login completo quedaba a la vista durante la lectura del Keystore
+        // y hasta que Main dibujaba: parecía que había que volver a tocar «Ingresar con Google» en cada apertura.
         binding.googleButton.isEnabled = false
         binding.previewDemoButton.isEnabled = false
         lifecycleScope.launch {
-            val existing = withContext(Dispatchers.IO) { openSessionStorage() }
+            val existing = withContext(Dispatchers.IO) {
+                runCatching { openSessionStorage() }.onFailure { Log.e(TAG, "lectura de sesión falló", it) }.getOrNull()
+            }
             if (isFinishing || isDestroyed) return@launch
             binding.googleButton.isEnabled = true
             binding.previewDemoButton.isEnabled = true
@@ -81,8 +91,13 @@ class LoginActivity : AppCompatActivity() {
 
     /** Corre en Dispatchers.IO. Devuelve la sesión a reutilizar (o null si hay que mostrar el login). */
     private fun openSessionStorage(): UserSession? {
-        sessionStorage = runCatching { SessionStorage(this) }.getOrElse { firstError ->
-            Log.e(TAG, "SessionStorage init failed", firstError)
+        sessionStorage = runCatching { SessionStorage(this) }.recoverCatching { firstError ->
+            // Primero se reintenta SIN borrar (fallo transitorio del Keystore): borrar el archivo era perder la sesión.
+            Log.e(TAG, "SessionStorage init failed; se reintenta sin borrar", firstError)
+            SecurePreferences.forget(this, "me2_session_secure")
+            SessionStorage(this)
+        }.getOrElse { secondError ->
+            Log.e(TAG, "SessionStorage sigue fallando; último recurso: regenerar", secondError)
             runCatching {
                 SecurePreferences.forget(this, "me2_session_secure")
                 deleteSharedPreferences("me2_session_secure")
@@ -97,19 +112,70 @@ class LoginActivity : AppCompatActivity() {
             existing = null
         }
         if (existing != null) {
-            if (!wasMainLaunchUnstable()) return existing
-            // Fallos repetidos al abrir Main: se muestra el login una vez como salvavidas, pero la sesión real NO se
-            // borra (regla: nunca pedir login de nuevo salvo cierre explícito). Se resetea el contador para que la
-            // próxima apertura vuelva directo al chat. La sesión demo sí se descarta.
-            Log.w(TAG, "Skipping auto-route after unstable Main launch; staying on login (session kept)")
-            if (existing.isDemo) runCatching { sessionStorage.clear() }
+            // Regla: con sesión guardada se entra directo, siempre. Cerrar la app rápido o que el sistema la mate no
+            // cuenta: solo se frena si Main reportó 2 errores seguidos (evita un bucle Login↔Main) y aun así la
+            // sesión se conserva y el botón reabre Main sin pasar por Google. La demo sí se descarta.
+            if (!shouldHoldAfterMainErrors(mainErrors(this))) return existing
+            Log.w(TAG, "Main falló 2 veces seguidas; se espera un toque para reabrir (sesión conservada)")
+            if (existing.isDemo) {
+                runCatching { sessionStorage.clear() }
+            } else {
+                keptSession = existing
+            }
             markMainLaunchStable(this)
+            return null
         }
-        return null
+        // Sin sesión local pero con la cuenta de Google de ME2 todavía autorizada en este teléfono (nunca hubo
+        // cierre de sesión explícito: ese cierre hace signOut de Google): se recupera en silencio, sin pantalla.
+        return runCatching { silentColdStartSignIn() }
+            .onFailure { Log.w(TAG, "recuperación silenciosa al abrir falló: ${it.javaClass.simpleName}") }
+            .getOrNull()
+    }
+
+    /** Corre en Dispatchers.IO. ID token de la cuenta ya autorizada (sin UI) → token de ME2 guardado. */
+    private fun silentColdStartSignIn(): UserSession? {
+        if (GoogleSignIn.getLastSignedInAccount(this) == null) return null
+        val clientId = ApiConfig.googleWebClientId.ifBlank { backendClient.googleWebClientId }
+        if (clientId.isBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) return null
+        val options = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestIdToken(clientId)
+            .build()
+        val account = Tasks.await(GoogleSignIn.getClient(this, options).silentSignIn(), 10, TimeUnit.SECONDS)
+        val idToken = account?.idToken?.takeIf { it.isNotBlank() } ?: return null
+        val session = persistBackendLogin(backendClient.authenticateWithGoogle(idToken), account)
+        Log.i(TAG, "sesión recuperada en silencio al abrir")
+        return session
+    }
+
+    /** Guarda la sesión del backend (hilo de fondo) y migra los datos locales al userId del backend. */
+    private fun persistBackendLogin(auth: BackendAuthResult, account: GoogleSignInAccount): UserSession {
+        val fallbackId = account.id ?: account.email ?: "user-${System.currentTimeMillis()}"
+        val session = UserSession(
+            displayName = auth.displayName.ifBlank { account.displayName ?: "Usuario ME2" },
+            email = auth.email.ifBlank { account.email ?: "" },
+            // Siempre el userId del backend (Me2AuthContract exige que venga): las rutas /api/.../:userId lo validan.
+            id = auth.userId,
+            authToken = auth.token,
+            photoUrl = auth.photoUrl ?: account.photoUrl?.toString(),
+            emailVerified = auth.emailVerified,
+            premiumUntilMillis = 0L
+        )
+        val previousId = sessionStorage.loadUser()?.takeUnless { it.isDemo }?.id
+        sessionStorage.saveUserCommit(session)
+        UserIdMigration.migrate(this, fallbackId, session.id)
+        UserIdMigration.migrate(this, previousId, session.id)
+        return session
     }
 
     private fun setupLoginUi() {
         binding.googleButton.visibility = View.VISIBLE
+        binding.loginHintText.visibility = View.VISIBLE
+        keptSession?.let { kept ->
+            // Salvavidas tras 2 errores de Main: la sesión sigue guardada; tocar reabre el chat sin pedir Google.
+            binding.googleButton.setOnClickListener { openMain(demoPreview = kept.isDemo) }
+            return
+        }
         setupPreviewDemo()
 
         // TODO(google-oauth): set ME2_GOOGLE_WEB_CLIENT_ID in local.properties / env, then rebuild.
@@ -151,12 +217,6 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    private fun wasMainLaunchUnstable(): Boolean = isLaunchUnstable(
-        getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE).let {
-            it.getBoolean(KEY_MAIN_PENDING, false) to it.getInt(KEY_MAIN_CRASHES, 0)
-        }
-    )
-
     private fun setupPreviewDemo() {
         if (!ApiConfig.demoLoginEnabled) {
             binding.previewDemoButton.visibility = View.GONE
@@ -187,13 +247,6 @@ class LoginActivity : AppCompatActivity() {
             return
         }
 
-        val fallbackSession = UserSession(
-            displayName = account.displayName ?: "Usuario ME2",
-            email = account.email ?: "",
-            id = account.id ?: account.email ?: "user-${System.currentTimeMillis()}",
-            photoUrl = account.photoUrl?.toString()
-        )
-
         if (!backendClient.isConfigured()) {
             Toast.makeText(this, getString(R.string.login_backend_url_missing), Toast.LENGTH_LONG).show()
             setAuthBusy(false)
@@ -209,22 +262,10 @@ class LoginActivity : AppCompatActivity() {
         thread {
             runCatching {
                 backendClient.authenticateWithGoogle(idToken)
-            }.onSuccess { auth ->
-                val session = UserSession(
-                    displayName = auth.displayName.ifBlank { fallbackSession.displayName },
-                    email = auth.email.ifBlank { fallbackSession.email },
-                    // Siempre el userId del backend (Me2AuthContract exige que venga): las rutas /api/.../:userId lo validan.
-                    id = auth.userId,
-                    authToken = auth.token,
-                    photoUrl = auth.photoUrl ?: fallbackSession.photoUrl,
-                    emailVerified = auth.emailVerified,
-                    premiumUntilMillis = 0L
-                )
-                val previousId = sessionStorage.loadUser()?.takeUnless { it.isDemo }?.id
+            }.mapCatching { auth ->
                 // Escritura de sesión y migración de datos locales en este hilo de fondo, no en el principal.
-                sessionStorage.saveUserCommit(session)
-                UserIdMigration.migrate(this, fallbackSession.id, session.id)
-                UserIdMigration.migrate(this, previousId, session.id)
+                persistBackendLogin(auth, account)
+            }.onSuccess {
                 runOnUiThread {
                     setAuthBusy(false)
                     openMain(demoPreview = false)
@@ -267,8 +308,17 @@ class LoginActivity : AppCompatActivity() {
         const val PREFS_LAUNCH_GUARD = "me2_launch_guard"
         const val KEY_MAIN_PENDING = "main_pending"
         const val KEY_MAIN_CRASHES = "main_crashes"
+        /** Errores reportados por Main (markMainLaunchFailed) desde el último arranque estable. */
+        const val KEY_MAIN_ERRORS = "main_errors"
+
+        /** Solo 2 errores seguidos de Main frenan la entrada automática (un cierre o muerte del proceso no cuenta). */
+        fun shouldHoldAfterMainErrors(errors: Int): Boolean = errors >= 2
+
+        fun mainErrors(context: android.content.Context): Int =
+            context.getSharedPreferences(PREFS_LAUNCH_GUARD, android.content.Context.MODE_PRIVATE).getInt(KEY_MAIN_ERRORS, 0)
 
         /**
+         * Ya NO decide si se muestra el login (ver [shouldHoldAfterMainErrors]); queda como diagnóstico del guardián.
          * Un arranque interrumpido (pending: p. ej. el sistema mató el proceso antes de 2,5 s) cuenta como un fallo;
          * recién con 2 fallos seguidos se considera inestable. Antes un solo cierre a destiempo borraba la sesión.
          */
@@ -292,6 +342,7 @@ class LoginActivity : AppCompatActivity() {
                 .edit()
                 .putBoolean(KEY_MAIN_PENDING, false)
                 .putInt(KEY_MAIN_CRASHES, 0)
+                .putInt(KEY_MAIN_ERRORS, 0)
                 .apply()
         }
 
@@ -301,7 +352,9 @@ class LoginActivity : AppCompatActivity() {
             prefs.edit()
                 .putBoolean(KEY_MAIN_PENDING, false)
                 .putInt(KEY_MAIN_CRASHES, crashes)
-                .apply()
+                .putInt(KEY_MAIN_ERRORS, prefs.getInt(KEY_MAIN_ERRORS, 0) + 1)
+                // commit: Main hace startActivity+finish enseguida; el Login siguiente tiene que ver el error.
+                .commit()
         }
     }
 }

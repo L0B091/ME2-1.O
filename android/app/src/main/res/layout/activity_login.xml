@@ -34,6 +34,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <!-- Oculto hasta saber que NO hay sesión guardada (LoginActivity.setupLoginUi): con sesión solo se ve el logo. -->
     <com.google.android.material.button.MaterialButton
         android:id="@+id/googleButton"
         android:layout_width="0dp"
@@ -47,7 +48,7 @@
         android:textAllCaps="true"
         android:textColor="@color/me2_text_secondary"
         android:letterSpacing="0.18"
-        android:visibility="visible"
+        android:visibility="invisible"
         app:backgroundTint="@android:color/transparent"
         app:cornerRadius="28dp"
         app:iconPadding="0dp"
@@ -103,6 +104,7 @@
         android:layout_marginBottom="8dp"
         android:gravity="center"
         android:text="@string/login_google_only_hint"
+        android:visibility="invisible"
         android:textColor="@color/me2_text_muted"
         android:textSize="11sp"
         android:letterSpacing="0.12"

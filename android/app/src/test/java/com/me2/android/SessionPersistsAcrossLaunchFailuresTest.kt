@@ -46,15 +46,12 @@ class SessionPersistsAcrossLaunchFailuresTest {
             .putBoolean(LoginActivity.KEY_MAIN_PENDING, true).putInt(LoginActivity.KEY_MAIN_CRASHES, 3).commit()
         val activity = Robolectric.buildActivity(LoginActivity::class.java).setup().get()
         repeat(20) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(20) }
-        assertFalse(activity.isDestroyed && !activity.isFinishing)
+        // Arranques interrumpidos no frenan la entrada: con sesión real se va directo al chat.
+        assertEquals(MainActivity::class.java.name, shadowOf(activity).nextStartedActivity?.component?.className)
         val kept = SessionStorage(app).loadUser()
         assertEquals("uid-9", kept?.id)
         assertEquals("tok", kept?.authToken)
-        // Contador reseteado: la próxima apertura vuelve directo al chat.
-        assertFalse(LoginActivity.isLaunchUnstable(
-            app.getSharedPreferences(LoginActivity.PREFS_LAUNCH_GUARD, Context.MODE_PRIVATE).let {
-                it.getBoolean(LoginActivity.KEY_MAIN_PENDING, false) to it.getInt(LoginActivity.KEY_MAIN_CRASHES, 0)
-            }
-        ))
+        // Los arranques interrumpidos no suman errores de Main: la próxima apertura también va directo al chat.
+        assertEquals(0, LoginActivity.mainErrors(app))
     }
 }

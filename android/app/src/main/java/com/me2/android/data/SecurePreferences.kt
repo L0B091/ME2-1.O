@@ -16,6 +16,7 @@ import java.io.File
  */
 object SecurePreferences {
     private const val TAG = "Me2SecurePrefs"
+    private const val RETRY_DELAY_MS = 150L
     // Por instancia de Application (en tests cada Application nueva arranca vacía, como el disco).
     private val memoryStores = java.util.WeakHashMap<Context, MutableMap<String, InMemorySharedPreferences>>()
 
@@ -49,7 +50,13 @@ object SecurePreferences {
     private fun openUncached(appContext: Context, name: String, legacyPlainNames: List<String>): SharedPreferences {
         legacyPlainNames.filter { it != name }.forEach { deleteLegacyPlain(appContext, it) }
         val encrypted = runCatching { create(appContext, name) }.recoverCatching {
-            Log.w(TAG, "EncryptedSharedPreferences falló (${it.javaClass.simpleName}); se regenera")
+            // Fallo transitorio del Keystore (arranque en frío, equipo recién desbloqueado): se reintenta SIN borrar.
+            // Borrar el archivo a la primera era perder la sesión guardada y volver a pedir login.
+            Log.w(TAG, "EncryptedSharedPreferences falló (${it.javaClass.simpleName}); se reintenta sin borrar")
+            Thread.sleep(RETRY_DELAY_MS)
+            create(appContext, name)
+        }.recoverCatching {
+            Log.w(TAG, "EncryptedSharedPreferences sigue fallando (${it.javaClass.simpleName}); se regenera")
             appContext.deleteSharedPreferences(name)
             create(appContext, name)
         }.getOrNull()
