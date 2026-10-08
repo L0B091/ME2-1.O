@@ -66,6 +66,20 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/me2_home_widget_info" />
         </receiver>
+        <!-- Vuelta de Mercado Pago (back_url → página puente → me2://pago): trampolín sin UI hacia MainActivity. -->
+        <activity
+            android:name=".payments.PaymentReturnActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="me2" android:host="pago" />
+            </intent-filter>
+        </activity>
         <activity
             android:name=".LoginActivity"
             android:exported="true"

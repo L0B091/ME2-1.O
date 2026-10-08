@@ -27,7 +27,24 @@ class AndroidHardeningTest {
         assertTrue(componentes.isNotEmpty())
         componentes.forEach { assertTrue("exported explícito en ${it.getAttributeNS(ns, "name")}", it.hasAttributeNS(ns, "exported")) }
         val exportados = componentes.filter { it.getAttributeNS(ns, "exported") == "true" }.map { it.getAttributeNS(ns, "name") }
-        assertEquals(listOf(".LoginActivity"), exportados)
+        // Exportadas: el login (launcher) y el trampolín sin UI de la vuelta de Mercado Pago (me2://pago).
+        // MainActivity sigue sin exportarse.
+        assertEquals(listOf(".payments.PaymentReturnActivity", ".LoginActivity"), exportados)
+    }
+
+    @Test fun vueltaDeMercadoPagoSoloAceptaMe2PagoNavegableYSinHistorial() {
+        val app = xml("src/main/AndroidManifest.xml").children("application").single()
+        val trampolin = app.children("activity").single { it.getAttributeNS(ns, "name") == ".payments.PaymentReturnActivity" }
+        assertEquals("true", trampolin.getAttributeNS(ns, "noHistory"))
+        assertEquals("true", trampolin.getAttributeNS(ns, "excludeFromRecents"))
+        val filtro = trampolin.children("intent-filter").single()
+        assertEquals(listOf("android.intent.action.VIEW"), filtro.children("action").map { it.getAttributeNS(ns, "name") })
+        assertEquals(setOf("android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"), filtro.children("category").map { it.getAttributeNS(ns, "name") }.toSet())
+        val data = filtro.children("data").single()
+        assertEquals("me2", data.getAttributeNS(ns, "scheme"))
+        assertEquals("pago", data.getAttributeNS(ns, "host"))
+        val main = app.children("activity").single { it.getAttributeNS(ns, "name") == ".MainActivity" }
+        assertEquals("false", main.getAttributeNS(ns, "exported"))
     }
 
     @Test fun permisosDeAlarmasYNotificacionesParaAndroid12a14() {

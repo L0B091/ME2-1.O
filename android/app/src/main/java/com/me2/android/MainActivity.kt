@@ -85,6 +85,9 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "Me2Main"
         private const val PREFS_PERMISSIONS = "me2_permissions"
         private const val KEY_LOCATION_ASKED = "location_asked"
+        private const val PREFS_CHECKOUT = "me2_checkout"
+        private const val KEY_CHECKOUT_STARTED = "checkout_started_at"
+        private const val KEY_CHECKOUT_BASELINE = "checkout_premium_baseline"
         private const val AVATAR_VOLUME = 1f
         /** Post-presentation wait before silence check-in (product: ~45–60s). */
         private const val POST_PRESENTATION_SILENCE_MS = 50_000L
@@ -394,6 +397,8 @@ class MainActivity : AppCompatActivity() {
         player?.playWhenReady = true
         player?.volume = 1f
         if (::currentSession.isInitialized) refreshDeviceLocation()
+        // Checkout de Mercado Pago abierto y el usuario volvió (aunque haya cerrado el navegador a mano): refresca Premium.
+        runCatching { maybeRefreshAfterCheckout() }.onFailure { Log.e(TAG, "refresco post-checkout", it) }
         if (::currentSession.isInitialized) {
             // Returning to foreground cancels a pending post-silence eval only if user is active;
             // observeInteraction is reserved for real chat/widget interactions.
@@ -770,6 +775,7 @@ class MainActivity : AppCompatActivity() {
         result.premiumUntilMillis?.let { premiumUntil ->
             updateCurrentSession(currentSession.copy(premiumUntilMillis = premiumUntil))
         }
+        if (com.me2.android.payments.CheckoutWatch.containsCheckoutLink(result.reply)) runCatching { markCheckoutStarted() }
         // El link de pago llega dentro del texto del LLM (clickeable en la burbuja); la palabra
         // clave del modo adulto no se guarda en el teléfono (el backend solo guarda su hash).
     }
@@ -946,6 +952,114 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+    // --- Mercado Pago: vuelta a la app (me2://pago vía PaymentReturnActivity) ---
+    // La URL de vuelta nunca acredita nada: se verifica el payment_id con el backend (que consulta Mercado Pago).
+    private val checkoutPrefs by lazy { getSharedPreferences(PREFS_CHECKOUT, MODE_PRIVATE) }
+    private var paymentCheckInFlight = false
+
+    private fun markCheckoutStarted() {
+        if (!::currentSession.isInitialized) return
+        checkoutPrefs.edit()
+            .putLong(KEY_CHECKOUT_STARTED, System.currentTimeMillis())
+            .putLong(KEY_CHECKOUT_BASELINE, currentSession.premiumUntilMillis)
+            .apply()
+    }
+
+    private fun clearCheckoutWatch() {
+        runCatching { checkoutPrefs.edit().remove(KEY_CHECKOUT_STARTED).remove(KEY_CHECKOUT_BASELINE).apply() }
+    }
+
+    /** true si el intent era una vuelta de pago (aunque no haga falta mostrar nada). Nunca lanza. */
+    private fun handlePaymentReturn(intent: Intent): Boolean {
+        if (!intent.getBooleanExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_PAYMENT_RETURN, false)) return false
+        val ret = com.me2.android.payments.PaymentReturn.fromParams(
+            intent.getStringExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_ESTADO),
+            intent.getStringExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_PAYMENT_ID),
+            intent.getStringExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_STATUS)
+        )
+        // Consumida: reabrir desde recientes no la repite.
+        intent.removeExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_PAYMENT_RETURN)
+        intent.removeExtra(com.me2.android.payments.PaymentReturnActivity.EXTRA_PAYMENT_ID)
+        if ((intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0) return true
+        if (!::currentSession.isInitialized || paymentCheckInFlight) return true
+        val session = currentSession
+        if (session.authToken.isNullOrBlank() || !backendClient.isConfigured()) {
+            showPaymentOutcome(com.me2.android.payments.PaymentOutcome.Unverified)
+            return true
+        }
+        val before = session.premiumUntilMillis
+        paymentCheckInFlight = true
+        thread(name = "me2-pago-vuelta") {
+            val outcome = runCatching {
+                val paymentId = ret.paymentId
+                if (paymentId != null) {
+                    val r = backendClient.verifyPayment(session, paymentId)
+                    com.me2.android.payments.PaymentOutcome.fromVerify(r.premiumActive, r.premiumUntilMillis, r.status)
+                } else {
+                    val p = backendClient.fetchPremiumStatus(session)
+                    com.me2.android.payments.PaymentOutcome.fromPremiumRefresh(ret.estado, before, if (p.active) p.premiumUntilMillis else 0L)
+                }
+            }.getOrElse { error ->
+                Log.w(TAG, "vuelta de pago: no se pudo verificar", error)
+                // 4xx: el servidor revisó y no corresponde (ajeno, inexistente, monto); red/5xx: se reintenta al volver.
+                if (error is com.me2.android.net.HttpStatusException && error.statusCode in 400..499) {
+                    com.me2.android.payments.PaymentOutcome.Failed
+                } else {
+                    com.me2.android.payments.PaymentOutcome.Unverified
+                }
+            }
+            runOnUiThread {
+                paymentCheckInFlight = false
+                if (!isFinishing && !isDestroyed) runCatching { showPaymentOutcome(outcome) }
+            }
+        }
+        return true
+    }
+
+    /** Volvió a la app con un checkout abierto (≤24 h): si Premium se extendió, avisa. Silencioso si no. */
+    private fun maybeRefreshAfterCheckout() {
+        if (!::currentSession.isInitialized || paymentCheckInFlight) return
+        val started = checkoutPrefs.getLong(KEY_CHECKOUT_STARTED, 0L)
+        if (started <= 0L) return
+        if (!com.me2.android.payments.CheckoutWatch.isActive(started, System.currentTimeMillis())) {
+            clearCheckoutWatch()
+            return
+        }
+        val session = currentSession
+        if (session.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) return
+        val baseline = checkoutPrefs.getLong(KEY_CHECKOUT_BASELINE, 0L)
+        paymentCheckInFlight = true
+        thread(name = "me2-pago-refresco") {
+            val after = runCatching { backendClient.fetchPremiumStatus(session) }
+                .getOrNull()?.let { if (it.active) it.premiumUntilMillis else 0L }
+            runOnUiThread {
+                paymentCheckInFlight = false
+                if (isFinishing || isDestroyed || after == null) return@runOnUiThread
+                if (after > baseline && after > System.currentTimeMillis()) {
+                    runCatching { showPaymentOutcome(com.me2.android.payments.PaymentOutcome.Approved(after)) }
+                }
+            }
+        }
+    }
+
+    private fun showPaymentOutcome(outcome: com.me2.android.payments.PaymentOutcome) {
+        val text = when (outcome) {
+            is com.me2.android.payments.PaymentOutcome.Approved -> {
+                clearCheckoutWatch()
+                if (::currentSession.isInitialized && outcome.premiumUntilMillis > currentSession.premiumUntilMillis) {
+                    updateCurrentSession(currentSession.copy(premiumUntilMillis = outcome.premiumUntilMillis))
+                }
+                syncPremiumState()
+                val fecha = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(java.util.Date(outcome.premiumUntilMillis))
+                getString(R.string.payment_return_approved, fecha)
+            }
+            com.me2.android.payments.PaymentOutcome.Pending -> getString(R.string.payment_return_pending)
+            com.me2.android.payments.PaymentOutcome.Failed -> getString(R.string.payment_return_failed)
+            com.me2.android.payments.PaymentOutcome.Unverified -> getString(R.string.payment_return_unverified)
+        }
+        Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+    }
+
     private fun syncPremiumState() {
         if (currentSession.authToken.isNullOrBlank() || !backendClient.isConfigured() || !backendClient.isOnline(this)) {
             return
@@ -1003,6 +1117,7 @@ class MainActivity : AppCompatActivity() {
     private fun handleIncomingIntent(intent: Intent?) {
         intent ?: return
         restoreAvatarPresence()
+        if (runCatching { handlePaymentReturn(intent) }.onFailure { Log.e(TAG, "vuelta de pago", it) }.getOrDefault(false)) return
         val eventType = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_EVENT_TYPE) ?: return
         val title = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_TITLE).orEmpty()
         val message = intent.getStringExtra(Me2NotificationCoordinator.EXTRA_MESSAGE).orEmpty()

@@ -71,6 +71,15 @@ data class PremiumStatusResult(
     val adultMode: AdultModeSnapshot? = null
 )
 
+data class PaymentVerifyResult(
+    val premiumActive: Boolean,
+    val premiumUntilMillis: Long?,
+    val status: String?
+)
+
+/** Error HTTP no-2xx con su código (sigue siendo IllegalStateException para quien ya la atrapaba). */
+class HttpStatusException(val statusCode: Int, message: String) : IllegalStateException(message)
+
 data class AlarmDispatchStage(
     val stage: Int,
     val offsetFromAlarmMs: Long,
@@ -363,6 +372,26 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         )
     }
 
+    /**
+     * Vuelta de Mercado Pago: el servidor consulta el pago real por id (la URL de vuelta no acredita nada).
+     * Aprobado → premiumActivo + premiumHasta; pendiente/rechazado → status. Errores HTTP → HttpStatusException.
+     */
+    fun verifyPayment(session: UserSession, paymentId: String): PaymentVerifyResult {
+        val json = request(
+            method = "POST",
+            path = "/api/mercadopago/verify",
+            authToken = session.authToken,
+            body = JSONObject().put("paymentId", paymentId)
+        )
+        val data = json.optJSONObject("data") ?: json
+        val active = data.optBoolean("premiumActivo", false)
+        return PaymentVerifyResult(
+            premiumActive = active,
+            premiumUntilMillis = if (active) parsePremiumMillis(data) else null,
+            status = data.optString("status").ifBlank { null }
+        )
+    }
+
     fun fetchBackupMaterial(session: UserSession): String {
         val json = request(
             method = "GET",
@@ -551,7 +580,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             if (responseCode !in 200..299) {
                 val message = responseJson.optString("error").ifBlank { "Error HTTP $responseCode" }
                 if (responseCode == 401) throw AuthRequiredException(message)
-                throw IllegalStateException(message)
+                throw HttpStatusException(responseCode, message)
             }
             return responseJson
         } finally {

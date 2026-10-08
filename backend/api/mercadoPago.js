@@ -107,30 +107,46 @@ async function mercadoPagoRequest(path, options = {}) {
   return data;
 }
 
+// Página puente pública (GitHub Pages): recibe la vuelta de Checkout Pro y abre la app por deep link
+// (me2://pago). Es https estable (el túnel cambia), requisito de MP para auto_return.
+export const BACK_URL_BASE_DEFAULT = "https://l0b091.github.io/me2/pago.html";
+
+function conEstado(base, estado) {
+  return `${base}${base.includes("?") ? "&" : "?"}estado=${estado}`;
+}
+
 function construirUrlsRetorno() {
   const success = String(process.env.MERCADO_PAGO_SUCCESS_URL || "").trim();
   const pending = String(process.env.MERCADO_PAGO_PENDING_URL || "").trim();
   const failure = String(process.env.MERCADO_PAGO_FAILURE_URL || "").trim();
 
-  if (!success || !pending || !failure) {
-    return undefined;
+  // Las tres explícitas tienen prioridad (compatibilidad con la configuración anterior).
+  if (success && pending && failure) {
+    return { success, pending, failure };
   }
 
-  return { success, pending, failure };
+  // Si no: MP_BACK_URL_BASE (o la página puente por defecto) con ?estado=success|pending|failure.
+  // MP_BACK_URL_BASE=off desactiva las back_urls.
+  const base = String(process.env.MP_BACK_URL_BASE ?? "").trim() || BACK_URL_BASE_DEFAULT;
+  if (/^(off|none|no|false|0)$/i.test(base)) return undefined;
+  if (!/^https?:\/\/[^\s]+$/i.test(base)) return undefined;
+  return { success: conEstado(base, "success"), pending: conEstado(base, "pending"), failure: conEstado(base, "failure") };
 }
 
 /**
- * URLs de la preferencia (Checkout Pro), 100% por entorno:
+ * URLs de la preferencia (Checkout Pro), por entorno:
  * - notification_url = <BACKEND_PUBLIC_URL>/api/mercadopago/webhook (sin BACKEND_PUBLIC_URL no se envía).
- * - back_urls = MERCADO_PAGO_SUCCESS_URL / _PENDING_URL / _FAILURE_URL (las tres o ninguna).
- * - auto_return solo con back_urls: Mercado Pago rechaza la preferencia si hay auto_return sin back_urls.success.
+ * - back_urls = MERCADO_PAGO_SUCCESS_URL / _PENDING_URL / _FAILURE_URL (las tres), si no MP_BACK_URL_BASE
+ *   (default: página puente https://l0b091.github.io/me2/pago.html que vuelve a la app por me2://pago).
+ * - auto_return=approved solo con back_urls.success https: MP rechaza auto_return sin back_urls.success válida.
+ *   La vuelta a la app nunca acredita nada por sí sola: la app verifica el payment_id con /api/mercadopago/verify.
  */
 export function urlsPreferencia() {
   const backUrls = construirUrlsRetorno();
   const publica = String(process.env.BACKEND_PUBLIC_URL || "").trim().replace(/\/+$/, "");
   return {
     back_urls: backUrls,
-    auto_return: backUrls ? "approved" : undefined,
+    auto_return: backUrls && /^https:\/\//i.test(backUrls.success) ? "approved" : undefined,
     // source_news=webhooks: MP manda solo Webhooks (firmados con x-signature), no IPN (topic/id, sin firma → 401 y reintentos).
     notification_url: publica ? `${publica}/api/mercadopago/webhook?source_news=webhooks` : undefined
   };

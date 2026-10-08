@@ -24,6 +24,10 @@
     <string name="nodo_prefix">NODO_ID //</string>
     <string name="audio_widget">Audio widget</string>
     <string name="offline_memory_notice">SIN CONEXIÓN. ME2 CONSERVA TU MEMORIA LOCAL HASTA RECUPERAR EL BACKEND.</string>
+    <string name="payment_return_approved">PREMIUM ACTIVO HASTA EL %1$s.</string>
+    <string name="payment_return_pending">PAGO PENDIENTE: PREMIUM SE ACTIVA CUANDO SE ACREDITE.</string>
+    <string name="payment_return_failed">EL PAGO NO SE COMPLETÓ.</string>
+    <string name="payment_return_unverified">NO SE PUDO CONFIRMAR EL PAGO TODAVÍA. PREMIUM SE ACTIVA CUANDO SE ACREDITE.</string>
     <string name="premium_backup_done">RESPALDO PREMIUM ACTUALIZADO.</string>
     <string name="premium_backup_failed">NO SE PUDO RESPALDAR LA MEMORIA PREMIUM.</string>
     <string name="premium_restore_done">MEMORIA PREMIUM RESTAURADA LOCALMENTE.</string>
