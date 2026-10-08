@@ -54,6 +54,7 @@ import com.me2.android.media.AvatarCueMapper
 import com.me2.android.media.AvatarState
 import com.me2.android.media.AvatarStateMachine
 import com.me2.android.media.OfflineAvatarPool
+import com.me2.android.media.IdleLoopQueue
 import com.me2.android.media.MediaCategoria
 import com.me2.android.media.MediaLibrary
 import com.me2.android.media.MediaPermisos
@@ -558,6 +559,16 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
+                    override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                        // Loop de reposo: pasó solo (sin corte) al clip encolado → se encola el siguiente.
+                        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
+                            runCatching { onIdleClipAdvanced(mediaItem) }.onFailure {
+                                Log.e(TAG, "loop de reposo: no se pudo encolar", it)
+                                runCatching { fallbackToLoopNeutral(forceReload = true) }
+                            }
+                        }
+                    }
+
                     override fun onPlayerError(error: PlaybackException) {
                         Log.e("Me2Avatar", "Fallo reproduccion avatar: ${error.errorCodeName}")
                         if (presentationSequenceActive && avatarMode == AvatarState.PRESENTACION) {
@@ -890,6 +901,7 @@ class MainActivity : AppCompatActivity() {
         if (avatarMode == AvatarState.LOOP_NEUTRAL && galleryContainsCurrentClip(idle) && exoPlayer.isPlaying) {
             // Ya está en el loop de reposo sin red: sigue el clip en curso (cortarlo en cada frase era un salto).
             currentAvatarGallery = idle
+            runCatching { IdleLoopQueue.retarget(idlePlaylist(exoPlayer), idle) }
             return
         }
         avatarMode = AvatarState.LOOP_NEUTRAL
@@ -1378,10 +1390,17 @@ class MainActivity : AppCompatActivity() {
      */
     private fun onIdleLoopConnectivity(online: Boolean) {
         deviceOnline = online
+        if (!presentationSequenceActive && avatarMode == AvatarState.REACCION && ::mediaLibrary.isInitialized) {
+            // Reacción en curso: el reposo que sigue (ya encolado) pasa a la galería nueva.
+            player?.let { p -> runCatching { IdleLoopQueue.retarget(idlePlaylist(p), idleGallery) } }
+            return
+        }
         if (presentationSequenceActive || avatarMode != AvatarState.LOOP_NEUTRAL || !::mediaLibrary.isInitialized) return
         currentAvatarGallery = idleGallery
         Log.i(TAG, "loop de reposo ${if (online) "con red (neutral)" else "sin red"}: ${currentAvatarGallery.size} clips")
         val exoPlayer = player ?: return
+        // El encolado pasa a la galería nueva: el cambio ocurre al terminar el clip en curso, sin corte.
+        runCatching { IdleLoopQueue.retarget(idlePlaylist(exoPlayer), currentAvatarGallery) }
         // Solo si el reproductor quedó detenido (terminado/sin medio); si está reproduciendo, sigue hasta el fin del clip.
         if (exoPlayer.playbackState == Player.STATE_ENDED || exoPlayer.playbackState == Player.STATE_IDLE) ensureAvatarPlayback()
     }
@@ -1406,10 +1425,57 @@ class MainActivity : AppCompatActivity() {
             else -> gallery.firstOrNull { it.id == currentAvatarClipId } ?: fallback
         }
         if (!forceReload && desiredClip.id == currentAvatarClipId) {
+            if (avatarMode == AvatarState.LOOP_NEUTRAL && !presentationSequenceActive) {
+                runCatching { IdleLoopQueue.retarget(idlePlaylist(exoPlayer), gallery) }
+            }
             exoPlayer.playWhenReady = true
             return
         }
         playAvatarClip(exoPlayer, desiredClip)
+    }
+
+    /** Lista de ExoPlayer vista por IdleLoopQueue (ids = GalleryClip.id vía mediaId). */
+    private fun idlePlaylist(exoPlayer: ExoPlayer) = object : IdleLoopQueue.Playlist {
+        override val currentIndex: Int get() = exoPlayer.currentMediaItemIndex
+        override val size: Int get() = exoPlayer.mediaItemCount
+        override fun idAt(index: Int): String? = runCatching { exoPlayer.getMediaItemAt(index).mediaId }.getOrNull()
+        override fun append(clip: GalleryClip) = exoPlayer.addMediaItem(avatarMediaItem(clip))
+        override fun removeRange(from: Int, to: Int) = exoPlayer.removeMediaItems(from, to)
+    }
+
+    private fun avatarMediaItem(clip: GalleryClip): MediaItem =
+        MediaItem.Builder().setMediaId(clip.id).setUri(clipCatalog.playbackUri(clip)).build()
+
+    /** Transición automática del loop de reposo: actualiza el clip actual y encola el próximo (precargado). */
+    private fun onIdleClipAdvanced(mediaItem: MediaItem?) {
+        val exoPlayer = player ?: return
+        if (presentationSequenceActive) return
+        if (avatarMode == AvatarState.REACCION) {
+            // Terminó la reacción y siguió sola al clip de reposo encolado (AvatarStateMachine: REACCION → LOOP_NEUTRAL).
+            avatarMode = AvatarState.LOOP_NEUTRAL
+            currentRequest = null
+            currentAvatarGallery = idleGallery
+        }
+        if (avatarMode != AvatarState.LOOP_NEUTRAL) return
+        val id = mediaItem?.mediaId?.takeIf { it.isNotBlank() } ?: return
+        lastAvatarClipId = currentAvatarClipId
+        currentAvatarClipId = id
+        Log.i(TAG, "avatar clip=$id mode=$avatarMode (encadenado)")
+        runCatching { mediaHistory.record(id) }
+        IdleLoopQueue.onAdvanced(idlePlaylist(exoPlayer), currentAvatarGallery.ifEmpty { idleGallery })
+    }
+
+    /** Si el reposo está activo, deja encolado el próximo clip del loop (transición sin cortes). */
+    private fun queueNextIdleClip(exoPlayer: ExoPlayer) {
+        if (presentationSequenceActive) return
+        // Reposo: próximo clip del loop. Reacción: después siempre va el reposo, así que también se encola (sin corte).
+        val gallery = when (avatarMode) {
+            AvatarState.LOOP_NEUTRAL -> currentAvatarGallery.ifEmpty { idleGallery }
+            AvatarState.REACCION -> idleGallery
+            else -> return
+        }
+        runCatching { IdleLoopQueue.queueNext(idlePlaylist(exoPlayer), gallery) }
+            .onFailure { Log.w(TAG, "loop de reposo: sin encolado (${it.javaClass.simpleName}); sigue por fin de clip") }
     }
 
     private fun playAvatarClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
@@ -1420,7 +1486,9 @@ class MainActivity : AppCompatActivity() {
         // Volumen completo en todos los clips: la voz solo existe en la presentación y el resto lleva sonido
         // ambiente/onomatopeyas (regla de producto), así que no hay nada que silenciar por categoría.
         exoPlayer.volume = AVATAR_VOLUME
-        exoPlayer.setMediaItem(MediaItem.fromUri(clipCatalog.playbackUri(clip)))
+        // setMediaItem reemplaza toda la lista: reacciones/presentación/despertador interrumpen el loop encolado.
+        exoPlayer.setMediaItem(avatarMediaItem(clip))
+        queueNextIdleClip(exoPlayer)
         exoPlayer.prepare()
         exoPlayer.playWhenReady = true
     }
