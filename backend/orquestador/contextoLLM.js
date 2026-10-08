@@ -10,6 +10,7 @@ import calendarioApi from "../api/calendario.js";
 import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
+import { lineaEvento } from "../modulos/detectorAgenda.js";
 
 const cache = new Map();
 async function cacheado(clave, ttlMs, fn) {
@@ -68,7 +69,8 @@ export async function obtenerHerramientas(userId, opciones = {}) {
       ? cacheado(`clima:${ubicacion.lat},${ubicacion.lon}`, 10 * 60 * 1000, () => obtenerClima(ubicacion.lat, ubicacion.lon, { timeoutMs: 6000, ciudad: ubicacion.ciudad }))
       : Promise.reject(new Error("ubicacion_desconocida")),
     gustos.length ? noticiasDeInteres(gustos) : Promise.reject(new Error("sin_intereses_registrados")),
-    calendarioApi.proximosUnificados(userId, 5)
+    // Calendario del teléfono ya resuelto por el orquestador (Android): ese es la agenda; si no, la del servidor.
+    Array.isArray(opciones.agenda) ? Promise.resolve({ eventos: opciones.agenda, origen: "telefono" }) : calendarioApi.proximosUnificados(userId, 5)
   ]);
   const zona = opciones.zonaHoraria || ubicacion?.zonaHoraria || null;
   return {
@@ -122,7 +124,7 @@ function lineasNoticias(n) {
 function lineasAgenda(a) {
   if (!a || a.disponible === false) return [`Agenda: NO DISPONIBLE (${a?.motivo || "sin datos"})`];
   if (!a.eventos.length) return ["Agenda: sin eventos próximos registrados"];
-  return ["Próximos eventos en la agenda del usuario:", ...a.eventos.map(e => `  • ${e.fecha} ${e.hora} — ${e.descripcion}`)];
+  return ["Próximos eventos en la agenda del usuario:", ...a.eventos.slice(0, 10).map(e => `  • ${lineaEvento(e)}`)];
 }
 
 /**

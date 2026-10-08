@@ -202,7 +202,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         /** Ubicación efectiva (teléfono fresco > ciudad del chat), ver DeviceLocationPolicy.effective. */
         location: com.me2.android.data.LocalLocation? = memory.location,
         /** Alarma que este mensaje respondió (protocolo despertador): {hora, titulo, intento}. */
-        alarmaRespondida: JSONObject? = null
+        alarmaRespondida: JSONObject? = null,
+        /** Próximos eventos del calendario propio del teléfono (el orquestador los lee para consultar/borrar). */
+        calendar: JSONArray? = null
     ): BackendChatResult {
         val json = request(
             method = "POST",
@@ -212,7 +214,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
                 put("mensaje", message)
                 put("contexto", JSONObject().apply {
                     put("clienteOficial", "android_nativo")
-                    put("memoriaLocal", memory.toBackendContext())
+                    put("memoriaLocal", memory.toBackendContext().apply { calendar?.let { put("calendario", it) } })
                     // Premium local (gestor monotributista + proyectos): el orquestador lo transforma y devuelve el estado nuevo.
                     put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
@@ -303,7 +305,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         enPrimerPlano: Boolean,
         notificacionesHabilitadas: Boolean,
         /** Si no es null: pedir al orquestador una iniciativa generada ahora para entregar desde ese instante (sin red). */
-        prefetchAt: Long? = null
+        prefetchAt: Long? = null,
+        /** Calendario propio del teléfono: recordatorios de eventos y "planear una salida" sin pisar la agenda. */
+        calendar: JSONArray? = null
     ): JSONObject {
         val profile = JSONObject((state.optJSONObject("perfilRitmo") ?: JSONObject()).toString())
             .put("zonaHoraria", TimeZone.getDefault().id)
@@ -314,7 +318,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             authToken = session.authToken,
             body = JSONObject().apply {
                 // Sin userId: la identidad la decide el backend a partir del token.
-                put("memoriaLocal", memory.toBackendContext())
+                put("memoriaLocal", memory.toBackendContext().apply { calendar?.let { put("calendario", it) } })
                 put("registro", state.optJSONArray("registro") ?: JSONArray())
                 put("perfilRitmo", profile)
                 put(

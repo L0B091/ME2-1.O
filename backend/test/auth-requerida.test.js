@@ -89,7 +89,7 @@ test("anónimo (demo del teléfono): recordatorios y alarmas viven en el teléfo
   assert.equal(rec.acciones.evento?.local, true);
   assert.equal(rec.acciones.evento.evento.hora, "09:00");
   assert.equal(rec.acciones.evento.evento.descripcion, "ir al medico");
-  assert.ok(/Recordatorio GUARDADO en el teléfono/.test(rec.debug.contexto));
+  assert.ok(/Evento AGENDADO en el calendario del teléfono/.test(rec.debug.contexto));
   assert.equal(JSON.stringify(calendarioApi.obtenerEventosProximos("anonimo", 0)), antes, "nada en el calendario del servidor");
   const alarma = await orquestadorChat("despertame a las 7:30", { userId: "anonimo", memoriaLocal });
   assert.equal(alarma.acciones.alarma?.accion, "crear_local");

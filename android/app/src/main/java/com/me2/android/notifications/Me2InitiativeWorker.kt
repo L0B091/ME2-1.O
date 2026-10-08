@@ -54,7 +54,8 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
                 state = requestState,
                 events = alarmEvents,
                 enPrimerPlano = inForeground(),
-                notificacionesHabilitadas = coordinator.canShowMessages()
+                notificacionesHabilitadas = coordinator.canShowMessages(),
+                calendar = com.me2.android.calendar.Me2CalendarStore(applicationContext).backendContext(session.id)
             )
             decision.optJSONObject("perfilRitmo")?.let { store.mergeProfile(session.id, it) }
             // Con red: subir pendientes offline y dejar pre-generado (por el LLM) un mensaje para un posible corte de red.
@@ -118,7 +119,8 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
             val at = timer.optLong("dueAt").takeIf { it > System.currentTimeMillis() } ?: (System.currentTimeMillis() + InitiativeTimerPolicy.DEFAULT_INTERVAL_MS)
             val r = backend.evaluateInitiative(
                 session = session, memory = LocalMemoryStore(applicationContext).load(session.id), state = store.snapshot(session.id),
-                events = events, enPrimerPlano = false, notificacionesHabilitadas = true, prefetchAt = at
+                events = events, enPrimerPlano = false, notificacionesHabilitadas = true, prefetchAt = at,
+                calendar = com.me2.android.calendar.Me2CalendarStore(applicationContext).backendContext(session.id)
             )
             if (r.optString("decision") != "INICIAR") return
             val initiative = r.getJSONObject("iniciativa")

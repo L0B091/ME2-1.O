@@ -102,6 +102,8 @@ class MainActivity : AppCompatActivity() {
     private val fullConversation = mutableListOf<ChatMessage>()
     private val visibleConversation = mutableListOf<ChatMessage>()
     private val backendClient = Me2BackendClient()
+    /** Calendario propio de ME2 en el teléfono (lo crea/borra el avatar por chat). */
+    private val calendarStore by lazy { com.me2.android.calendar.Me2CalendarStore(this) }
     private var networkMonitor: com.me2.android.net.NetworkStatusMonitor? = null
     private val premiumBackupCrypto = PremiumBackupCrypto()
 
@@ -701,7 +703,8 @@ class MainActivity : AppCompatActivity() {
         binding.sendButton.isEnabled = false
         thread {
             runCatching {
-                backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot), alarmaRespondida)
+                backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot), alarmaRespondida,
+                    calendarStore.backendContext(currentSession.id))
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true
@@ -792,7 +795,7 @@ class MainActivity : AppCompatActivity() {
                     loadPending = { store.pendingUserMessages(userId) },
                     send = { message ->
                         val memory = store.load(userId)
-                        backendClient.sendChat(session, memory, message, null, effectiveLocation(memory))
+                        backendClient.sendChat(session, memory, message, null, effectiveLocation(memory), calendar = calendarStore.backendContext(userId))
                     },
                     markSent = { store.markPendingSent(userId, it) },
                     onSending = { batch ->
@@ -1362,7 +1365,18 @@ class MainActivity : AppCompatActivity() {
                     "creada" -> syncBackendAlarms()
                 }
             }
-            actions.optJSONObject("evento")?.optJSONObject("evento")?.let(::scheduleReminderFrom)
+            // Calendario propio: el evento creado/borrado por chat se guarda en el teléfono; su aviso local se arma o cancela.
+            actions.optJSONObject("evento")?.let { evento ->
+                val change = runCatching { calendarStore.applyChatAction(currentSession.id, evento) }.getOrNull()
+                // Sin cambio local (evento del servidor de clientes viejos, o falla de disco): el aviso igual se arma.
+                (change?.created?.toBackendJson() ?: evento.optJSONObject("evento")?.takeIf { change == null })?.let(::scheduleReminderFrom)
+                if (evento.optString("accion") == "eliminar_local") {
+                    val ids = evento.optJSONArray("ids")
+                    for (i in 0 until (ids?.length() ?: 0)) ids?.optString(i)?.takeIf { it.isNotBlank() }?.let { id ->
+                        runCatching { alarmScheduler.cancel("evt-$id"); notificationCoordinator.cancelAlarmNotifications("evt-$id") }
+                    }
+                }
+            }
             // Premium / Modo Adulto exige 18+ y la cuenta no tiene la fecha: se pide ahora el permiso (incremental).
             if (actions.optBoolean("verificarEdad")) requestAgeVerification()
             // Premium local: el estado nuevo (fiscal | proyectos) queda en la memoria local del teléfono (y en el respaldo).

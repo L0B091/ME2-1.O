@@ -119,7 +119,7 @@ export function validarCuerpoChat(body = {}) {
     else {
       const recortada = { ...m };
       if (Array.isArray(m.recentConversation)) recortada.recentConversation = m.recentConversation.slice(-LIMITES_CHAT.historial);
-      for (const k of ["persistentMemories", "importantMemories", "gustos", "disgustos"]) {
+      for (const k of ["persistentMemories", "importantMemories", "gustos", "disgustos", "calendario"]) {
         if (Array.isArray(m[k])) recortada[k] = m[k].slice(-LIMITES_CHAT.memorias);
       }
       ctx.memoriaLocal = recortada;

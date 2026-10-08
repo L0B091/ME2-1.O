@@ -15,5 +15,6 @@ object UserIdMigration {
         runCatching { LocalMemoryStore(context).migrateUserMemory(from, toUserId) }
         runCatching { Me2AlarmStore(context).migrateUser(from, toUserId) }
         runCatching { Me2InitiativeStore(context).migrateUser(from, toUserId) }
+        runCatching { com.me2.android.calendar.Me2CalendarStore(context).migrateUser(from, toUserId) }
     }
 }

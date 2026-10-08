@@ -28,7 +28,7 @@ import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
 import protocoloDespertador from "../modulos/protocoloDespertador.js";
 import calendarioApi from "../api/calendario.js";
 import { detectarAlarma } from "../modulos/detectorAlarmas.js";
-import { detectarEvento } from "../modulos/detectorAgenda.js";
+import { detectarEvento, detectarEliminacion, detectarConsulta, lineaEvento } from "../modulos/detectorAgenda.js";
 import contextoLLM from "./contextoLLM.js";
 import perfilBasico from "../modulos/onboarding/perfilBasico.js";
 import estadoEmocional from "../memoria/estadoEmocional.js";
@@ -106,13 +106,63 @@ function normalizarMemoriaLocal(memoriaLocal = {}) {
   };
 }
 
+// [AGENDA] Calendario propio de ME2. En Android vive en el teléfono (fuente de verdad, funciona sin red): el
+// orquestador decide crear/borrar y devuelve la acción estructurada; el teléfono la aplica y la guarda. Clientes sin
+// memoria local (web) siguen usando el JSON del servidor. Consultas: los eventos van como dato al contexto del LLM.
+function accionesAgenda(userId, mensaje, enTelefono, zonaHoraria, eventosTelefono) {
+  const ahora = new Date();
+  const vigente = () => enTelefono
+    ? calendarioApi.agendaCombinada(userId, eventosTelefono || [], { ahora: ahora.getTime() })
+    : (userId === "anonimo" ? [] : calendarioApi.obtenerEventosProximos(userId, ahora.getTime()));
+  const acciones = [];
+  let evento = null;
+  const borrar = detectarEliminacion(mensaje, vigente(), ahora, { zonaHoraria });
+  if (borrar) {
+    if (borrar.motivo === "borrado") {
+      // Copias heredadas en el servidor (versiones anteriores): se borran acá; las del teléfono las borra el teléfono.
+      borrar.eventos.filter(e => !enTelefono || e.origen === "servidor").forEach(e => calendarioApi.eliminarEvento(userId, e.id));
+      evento = { exito: true, local: enTelefono, accion: enTelefono ? "eliminar_local" : "eliminado", ids: borrar.ids };
+      acciones.push(`Evento(s) BORRADO(S) del calendario: ${borrar.eventos.map(lineaEvento).join("; ")}.`);
+    } else if (borrar.motivo === "ambiguo") {
+      evento = { exito: false, accion: "eliminar_ambiguo", ids: [] };
+      acciones.push(["El usuario pidió borrar un evento pero coinciden varios; NO se borró ninguno (hay que preguntarle cuál):",
+        ...borrar.eventos.slice(0, 8).map(e => `    ◦ ${lineaEvento(e)}`)].join("\n"));
+    } else {
+      evento = { exito: false, accion: "eliminar_sin_coincidencias", ids: [] };
+      acciones.push("El usuario pidió borrar un evento pero no hay ninguno que coincida en su agenda; no se borró nada.");
+    }
+    return { acciones, evento, borrados: evento.accion === "eliminar_local" || evento.accion === "eliminado" ? borrar.ids : [], tratado: true };
+  }
+  const consulta = detectarConsulta(mensaje, ahora, { zonaHoraria });
+  if (consulta) {
+    const enRango = vigente().filter(e => e.fecha >= consulta.desde && (!consulta.hasta || e.fecha <= consulta.hasta));
+    const rango = consulta.hasta ? (consulta.hasta === consulta.desde ? consulta.desde : `${consulta.desde} a ${consulta.hasta}`) : `desde ${consulta.desde}`;
+    acciones.push(enRango.length
+      ? [`Agenda del usuario consultada (${rango}):`, ...enRango.slice(0, 15).map(e => `    ◦ ${lineaEvento(e)}`)].join("\n")
+      : `Agenda del usuario consultada (${rango}): no tiene eventos en ese período.`);
+  }
+  return { acciones, evento, borrados: [], tratado: false };
+}
+
 // Acciones deterministas del orquestador (el LLM solo las confirma con su voz).
-function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
+function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, eventosTelefono = null) {
   const acciones = [];
   const resultado = { alarma: null, evento: null };
-  if (!userId) return { acciones, resultado };
+  if (!userId) return { acciones, resultado, agenda: null };
+  const enTelefono = persistir === false;
+  const agendaTurno = (creado = null, borrados = []) => enTelefono
+    ? calendarioApi.agendaCombinada(userId, [...(eventosTelefono || []).filter(e => !borrados.includes(e.id)), ...(creado ? [creado] : [])], { limite: 10 })
+    : null;
 
-  const pedidoAlarma = detectarAlarma(mensaje, { zonaHoraria });
+  const agenda = accionesAgenda(userId, mensaje, enTelefono, zonaHoraria, eventosTelefono);
+  acciones.push(...agenda.acciones);
+  if (agenda.tratado) {
+    resultado.evento = agenda.evento;
+    return { acciones, resultado, agenda: agenda.evento?.accion === "eliminado" ? null : agendaTurno(null, agenda.borrados) };
+  }
+  // "agendá un evento..." / "poné en el calendario..." es agenda aunque use verbos de alarma ("programá").
+  const pedidoEventoExplicito = /\b(evento|agenda|calendario)\b/i.test(mensaje) ? detectarEvento(mensaje, new Date(), { zonaHoraria }) : null;
+  const pedidoAlarma = pedidoEventoExplicito ? null : detectarAlarma(mensaje, { zonaHoraria });
   // Diagnóstico (sin el texto del usuario): qué decidió el detector de alarmas en este turno.
   if (pedidoAlarma) console.log(`[alarma] ${pedidoAlarma.accion} hora=${pedidoAlarma.hora || "no_entendida"} destino=${persistir === false ? "telefono" : "servidor"} tz=${zonaHoraria || "default"}`);
   // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
@@ -124,26 +174,30 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
       dispatchPlan: protocoloDespertador.despachosAndroid({ hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null })
     };
     acciones.push(`Alarma CREADA en el teléfono para las ${pedidoAlarma.hora}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.`);
-    return { acciones, resultado };
+    return { acciones, resultado, agenda: agendaTurno() };
   }
   if (persistir === false && pedidoAlarma?.accion === "cancelar") {
     resultado.alarma = { accion: "cancelar_local", hora: pedidoAlarma.hora || null };
     acciones.push(`Alarma CANCELADA en el teléfono${pedidoAlarma.hora ? ` (${pedidoAlarma.hora})` : " (la próxima)"}.`);
-    return { acciones, resultado };
+    return { acciones, resultado, agenda: agendaTurno() };
   }
-  // Anónimo (dev/demo): todo vive en el teléfono; nada se guarda en el servidor bajo "anonimo" (sería compartido).
-  // Las alarmas con hora ya salieron arriba como crear_local; acá: hora no entendida y recordatorios de agenda,
-  // que el teléfono guarda y arma localmente (scheduleReminderFrom) igual que un evento del servidor.
-  if (userId === "anonimo") {
+  // Teléfono (Android con memoria local primaria, o anónimo dev/demo): el evento se guarda en el calendario del
+  // teléfono (acción crear_local) y el teléfono arma su aviso local; nada se guarda en el servidor.
+  if (enTelefono) {
     if (pedidoAlarma?.accion === "crear" && !pedidoAlarma.hora) {
       acciones.push("El usuario pidió una alarma pero no se entendió la hora; no se creó ninguna alarma.");
     }
-    const eventoLocal = !pedidoAlarma ? detectarEvento(mensaje) : null;
-    if (eventoLocal) {
-      resultado.evento = { exito: true, local: true, evento: eventoLocal };
-      acciones.push(`Recordatorio GUARDADO en el teléfono: ${eventoLocal.fecha} ${eventoLocal.hora} — ${eventoLocal.descripcion}; suena aunque no haya conexión.`);
+    const pedido = pedidoEventoExplicito || (!pedidoAlarma ? detectarEvento(mensaje, new Date(), { zonaHoraria }) : null);
+    let creado = null;
+    if (pedido) {
+      creado = {
+        id: calendarioApi.nuevoIdEvento(), fecha: pedido.fecha, hora: pedido.hora, fin: pedido.fin || null,
+        descripcion: pedido.descripcion, notas: null, creadoPor: "chat", creadoEn: new Date().toISOString()
+      };
+      resultado.evento = { exito: true, local: true, accion: "crear_local", evento: creado };
+      acciones.push(`Evento AGENDADO en el calendario del teléfono: ${lineaEvento(creado)}${pedido.horaIndicada ? "" : " (el usuario no dijo la hora; quedó a las 09:00)"}; avisa a esa hora aunque no haya conexión.`);
     }
-    return { acciones, resultado };
+    return { acciones, resultado, agenda: agendaTurno(creado) };
   }
   if (pedidoAlarma?.accion === "crear" && pedidoAlarma.hora && persistir !== false) {
     try {
@@ -166,15 +220,15 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
       : "El usuario pidió cancelar una alarma pero no había ninguna que coincida.");
   }
 
-  const pedidoEvento = !pedidoAlarma ? detectarEvento(mensaje) : null;
+  const pedidoEvento = pedidoEventoExplicito || (!pedidoAlarma ? detectarEvento(mensaje, new Date(), { zonaHoraria }) : null);
   if (pedidoEvento) {
     const r = calendarioApi.agregarEvento(userId, pedidoEvento);
     resultado.evento = r;
     acciones.push(r.exito
-      ? `Evento AGENDADO: ${r.evento.fecha} ${r.evento.hora} — ${r.evento.descripcion}`
+      ? `Evento AGENDADO: ${lineaEvento(r.evento)}`
       : `No se pudo agendar el evento: ${r.mensaje}`);
   }
-  return { acciones, resultado };
+  return { acciones, resultado, agenda: null };
 }
 
 function memoriaVacia(userId) {
@@ -290,7 +344,9 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   }
 
   // [ACTIONS] alarmas / agenda (deterministas)
-  const { acciones, resultado: accionesEjecutadas } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo, contexto.zonaHoraria || null);
+  // Calendario del teléfono (dato saneado de memoriaLocal.calendario): agenda vigente para borrar/consultar.
+  const eventosTelefono = memoriaLocal ? calendarioApi.normalizarEventosTelefono(contexto.memoriaLocal?.calendario) : null;
+  const { acciones, resultado: accionesEjecutadas, agenda: agendaTurno } = ejecutarAcciones(userId, mensajeUsuario, persistirEnServidor && !esAnonimo, contexto.zonaHoraria || null, eventosTelefono);
   // Verificación de edad (Premium exige 18+): la cuenta no tiene fecha → el teléfono pide en ese momento el permiso de
   // fecha de nacimiento de Google (autorización incremental; el login solo pide la cuenta básica).
   const accionesResultado = flujo.evento === "edad_sin_dato" ? { ...(accionesEjecutadas || {}), verificarEdad: true } : accionesEjecutadas;
@@ -334,7 +390,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // [CONTEXT] herramientas + memoria + funciones de la app
   const herramientas = await contextoLLM.obtenerHerramientas(userId, {
-    lat: contexto.lat, lon: contexto.lon, ciudad: contexto.ciudad, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos
+    lat: contexto.lat, lon: contexto.lon, ciudad: contexto.ciudad, zonaHoraria: contexto.zonaHoraria, memoria: memoriaHechos,
+    agenda: agendaTurno
   });
   const mensajeContexto = contextoLLM.construirMensajeContexto({
     mensaje: mensajeUsuario,

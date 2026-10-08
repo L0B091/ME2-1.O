@@ -315,6 +315,10 @@ export async function evaluarAutonomia(body, opciones = {}) {
   const ahora = opciones.ahora ?? Date.now();
   const generar = opciones.generar || ((iniciativa, memoria) => generarIniciativaLLM(iniciativa, memoria, solicitud.userId));
   const configurado = opciones.llmConfigurado ?? dolphinClient.estaConfigurado();
+  // Calendario propio del teléfono (memoriaLocal.calendario, Android): es la agenda del usuario para los recordatorios
+  // de eventos y para "planear una salida" sin chocar con lo agendado (más lo heredado en el servidor, si hay).
+  const eventosTelefono = calendarioApi.normalizarEventosTelefono(solicitud.memoriaLocal?.calendario);
+  const calendarioTelefono = eventosTelefono ? async uid => calendarioApi.agendaCombinada(uid, eventosTelefono, { ahora }) : null;
   // Cliente con memoria local primaria (Android): sus gustos/ubicación viajan en memoriaLocal y se suman a lo del servidor.
   const memoriaGuardada = memoriaConversacional.obtener(solicitud.userId);
   const gustosLocales = Array.isArray(solicitud.memoriaLocal?.gustos)
@@ -388,8 +392,9 @@ export async function evaluarAutonomia(body, opciones = {}) {
   } else if (opciones.debugFuentes) fallosFuentes.push(`sueno_no_elegible:${sueno.motivo}`);
   // Fuente: recordatorios del calendario (próximas 24 h)
   try {
-    const { eventos: proximos } = opciones.calendario
-      ? { eventos: await opciones.calendario(solicitud.userId) }
+    const calendarioFuente = opciones.calendario || calendarioTelefono;
+    const { eventos: proximos } = calendarioFuente
+      ? { eventos: await calendarioFuente(solicitud.userId) }
       : await calendarioApi.proximosUnificados(solicitud.userId, 5);
     for (const ev of proximos) {
       const t = Date.parse(`${ev.fecha}T${ev.hora}:00-03:00`);
@@ -444,7 +449,7 @@ export async function evaluarAutonomia(body, opciones = {}) {
   // Temas de compañía opcionales (salida, juego/pasatiempo, película, planear salida)
   if (opciones.companiaConfigurada ?? true) {
     eventos.push(...await fuentesCompania(solicitud.userId, memoriaServidor, ahora, {
-      clima: climaActual, ubicacion, tendencias: opciones.tendencias, calendario: opciones.calendarioCompania, fallos: fallosFuentes
+      clima: climaActual, ubicacion, tendencias: opciones.tendencias, calendario: opciones.calendarioCompania || calendarioTelefono, fallos: fallosFuentes
     }));
   }
   const rotados = aplicarRotacion(solicitud.userId, eventos);
