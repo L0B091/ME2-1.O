@@ -1,6 +1,13 @@
 // detectorAlarmas.js — detecta pedidos de alarma en lenguaje natural (es-AR).
 // Ej: "despertame a las 7:30", "poné una alarma a las 19:40", "alarma 8 y media de la noche".
-const VERBOS = /\b(despert[aá]me|despertarme|despertador|levant[aá]me|alarma|alarmas|avis[aá]me|recordame|record[aá]me|pon[eé]me una alarma|program[aá])\b/i;
+// Se evalúa sobre el texto en minúsculas y SIN tildes: voseo y tuteo ("despertame" / "despiértame" / "DESPIERTAME"),
+// "me despertás", "que me despiertes", "levantame". "despierto"/"desperté" (estado) no son pedidos.
+const VERBOS = /\b(despertame|despertarme|despertador|despiert(?:ame|enme|eme|es|as)|despertas|despertes|despertarias|levanta(?:me|rme)|levantenme|alarmas?|avisame|recordame|recuerdame|poneme una alarma|ponme una alarma|programa(?:me)?)\b/;
+const RE_DESPERTAR = /desperta|despiert(?:ame|enme|eme|es|as)|despertes|despertarias|levant/;
+/** minúsculas + sin tildes (la ñ se conserva). */
+export function normalizarTexto(t = "") {
+  return String(t).toLowerCase().normalize("NFD").replace(/(?!\u0303)[\u0300-\u036f]/g, "").normalize("NFC");
+}
 const CANCELAR = /(?:^|\s)(cancel[aá]|borr[aá]|elimin[aá]|sac[aá]|apag[aá]|quit[aá])(?:la|me)?\s[^.]*\balarma/i;
 
 function aMinutos(fraccion = "") {
@@ -66,24 +73,26 @@ export function horaRelativa(texto = "", ahora = Date.now(), _zonaHoraria = null
 }
 
 export function detectarAlarma(mensaje = "", { ahora = Date.now(), zonaHoraria = null } = {}) {
-  const texto = String(mensaje).toLowerCase().normalize("NFC");
+  const texto = normalizarTexto(mensaje);
   if (CANCELAR.test(texto)) {
     const h = parsearHora(texto);
     return { accion: "cancelar", hora: h };
   }
   if (!VERBOS.test(texto)) return null;
+  // Relato en pasado ("el despertador sonó a las 7") no es un pedido.
+  if (/\b(sono|sonaba|sonado)\b/.test(texto) && !/\b(pone|pon|poneme|ponme|programa|programame|despertame|despiertame)\b/.test(texto)) return null;
   // Para "recordame/avisame" exigimos la palabra alarma o despertar para no pisar recordatorios
-  if (/\b(avis[aá]me|recordame|record[aá]me)\b/.test(texto) && !/alarma|despert/.test(texto)) return null;
+  if (/\b(avisame|recordame|recuerdame)\b/.test(texto) && !/alarma/.test(texto) && !RE_DESPERTAR.test(texto)) return null;
   // Relativa primero: "alarma para 2 minutos" no es la hora 02:00. El instante absoluto (epochMs) se calcula con la
   // hora del SERVIDOR en la zona fija de ME2; el teléfono lo arma con su reloj ME2 (nunca con su propia hora).
   const relativo = epochRelativo(texto, ahora);
   const hora = relativo != null ? formatoHora(relativo) : parsearHora(texto);
   if (!hora) {
     // Pedido con plazo/hora que no se pudo leer ("alarma en un ratito minutos..."): se informa, nunca se confirma.
-    if (!/despert|levant|\bpon|program|cre[aá]|necesito una alarma|quiero una alarma|\bminutos?\b|\bhoras?\b/.test(texto)) return null;
+    if (!RE_DESPERTAR.test(texto) && !/\bpon|program|crea|necesito una alarma|quiero una alarma|\bminutos?\b|\bhoras?\b/.test(texto)) return null;
     return { accion: "crear", hora: null, motivo: "hora_no_entendida" };
   }
-  const titulo = /despert|levant/.test(texto) ? "Hora de despertar" : "Alarma";
+  const titulo = RE_DESPERTAR.test(texto) ? "Hora de despertar" : "Alarma";
   return { accion: "crear", hora, titulo, epochMs: relativo ?? epochDeHora(hora, ahora) };
 }
 
@@ -102,4 +111,4 @@ export function parsearHora(texto = "") {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-export default { detectarAlarma, parsearHora, horaRelativa, epochRelativo, epochDeHora };
+export default { detectarAlarma, parsearHora, horaRelativa, epochRelativo, epochDeHora, normalizarTexto };

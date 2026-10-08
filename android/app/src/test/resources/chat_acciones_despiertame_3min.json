@@ -1,0 +1,53 @@
+{
+  "acciones": {
+    "alarma": {
+      "accion": "crear_local",
+      "hora": "17:43",
+      "titulo": "Hora de despertar",
+      "disparoEpochMs": 1791492180000,
+      "servidorAhoraMs": 1791491946885,
+      "dispatchPlan": [
+        {
+          "stage": 1,
+          "offsetFromAlarmMs": 0,
+          "channelId": "ME2_MESSAGES",
+          "notificationType": "message",
+          "vibration": "double",
+          "sound": "bubble",
+          "titulo": "Hora de despertar",
+          "mensaje": "Alarma · 17:43"
+        },
+        {
+          "stage": 2,
+          "offsetFromAlarmMs": 300000,
+          "channelId": "ME2_MESSAGES",
+          "notificationType": "message",
+          "vibration": "double",
+          "sound": "bubble",
+          "titulo": "Hora de despertar",
+          "mensaje": "Alarma · 17:43 · segundo aviso"
+        },
+        {
+          "stage": 3,
+          "offsetFromAlarmMs": 600000,
+          "channelId": "ME2_ALARMS",
+          "notificationType": "alarm",
+          "vibration": "alarm",
+          "sound": "alarm",
+          "titulo": "Hora de despertar",
+          "mensaje": "Alarma · 17:43 · último aviso"
+        }
+      ]
+    },
+    "evento": null,
+    "programados": [
+      {
+        "texto": "hoy jueves 8/10 a las 17:43",
+        "hhmm": "17:43",
+        "ddmm": "8/10",
+        "relativo": "hoy",
+        "dia": "jueves"
+      }
+    ]
+  }
+}

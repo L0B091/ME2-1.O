@@ -30,6 +30,10 @@ import calendarioApi from "../api/calendario.js";
 import { detectarAlarma } from "../modulos/detectorAlarmas.js";
 import { detectarEvento, detectarEliminacion, detectarConsulta, lineaEvento } from "../modulos/detectorAgenda.js";
 import fechaProgramada from "../utils/fechaProgramada.js";
+import { textoPlano } from "../utils/textoPlano.js";
+// Afirmación de haber creado una alarma ("he programado/te puse una alarma", "alarma lista", "te despierto a las 7").
+const RE_PIDE_ALARMA = /\b(despert|despiert|levant|alarma|despertador)/;
+const RE_AFIRMA_ALARMA = /\b(programe|puse|configure|active|agende|cree|deje|setee|(?:he|ya|te|la|lo) (?:programado|puesto|configurado|activado|agendado|creado|dejado))\b[^.!?\n]{0,40}\b(alarma|despertador)\b|\b(alarma|despertador)\b[^.!?\n]{0,25}\b(programad[oa]|puest[oa]|configurad[oa]|activad[oa]|creada|lista|listo)\b|\bte (despierto|aviso|suena) (a las|en|dentro de)\b/;
 import contextoLLM from "./contextoLLM.js";
 import perfilBasico from "../modulos/onboarding/perfilBasico.js";
 import estadoEmocional from "../memoria/estadoEmocional.js";
@@ -455,30 +459,45 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     debugLLM = { ...debugLLM, used: false, error: error.message };
   }
 
-  // [VALIDACIÓN] alarma/evento creado: la respuesta debe decir la fecha y hora exactas programadas. Si falta, se
-  // regenera UNA vez con una instrucción más estricta; no se agrega texto enlatado (si sigue faltando, queda registrado).
+  // [VALIDACIÓN] (1) alarma/evento creado: la respuesta debe decir la fecha y hora exactas programadas; (2) si en este
+  // turno NO se creó ninguna alarma, la respuesta no puede afirmar que la programó (el LLM lo inventaba). Si falla, se
+  // regenera UNA vez con una instrucción más estricta; no se agrega texto enlatado (si sigue fallando, queda registrado).
+  if (respuesta) respuesta = textoPlano(respuesta);
   const programados = accionesEjecutadas?.programados || [];
-  if (respuesta && programados.length) {
-    const falta = (t) => programados.filter(d => !fechaProgramada.contieneFechaHora(t, d));
-    fechaProgramada.ESTADISTICAS_FECHA.validadas++;
-    if (falta(respuesta).length) {
+  const alarmaCreada = ["crear_local", "creada"].includes(accionesEjecutadas?.alarma?.accion);
+  const falta = (t) => programados.filter(d => !fechaProgramada.contieneFechaHora(t, d));
+  // Solo cuando el usuario PIDIÓ crear una alarma (no al consultar una existente: "¿sigue puesta la alarma?").
+  const pidioAlarma = RE_PIDE_ALARMA.test(fechaProgramada.normalizar(mensajeUsuario || "")) && !/\?/.test(mensajeUsuario || "") &&
+    accionesEjecutadas?.alarma?.accion !== "cancelar_local" && accionesEjecutadas?.alarma?.accion !== "cancelada";
+  const afirmaAlarmaFalsa = (t) => pidioAlarma && !alarmaCreada && RE_AFIRMA_ALARMA.test(fechaProgramada.normalizar(t || ""));
+  const problemas = (t) => [
+    ...falta(t).map(d => `incluí TEXTUALMENTE «${d.texto}» (día de la semana, día/mes y hora HH:mm)`),
+    ...(afirmaAlarmaFalsa(t) ? ["en este turno NO se creó ninguna alarma: no digas que la programaste, pusiste o configuraste"] : [])
+  ];
+  if (respuesta && (programados.length || afirmaAlarmaFalsa(respuesta))) {
+    if (programados.length) fechaProgramada.ESTADISTICAS_FECHA.validadas++;
+    const antes = problemas(respuesta);
+    if (antes.length) {
       fechaProgramada.ESTADISTICAS_FECHA.regeneradas++;
       const estricta = {
         role: "system",
-        content: `Tu respuesta anterior no dijo la fecha y hora exactas de lo que quedó programado. Reescribí tu respuesta incluyendo TEXTUALMENTE ${falta(respuesta).map(d => `«${d.texto}»`).join(" y ")} (día de la semana, día/mes y hora HH:mm).`
+        content: `Tu respuesta anterior no cumple con lo que pasó en este turno. Reescribila: ${antes.join("; ")}.`
       };
       try {
         const r2 = await dolphinClient.chat([...mensajes, { role: "assistant", content: respuesta }, estricta]);
-        if (r2?.respuesta && falta(r2.respuesta).length < falta(respuesta).length) respuesta = r2.respuesta;
+        const otra = r2?.respuesta ? textoPlano(r2.respuesta) : null;
+        if (otra && problemas(otra).length < antes.length) respuesta = otra;
       } catch (error) {
         debugLLM = { ...debugLLM, reintentoFechaError: error.message };
       }
-      if (falta(respuesta).length) {
+      const despues = problemas(respuesta);
+      if (despues.length) {
         fechaProgramada.ESTADISTICAS_FECHA.faltanteTrasReintento++;
-        console.log(`[fecha-obligatoria] faltante tras reintento (${fechaProgramada.ESTADISTICAS_FECHA.faltanteTrasReintento}/${fechaProgramada.ESTADISTICAS_FECHA.validadas})`);
+        console.log(`[validacion-respuesta] sigue fallando tras reintento: ${despues.length} problema(s) (${fechaProgramada.ESTADISTICAS_FECHA.faltanteTrasReintento}/${fechaProgramada.ESTADISTICAS_FECHA.regeneradas})`);
       }
     }
-    debugLLM = { ...debugLLM, fechaProgramada: programados.map(d => d.texto), fechaIncluida: !falta(respuesta).length };
+    if (programados.length) debugLLM = { ...debugLLM, fechaProgramada: programados.map(d => d.texto), fechaIncluida: !falta(respuesta).length };
+    if (!alarmaCreada) debugLLM = { ...debugLLM, alarmaInventada: afirmaAlarmaFalsa(respuesta) };
   }
 
   // [FORMATO] modo adulto: texto | gif | texto+gif (validado por el orquestador). Fuera: siempre texto.

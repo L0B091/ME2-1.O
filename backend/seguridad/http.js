@@ -91,7 +91,7 @@ export function authPorDefecto(req, res, next) {
 
 // ---------------------------------------------------------------- validación de /chat
 export const LIMITES_CHAT = Object.freeze({ mensaje: 4000, contextoBytes: 256 * 1024, historial: 60, memorias: 300 });
-const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "ciudad", "iniciativa", "alarmaRespondida"]);
+const CAMPOS_CONTEXTO = new Set(["memoriaLocal", "premiumLocal", "lat", "lon", "zonaHoraria", "ciudad", "iniciativa", "alarmaRespondida", "diagAlarmas"]);
 
 /** Valida el cuerpo de /chat y devuelve SOLO los campos de contexto admitidos (nunca userId/premium/adulto del cliente). */
 export function validarCuerpoChat(body = {}) {
@@ -112,6 +112,13 @@ export function validarCuerpoChat(body = {}) {
   if (ctx.ciudad != null) {
     const c = typeof ctx.ciudad === "string" ? ctx.ciudad.replace(/[\u0000-\u001F\u007F]/g, " ").trim().slice(0, 80) : "";
     if (!c || ctx.lat == null || ctx.lon == null) delete ctx.ciudad; else ctx.ciudad = c;
+  }
+  // Rastro de diagnóstico del despertador del teléfono: solo líneas cortas de texto (van al log, nunca al LLM).
+  if (ctx.diagAlarmas != null) {
+    ctx.diagAlarmas = Array.isArray(ctx.diagAlarmas)
+      ? ctx.diagAlarmas.filter(l => typeof l === "string").slice(-40).map(l => l.replace(/[\u0000-\u001F\u007F]/g, " ").slice(0, 260))
+      : [];
+    if (!ctx.diagAlarmas.length) delete ctx.diagAlarmas;
   }
   const m = ctx.memoriaLocal;
   if (m != null) {

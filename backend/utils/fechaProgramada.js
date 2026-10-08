@@ -40,6 +40,11 @@ export function contieneFechaHora(texto, desc) {
   return fecha.test(t) && hora.test(t);
 }
 
+/** minúsculas sin tildes (para validar respuestas del LLM). */
+export function normalizar(t = "") {
+  return String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
 export const ESTADISTICAS_FECHA = { validadas: 0, regeneradas: 0, faltanteTrasReintento: 0 };
 
-export default { epochDeFechaHora, describirProgramado, contieneFechaHora, ESTADISTICAS_FECHA };
+export default { epochDeFechaHora, describirProgramado, contieneFechaHora, normalizar, ESTADISTICAS_FECHA };

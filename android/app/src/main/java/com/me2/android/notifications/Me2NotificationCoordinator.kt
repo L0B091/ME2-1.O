@@ -36,6 +36,17 @@ class Me2NotificationCoordinator(private val context: Context) {
         return true
     }
 
+    /** Estado de permisos/canal para el rastro de diagnóstico. */
+    private fun postDiag(channelId: String): String = runCatching {
+        val perm = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val enabled = NotificationManagerCompat.from(context).areNotificationsEnabled()
+        val importance = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).getNotificationChannel(channelId)?.importance
+        else null
+        "permiso=$perm habilitadas=$enabled importancia=$importance"
+    }.getOrDefault("?")
+
     private fun post(tag: String?, id: Int, notification: Notification): Boolean {
         return try {
             NotificationManagerCompat.from(context).notify(tag, id, notification)
@@ -104,10 +115,11 @@ class Me2NotificationCoordinator(private val context: Context) {
         runCatching { if (stage.notificationType == "alarm") haptics.vibrateAlarm() else haptics.vibrateMessage(alarmUsage = true) }
         if (!canPost(channel)) {
             Log.w("Me2Notifications", "Notificaciones de ME2 bloqueadas (permiso o canal): la alarma solo vibra")
+            Me2AlarmDiag.log(context, "notif BLOQUEADA ${alarmId.takeLast(6)} intento=${stage.stage} canal=$channel ${postDiag(channel)}")
             return
         }
 
-        post(
+        val publicada = post(
             null,
             notificationId(alarmId, stage.stage),
             NotificationCompat.Builder(
@@ -143,6 +155,7 @@ class Me2NotificationCoordinator(private val context: Context) {
                 .build()
                 .apply { if (stage.notificationType == "alarm") flags = flags or Notification.FLAG_INSISTENT }
         )
+        Me2AlarmDiag.log(context, "notif ${if (publicada) "publicada" else "FALLÓ"} ${alarmId.takeLast(6)} intento=${stage.stage} canal=$channel")
     }
 
     fun cancelAlarmNotifications(alarmId: String) {

@@ -589,6 +589,11 @@ app.post("/chat", chatRateLimit, optionalAuth, identidadObligatoria, handleAsync
   const { mensaje, contexto } = valido;
 
   const effectiveUserId = req.identidad;
+  // Diagnóstico del despertador que manda el teléfono (armado, permisos, disparo, notificación): solo al log.
+  if (contexto.diagAlarmas) {
+    for (const linea of contexto.diagAlarmas) console.log(`[alarma-diag] ${String(effectiveUserId || "").slice(0, 8)} ${linea}`);
+    delete contexto.diagAlarmas;
+  }
   const resultado = await orquestadorChat(mensaje, {
     ...contexto,
     userId: effectiveUserId,

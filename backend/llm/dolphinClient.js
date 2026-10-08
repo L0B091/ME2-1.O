@@ -23,6 +23,8 @@ function config() {
   };
 }
 
+import { textoPlano } from "../utils/textoPlano.js";
+
 export const ESTADISTICAS = { http_429: 0, http_503: 0, cuotaAgotadaHasta: null };
 
 function endpoint(url) {
@@ -107,7 +109,7 @@ export async function chat(messages, opciones = {}) {
   }
   const finishReason = data?.choices?.[0]?.finish_reason || null;
   if (finishReason === "length") console.warn("[dolphin] respuesta cortada por max_tokens (finish_reason=length)");
-  return { used: true, respuesta: contenido.trim(), model: data?.model || c.model, usage: data?.usage || null, finishReason };
+  return { used: true, respuesta: textoPlano(contenido.trim()), model: data?.model || c.model, usage: data?.usage || null, finishReason };
 }
 
 export default { chat, estaConfigurado, obtenerDiagnostico };

@@ -738,8 +738,10 @@ class MainActivity : AppCompatActivity() {
         binding.sendButton.isEnabled = false
         thread {
             runCatching {
+                val diag = com.me2.android.notifications.Me2AlarmDiag.pending(this@MainActivity)
                 backendClient.sendChat(currentSession, memorySnapshot, content, initiative, effectiveLocation(memorySnapshot), alarmaRespondida,
-                    calendarStore.backendContext(currentSession.id))
+                    calendarStore.backendContext(currentSession.id), diag)
+                    .also { com.me2.android.notifications.Me2AlarmDiag.ack(this@MainActivity, diag?.length() ?: 0) }
             }.onSuccess { result ->
                 runOnUiThread {
                     binding.sendButton.isEnabled = true

@@ -215,7 +215,9 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         /** Alarma que este mensaje respondió (protocolo despertador): {hora, titulo, intento}. */
         alarmaRespondida: JSONObject? = null,
         /** Próximos eventos del calendario propio del teléfono (el orquestador los lee para consultar/borrar). */
-        calendar: JSONArray? = null
+        calendar: JSONArray? = null,
+        /** Rastro de diagnóstico del despertador ([com.me2.android.notifications.Me2AlarmDiag]); va al log del backend. */
+        diagAlarmas: JSONArray? = null
     ): BackendChatResult {
         val json = request(
             method = "POST",
@@ -230,6 +232,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
                     put("premiumLocal", memory.premiumLocalJson())
                     if (initiative != null) put("iniciativa", initiative)
                     if (alarmaRespondida != null) put("alarmaRespondida", alarmaRespondida)
+                    if (diagAlarmas != null && diagAlarmas.length() > 0) put("diagAlarmas", diagAlarmas)
                     // Herramientas (clima/hora): zona del teléfono + coordenadas conocidas de la memoria local.
                     put("zonaHoraria", com.me2.android.time.Me2Clock.ZONE_ID) // zona fija de ME2, no la del teléfono
                     location?.let { loc ->

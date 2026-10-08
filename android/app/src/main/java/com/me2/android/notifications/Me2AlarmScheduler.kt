@@ -73,6 +73,12 @@ class Me2AlarmScheduler(
             remoteId = null, syncState = StoredAlarmRecord.SYNC_CREATE
         )
         store.upsert(record)
+        Me2AlarmDiag.log(
+            context, "crear ${record.id.takeLast(6)} hora=$hour epochSrv=${atMillis?.let(Me2AlarmDiag::hhmmss) ?: "-"} " +
+                "trigger=${Me2AlarmDiag.hhmmss(trigger)} offsetMs=${runCatching { Me2Clock.offsetMillis() }.getOrDefault(0L)} " +
+                "plan=${dispatchPlan.size} exacta=${runCatching { canScheduleExactAlarms() }.getOrDefault(false)} " +
+                "notifs=${runCatching { androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() }.getOrDefault(false)}${if (atMillis != null && trigger != atMillis) " (epoch descartado)" else ""}"
+        )
         return arm(record)
     }
 
@@ -146,7 +152,13 @@ class Me2AlarmScheduler(
         val current = store.find(alarmId) ?: return null
         if (current.answered || current.firedStage >= stage) return current
         val updated = store.update(alarmId) { it.copy(firedStage = stage, nextFireAtMillis = 0L) } ?: return null
-        runCatching { notify(updated, specFor(updated, stage)) }.onFailure { Log.w(TAG, "notify failed: ${it.javaClass.simpleName}") }
+        Me2AlarmDiag.log(
+            context, "disparo ${alarmId.takeLast(6)} intento=$stage atrasoMs=${clock() - AlarmEscalation.stageTime(updated.triggerAtMillis, stage)}"
+        )
+        runCatching { notify(updated, specFor(updated, stage)) }.onFailure {
+            Log.w(TAG, "notify failed: ${it.javaClass.simpleName}")
+            Me2AlarmDiag.log(context, "error ${alarmId.takeLast(6)} intento=$stage notificar: ${it.javaClass.simpleName}")
+        }
         return arm(updated)
     }
 
@@ -213,21 +225,26 @@ class Me2AlarmScheduler(
         val pi = broadcastIntent(record.id, record.userId, stage)
         val atMillis = toDeviceWall(me2AtMillis)
         val exactAllowed = runCatching { canScheduleExactAlarms() }.getOrDefault(false)
-        try {
+        val metodo = try {
             when {
-                !exactAllowed -> setInexact(atMillis, pi)
+                !exactAllowed -> { setInexact(atMillis, pi); "inexacta(sin permiso exacto)" }
                 // Despertador: setAlarmClock (exento de Doze, ícono de alarma). Recordatorios: exacta permitida en reposo.
                 record.kind == StoredAlarmRecord.KIND_ALARM ->
-                    alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(atMillis, null), pi)
+                    { alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(atMillis, null), pi); "setAlarmClock" }
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ->
-                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
-                else -> @Suppress("DEPRECATION") alarmManager.setExact(AlarmManager.RTC_WAKEUP, atMillis, pi)
+                    { alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi); "exactaEnReposo" }
+                else -> { @Suppress("DEPRECATION") alarmManager.setExact(AlarmManager.RTC_WAKEUP, atMillis, pi); "exacta" }
             }
         } catch (e: SecurityException) {
             // Android 12-14: el permiso de alarmas exactas se puede revocar entre el chequeo y el armado → inexacta.
             Log.w(TAG, "alarma exacta denegada (${record.id}); se arma inexacta")
             setInexact(atMillis, pi)
+            "inexacta(SecurityException)"
         }
+        Me2AlarmDiag.log(
+            context, "armada ${record.id.takeLast(6)} intento=$stage me2=${Me2AlarmDiag.hhmmss(me2AtMillis)} " +
+                "telefono=${Me2AlarmDiag.hhmmss(atMillis)} metodo=$metodo"
+        )
     }
 
     /** Fallback sin permiso de alarmas exactas: dispara en reposo (Doze) con una ventana corta del sistema. */
