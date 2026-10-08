@@ -375,6 +375,19 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     const cat = guardia.datoDeUsuario(ini.categoria || ini.fuente || "", 30);
     extra.push(`El usuario está respondiendo a una iniciativa tuya${cat ? ` (${cat})` : ""}: «${iniTexto}». Retomá ese tema si corresponde.`);
   }
+  // Respuesta a "¿cómo dormiste?" (fuente sueño de la iniciativa): queda guardada en el estado del usuario como
+  // recuerdo real (en el teléfono para Android; en el servidor para clientes sin memoria local).
+  const esSueno = ini && (ini.fuente === "sueno" || ini.contexto?.fuenteServidor === "sueno");
+  if (esSueno && String(mensajeUsuario || "").trim()) {
+    const fecha = new Date(contexto.timestamp || Date.now()).toLocaleDateString("en-CA", { timeZone: process.env.ME2_TZ || "America/Argentina/Buenos_Aires" });
+    const nota = `Cómo durmió (${fecha}): ${guardia.datoDeUsuario(mensajeUsuario, 200)}`;
+    if (!persistirEnServidor) {
+      memoriaLocalDelta = { gustos: [], disgustos: [], ubicacion: null, ...(memoriaLocalDelta || {}), notas: [{ categoria: "sueno", texto: nota }] };
+    } else if (userId !== "anonimo") {
+      const actual = memoriaConversacional.obtener(userId);
+      memoriaConversacional.actualizarCampos(userId, { hechos: [...(actual.hechos || []), `${nota} (dicho el ${fecha})`].slice(-50) });
+    }
+  }
 
   // [ALARMA] el mensaje del usuario responde una alarma que sonó en el teléfono (protocolo despertador): la respuesta
   // la redacta Dolphin en este turno (sin texto fijo); el clima, si hay ubicación, ya viene en las herramientas.
@@ -472,7 +485,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     premium,
     adultMode: adultResult?.adult || null,
     checkout,
-    memoriaLocalDelta: memoriaLocalDelta && (memoriaLocalDelta.gustos.length || memoriaLocalDelta.disgustos.length || memoriaLocalDelta.ubicacion)
+    memoriaLocalDelta: memoriaLocalDelta && (memoriaLocalDelta.gustos.length || memoriaLocalDelta.disgustos.length || memoriaLocalDelta.ubicacion || memoriaLocalDelta.notas?.length)
       ? memoriaLocalDelta : null,
     acciones: premiumLocalRes
       ? { ...accionesResultado, premium: { modulo: premiumLocalRes.modulo, operacion: premiumLocalRes.resultado?.op, ok: premiumLocalRes.resultado?.ok !== false, persistidoEn: premiumLocalRes.persistidoEn, estado: premiumLocalRes.persistidoEn === "telefono" ? premiumLocalRes.estado : undefined } }

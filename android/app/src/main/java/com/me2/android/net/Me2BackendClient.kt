@@ -61,7 +61,9 @@ data class BackendChatResult(
 data class MemoryFacts(
     val gustos: List<String>,
     val disgustos: List<String>,
-    val ubicacion: com.me2.android.data.LocalLocation?
+    val ubicacion: com.me2.android.data.LocalLocation?,
+    /** Notas reales para la memoria del usuario (p. ej. su respuesta a "¿cómo dormiste?"): (categoría, texto). */
+    val notas: List<Pair<String, String>> = emptyList()
 )
 
 data class PremiumStatusResult(
@@ -286,8 +288,15 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             val a = o.optJSONArray(key)
             if (a == null) emptyList() else (0 until a.length()).mapNotNull { a.optString(it).trim().takeIf { s -> s.isNotEmpty() } }
         }
-        val facts = MemoryFacts(strings("gustos"), strings("disgustos"), com.me2.android.data.LocalLocation.fromJson(o.optJSONObject("ubicacion")))
-        return facts.takeUnless { it.gustos.isEmpty() && it.disgustos.isEmpty() && it.ubicacion == null }
+        val notas = o.optJSONArray("notas")?.let { a ->
+            (0 until a.length()).mapNotNull { i ->
+                val n = a.optJSONObject(i) ?: return@mapNotNull null
+                val texto = n.optString("texto").trim().take(280)
+                if (texto.isEmpty()) null else n.optString("categoria", "nota").ifBlank { "nota" } to texto
+            }
+        }.orEmpty()
+        val facts = MemoryFacts(strings("gustos"), strings("disgustos"), com.me2.android.data.LocalLocation.fromJson(o.optJSONObject("ubicacion")), notas)
+        return facts.takeUnless { it.gustos.isEmpty() && it.disgustos.isEmpty() && it.ubicacion == null && it.notas.isEmpty() }
     }
 
     internal fun parseAudiovisual(o: JSONObject?): com.me2.android.media.AudiovisualCue? {

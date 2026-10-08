@@ -38,8 +38,12 @@ class Me2InitiativeTimer(
     private val app = context.applicationContext
 
     fun restWindow(userId: String): RestWindow {
+        // Solo una alarma de MAÑANA (04–12 h) marca el fin del descanso; una alarma de prueba a las 14:25 no convierte
+        // 00–14 en "descanso". Si hay varias, la más temprana.
         val wake = Me2AlarmStore(app).listForUser(userId)
-            .firstOrNull { it.kind == StoredAlarmRecord.KIND_ALARM && !it.answered }?.hour?.substringBefore(':')?.toIntOrNull()
+            .filter { it.kind == StoredAlarmRecord.KIND_ALARM && !it.answered }
+            .mapNotNull { it.hour.substringBefore(':').toIntOrNull() }
+            .filter { it in 4 until 12 }.minOrNull()
         return RestWindow.estimate(store.observations(userId), configured = store.configuredSleep(userId), wakeHour = wake)
     }
 

@@ -151,10 +151,24 @@ function fuenteDe(iniciativa) {
 
 const DIA_MS = 24 * 3600e3;
 
-function zonaDe(userId, memoria) {
-  return contextoLLM.resolverUbicacion(memoria)?.zonaHoraria
-    || datosUsuario.obtener(userId)?.configuracion?.zonaHoraria
-    || process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
+// Zona fija de ME2 (reloj propio): ni la del teléfono ni la de la ubicación cambian "mañana", "tarde" o "finde".
+function zonaDe(_userId, _memoria) {
+  return process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
+}
+
+// Memorias REALES del teléfono (memoria local primaria): frases que el usuario dijo, con su fecha. Se suman a los
+// hechos del servidor para la fuente "recuerdo" (antes, con memoria en el teléfono, esta fuente nunca era elegible).
+export function hechosDelTelefono(memoriaLocal = {}) {
+  const fecha = ts => new Date(ts).toLocaleDateString("en-CA", { timeZone: zonaDe() });
+  return [...(memoriaLocal.persistentMemories || []), ...(memoriaLocal.importantMemories || [])]
+    .filter(m => m && typeof m.text === "string" && m.text.trim() && Number.isFinite(Number(m.timestamp)) && Number(m.timestamp) > 0)
+    .map(m => `${m.text.trim().slice(0, 240)} (dicho el ${fecha(Number(m.timestamp))})`);
+}
+
+// Alarmas del teléfono (eventos ALARMA que manda Android) como "HH:mm" en la zona de ME2, para la ventana del sueño.
+function alarmasDelTelefono(eventos = []) {
+  const hhmm = ts => new Intl.DateTimeFormat("en-GB", { timeZone: zonaDe(), hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(ts);
+  return eventos.filter(e => e?.categoria === "ALARMA" && Number.isFinite(Number(e.timestamp))).map(e => ({ hora: hhmm(Number(e.timestamp)) }));
 }
 
 function horaLocal(ahora, zona) {
@@ -338,6 +352,8 @@ export async function evaluarAutonomia(body, opciones = {}) {
     };
   }
   const gustosServidor = memoriaServidor.gustos || [];
+  // Copia antes de sumar el resumen sintético "Le gusta: …" (eso no es un recuerdo dicho por el usuario).
+  const memoriaLocalOriginal = solicitud.memoriaLocal;
   // Gustos guardados en el servidor también cuentan como intereses
   if (gustosServidor.length) {
     solicitud.memoriaLocal = {
@@ -373,7 +389,8 @@ export async function evaluarAutonomia(body, opciones = {}) {
   if (!configurado) return salir("llm_no_configurado");
 
   // Fuente: recuerdo relevante (solo memorias guardadas; si no hay, no es elegible)
-  const recuerdo = recuerdoRelevante(solicitud.userId, memoriaServidor, ahora);
+  const recuerdo = recuerdoRelevante(solicitud.userId,
+    { ...memoriaServidor, hechos: [...(memoriaServidor.hechos || []), ...hechosDelTelefono(memoriaLocalOriginal)] }, ahora);
   if (recuerdo) {
     eventos.push({
       categoria: "RECUERDO", fuente: "memoria", referenciaEvento: recuerdo.referencia,
@@ -382,7 +399,8 @@ export async function evaluarAutonomia(body, opciones = {}) {
     });
   }
   // Fuente: sueño (tema alternativo de mañana, con cooldown de varios días)
-  const sueno = suenoElegible(solicitud.userId, memoriaServidor, ahora);
+  const alarmasSueno = [...(solicitud.userId ? gestorDeAlarmas.obtenerAlarmasPorUsuario(solicitud.userId) : []), ...alarmasDelTelefono(solicitud.eventos)];
+  const sueno = suenoElegible(solicitud.userId, memoriaServidor, ahora, alarmasSueno);
   if (sueno.elegible) {
     eventos.push({
       categoria: "CONVERSACION", fuente: "sueno", referenciaEvento: `sueno:${sueno.dia}`,

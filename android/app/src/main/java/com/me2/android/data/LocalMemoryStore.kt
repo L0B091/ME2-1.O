@@ -304,9 +304,18 @@ class LocalMemoryStore(context: Context) {
         dao.deleteByUserId(fromUserId)
     }
 
-    fun applyBackendFacts(userId: String, gustos: List<String>, disgustos: List<String>, ubicacion: LocalLocation?) {
-        if (gustos.isEmpty() && disgustos.isEmpty() && ubicacion == null) return
-        save(load(userId).withBackendFacts(gustos, disgustos, ubicacion).withUpdatedTimestamp())
+    fun applyBackendFacts(
+        userId: String, gustos: List<String>, disgustos: List<String>, ubicacion: LocalLocation?,
+        notas: List<Pair<String, String>> = emptyList()
+    ) {
+        if (gustos.isEmpty() && disgustos.isEmpty() && ubicacion == null && notas.isEmpty()) return
+        var memory = load(userId).withBackendFacts(gustos, disgustos, ubicacion)
+        // Estado del usuario (p. ej. cómo durmió): recuerdo real, guardado en el teléfono.
+        notas.forEach { (categoria, texto) ->
+            memory = memory.copy(persistentMemories = mergeNotes(memory.persistentMemories,
+                LocalMemoryNote(category = categoria, text = texto, importance = 2, timestamp = com.me2.android.time.Me2Clock.now())))
+        }
+        save(memory.withUpdatedTimestamp())
     }
 
     fun isEffectivelyEmpty(userId: String): Boolean {

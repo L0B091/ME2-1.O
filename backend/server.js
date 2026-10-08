@@ -577,6 +577,8 @@ app.post("/api/iniciativas/evaluar", initiativeRateLimit, optionalAuth, identida
   const data = await orquestadorNotificaciones.evaluarAutonomia({
     ...req.body, userId: req.identidad
   }, prefetch ? { ahora: entregarDesde, prefetch: true } : {});
+  // Diagnóstico (sin textos): qué decidió el orquestador de iniciativa.
+  console.log(`[iniciativa] ${prefetch ? "prefetch " : ""}${data?.decision || "?"} ${data?.decision === "INICIAR" ? `fuente=${data.fuenteElegida || "?"}` : `motivo=${data?.motivoEspera || "?"}`}${data?.fallosFuentes?.length ? ` fallos=${data.fallosFuentes.join(",")}` : ""}`);
   return res.json({ ok: true, data });
 }));
 
