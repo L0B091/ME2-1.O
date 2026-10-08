@@ -113,6 +113,8 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null) {
   if (!userId) return { acciones, resultado };
 
   const pedidoAlarma = detectarAlarma(mensaje, { zonaHoraria });
+  // Diagnóstico (sin el texto del usuario): qué decidió el detector de alarmas en este turno.
+  if (pedidoAlarma) console.log(`[alarma] ${pedidoAlarma.accion} hora=${pedidoAlarma.hora || "no_entendida"} destino=${persistir === false ? "telefono" : "servidor"} tz=${zonaHoraria || "default"}`);
   // Cliente con memoria local primaria (Android): la alarma vive en el teléfono (AlarmManager, funciona offline y
   // sobrevive reinicios); el teléfono la sincroniza con el servidor cuando hay conexión.
   if (persistir === false && pedidoAlarma?.accion === "crear" && pedidoAlarma.hora) {

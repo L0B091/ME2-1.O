@@ -90,7 +90,7 @@ data class AlarmDispatchStage(
                 AlarmDispatchStage(
                     stage = item.optInt("stage", 1),
                     offsetFromAlarmMs = item.optLong("offsetFromAlarmMs", 0L),
-                    channelId = item.optString("channelId", "ME2_MESSAGES"),
+                    channelId = item.optString("channelId", com.me2.android.notifications.Me2NotificationChannels.CHANNEL_MESSAGES),
                     notificationType = item.optString("notificationType", "message"),
                     vibration = item.optString("vibration", "double"),
                     sound = item.optString("sound", "bubble"),

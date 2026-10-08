@@ -1,6 +1,6 @@
 // detectorAlarmas.js — detecta pedidos de alarma en lenguaje natural (es-AR).
 // Ej: "despertame a las 7:30", "poné una alarma a las 19:40", "alarma 8 y media de la noche".
-const VERBOS = /\b(despert[aá]me|despertarme|levant[aá]me|alarma|alarmas|avis[aá]me|recordame|record[aá]me|pon[eé]me una alarma|program[aá])\b/i;
+const VERBOS = /\b(despert[aá]me|despertarme|despertador|levant[aá]me|alarma|alarmas|avis[aá]me|recordame|record[aá]me|pon[eé]me una alarma|program[aá])\b/i;
 const CANCELAR = /(?:^|\s)(cancel[aá]|borr[aá]|elimin[aá]|sac[aá]|apag[aá]|quit[aá])(?:la|me)?\s[^.]*\balarma/i;
 
 function aMinutos(fraccion = "") {
@@ -11,15 +11,30 @@ function aMinutos(fraccion = "") {
   return n ? Number(n[0]) : 0;
 }
 
-// "en 10 minutos", "en 2 min", "en una hora", "en media hora", "en 1 hora y media": hora local HH:mm del usuario
-// (zona del teléfono). Se redondea al minuto siguiente para no sonar antes de lo pedido.
-const RELATIVA = /\ben\s+(?:(\d{1,3})|(un|una)|(media))\s*(minutos?|mins?|horas?|hs?)\b(\s+y\s+media)?/;
+// "en 10 minutos", "en 2 min", "dentro de dos minutos", "de acá a 5 minutos", "para 2 minutos", "2 minutos más",
+// "en una hora", "en media hora", "en 1 hora y media": hora local HH:mm del usuario (zona del teléfono).
+// Se redondea al minuto siguiente para no sonar antes de lo pedido.
+const NUMEROS = {
+  un: 1, una: 1, uno: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10,
+  once: 11, doce: 12, quince: 15, veinte: 20, treinta: 30, cuarenta: 40, cincuenta: 50, media: 0.5
+};
+const CANTIDAD = `(\\d{1,3}|${Object.keys(NUMEROS).join("|")})`;
+const UNIDAD = "(minutos?|mins?|horas?|hs?)";
+const RELATIVA = [
+  // "en / dentro de / de acá a / para dentro de N unidad"
+  new RegExp(`\\b(?:en|dentro\\s+de|de\\s+ac[aá]\\s+a)\\s+(?:unos?\\s+)?${CANTIDAD}\\s*${UNIDAD}\\b(\\s+y\\s+media)?`),
+  // "para 2 minutos" (solo minutos: "para las 2" / "para 2 hs" son horas del reloj)
+  new RegExp(`\\bpara\\s+(?:unos?\\s+)?${CANTIDAD}\\s*(minutos?|mins?)\\b()`),
+  // "2 minutos más", "5 minutos desde ahora"
+  new RegExp(`\\b${CANTIDAD}\\s*${UNIDAD}\\s+(?:m[aá]s|desde\\s+ahora|a\\s+partir\\s+de\\s+ahora)\\b()`)
+];
 
 export function horaRelativa(texto = "", ahora = Date.now(), zonaHoraria = null) {
-  const m = String(texto).toLowerCase().match(RELATIVA);
+  const t = String(texto).toLowerCase();
+  const m = RELATIVA.map(re => t.match(re)).find(Boolean);
   if (!m) return null;
-  const n = m[1] ? Number(m[1]) : m[2] ? 1 : 0.5;
-  const minutos = /^h/.test(m[4]) ? n * 60 + (m[5] ? 30 : 0) : n;
+  const n = /^\d/.test(m[1]) ? Number(m[1]) : NUMEROS[m[1]];
+  const minutos = /^h/.test(m[2]) ? n * 60 + (m[3] ? 30 : 0) : n;
   if (!(minutos >= 1 && minutos <= 24 * 60)) return null;
   const objetivo = Math.ceil((ahora + minutos * 60e3) / 60e3) * 60e3;
   const zona = zonaHoraria || process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
@@ -36,9 +51,11 @@ export function detectarAlarma(mensaje = "", { ahora = Date.now(), zonaHoraria =
   if (!VERBOS.test(texto)) return null;
   // Para "recordame/avisame" exigimos la palabra alarma o despertar para no pisar recordatorios
   if (/\b(avis[aá]me|recordame|record[aá]me)\b/.test(texto) && !/alarma|despert/.test(texto)) return null;
-  const hora = parsearHora(texto) || horaRelativa(texto, ahora, zonaHoraria);
+  // Relativa primero: "alarma para 2 minutos" no es la hora 02:00.
+  const hora = horaRelativa(texto, ahora, zonaHoraria) || parsearHora(texto);
   if (!hora) {
-    if (!/despert|levant|\bpon|program|cre[aá]|necesito una alarma|quiero una alarma/.test(texto)) return null;
+    // Pedido con plazo/hora que no se pudo leer ("alarma en un ratito minutos..."): se informa, nunca se confirma.
+    if (!/despert|levant|\bpon|program|cre[aá]|necesito una alarma|quiero una alarma|\bminutos?\b|\bhoras?\b/.test(texto)) return null;
     return { accion: "crear", hora: null, motivo: "hora_no_entendida" };
   }
   const titulo = /despert|levant/.test(texto) ? "Hora de despertar" : "Alarma";
