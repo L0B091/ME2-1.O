@@ -2,10 +2,10 @@
 
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { DATA_DIR } from "../utils/dataDir.js";
 
 // Relativo a backend/ (no al cwd) para que el historial sobreviva reinicios desde cualquier directorio.
-const rutaBase = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../data/historial");
+const rutaBase = path.join(DATA_DIR, "historial");
 
 if (!fs.existsSync(rutaBase)) {
   fs.mkdirSync(rutaBase, { recursive: true });

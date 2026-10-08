@@ -99,7 +99,7 @@ test("validación y límites: cuerpo grande 413, mensaje largo 413, contexto sol
 test("path traversal: medios y almacenamiento no salen de su raíz", async () => {
   assert.equal(selectorMedia.archivoDe("normal", "../../server"), null);
   assert.equal(selectorMedia.archivoDe("../..", "server"), null);
-  const raiz = fs.mkdtempSync(path.join(process.cwd(), "data", "tmp-media-"));
+  const raiz = fs.mkdtempSync(path.join(storage.ensureDir(), "tmp-media-"));
   try {
     fs.mkdirSync(path.join(raiz, "normal"));
     fs.writeFileSync(path.join(raiz, "normal", "manifest.json"), JSON.stringify({ items: [

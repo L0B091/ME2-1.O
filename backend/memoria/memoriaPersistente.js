@@ -3,14 +3,12 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { DATA_DIR } from "../utils/dataDir.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DIRECTORIO_MEMORIA = path.resolve(
-  __dirname,
-  "../data/memoriaPersistente"
-);
+const DIRECTORIO_MEMORIA = path.join(DATA_DIR, "memoriaPersistente");
 
 const MAX_ELEMENTOS = 100;
 

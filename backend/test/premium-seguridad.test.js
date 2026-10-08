@@ -8,7 +8,11 @@ import verificacionEdad from "../auth/verificacionEdad.js";
 import usuariosMemoria from "../memoria/usuariosMemoria.js";
 import mercadoPago from "../api/mercadoPago.js";
 
-delete process.env.MERCADO_PAGO_ACCESS_TOKEN;
+// Hermético: ninguna credencial real de Mercado Pago del shell (token, secreto de webhook ni *_PROD) afecta estos tests.
+for (const k of Object.keys(process.env)) if (k.startsWith("MERCADO_PAGO_")) delete process.env[k];
+// IDs de pago únicos por corrida: datos de corridas anteriores nunca colisionan.
+const RUN = String(crypto.randomInt(100000, 999999));
+const P = n => `${RUN}${n}`;
 const nuevoUsuario = () => usuariosMemoria.guardarUsuario(`prem_${crypto.randomBytes(5).toString("hex")}@example.com`, { tipoLogin: "google", googleId: crypto.randomUUID() });
 const conEnv = async (vars, fn) => {
   const prev = Object.fromEntries(Object.keys(vars).map(k => [k, process.env[k]]));
@@ -87,16 +91,16 @@ test("webhook: firma x-signature obligatoria con secreto; sin secreto se rechaza
 test("monto/moneda: un pago real que no corresponde al plan no activa Premium", async () => {
   const user = nuevoUsuario();
   const realFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ id: 99, status: "approved", currency_id: "USD", transaction_amount: 1, metadata: { userId: user.id }, external_reference: user.id }), { status: 200 });
+  globalThis.fetch = async () => new Response(JSON.stringify({ id: Number(P(99)), status: "approved", currency_id: "USD", transaction_amount: 1, metadata: { userId: user.id }, external_reference: user.id }), { status: 200 });
   try {
     await conEnv({ MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
-      await assert.rejects(() => mercadoPago.verificarPago("99", user.id), { status: 422 });
+      await assert.rejects(() => mercadoPago.verificarPago(P(99), user.id), { status: 422 });
     });
   } finally {
     globalThis.fetch = realFetch;
   }
   assert.equal(premiumManager.obtenerEstado(user.id).premiumActivo, false);
-  assert.equal(storage.readUserData("mercadopago_pagos", "99", null), null);
+  assert.equal(storage.readUserData("mercadopago_pagos", P(99), null), null);
 });
 
 test("M5: el alcance Premium no promete que el servidor no pueda leer el respaldo", async () => {
@@ -111,17 +115,17 @@ test("verify: un pago real solo se acredita al usuario que nombra (external_refe
   const realFetch = globalThis.fetch;
   const pagos = {
     // MP puede devolver la metadata en snake_case: el dueño sigue identificado por external_reference.
-    "880001": { id: 880001, status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: { user_id: duenio.id }, external_reference: duenio.id },
+    [P(880001)]: { id: Number(P(880001)), status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: { user_id: duenio.id }, external_reference: duenio.id },
     // Sin dueño identificable: nadie lo puede reclamar por /verify.
-    "880002": { id: 880002, status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: {} }
+    [P(880002)]: { id: Number(P(880002)), status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: {} }
   };
   globalThis.fetch = async url => new Response(JSON.stringify(pagos[String(url).split("/").pop()] || { message: "Payment not found" }), { status: pagos[String(url).split("/").pop()] ? 200 : 404 });
   try {
     await conEnv({ MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
-      await assert.rejects(() => mercadoPago.verificarPago("880001", otro.id), { status: 403 });
-      await assert.rejects(() => mercadoPago.verificarPago("880002", otro.id), { status: 403 });
+      await assert.rejects(() => mercadoPago.verificarPago(P(880001), otro.id), { status: 403 });
+      await assert.rejects(() => mercadoPago.verificarPago(P(880002), otro.id), { status: 403 });
       assert.equal(premiumManager.obtenerEstado(otro.id).premiumActivo, false);
-      const ok = await mercadoPago.verificarPago("880001", duenio.id);
+      const ok = await mercadoPago.verificarPago(P(880001), duenio.id);
       assert.equal(ok.premiumActivo, true);
     });
   } finally {
@@ -131,7 +135,7 @@ test("verify: un pago real solo se acredita al usuario que nombra (external_refe
 
 test("webhook: se procesa el mismo data.id que se firmó (no uno distinto del body)", async () => {
   const secret = "s3cr3t-test";
-  const firmado = "770001";
+  const firmado = P(770001);
   const ts = "1700000000";
   const requestId = "req-2";
   const v1 = crypto.createHmac("sha256", secret).update(`id:${firmado};request-id:${requestId};ts:${ts};`).digest("hex");
@@ -140,7 +144,7 @@ test("webhook: se procesa el mismo data.id que se firmó (no uno distinto del bo
   globalThis.fetch = async url => { pedidos.push(String(url)); return new Response(JSON.stringify({ message: "Payment not found" }), { status: 404 }); };
   try {
     await conEnv({ MERCADO_PAGO_WEBHOOK_SECRET: secret, MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
-      await assert.rejects(() => mercadoPago.procesarWebhook({ type: "payment", data: { id: "770002" } }, { "data.id": firmado, type: "payment" },
+      await assert.rejects(() => mercadoPago.procesarWebhook({ type: "payment", data: { id: P(770002) } }, { "data.id": firmado, type: "payment" },
         { "x-signature": `ts=${ts},v1=${v1}`, "x-request-id": requestId }), { status: 404 });
     });
   } finally {
@@ -155,9 +159,9 @@ test("webhook firmado: acredita al dueño (metadata user_id), rechaza dueños in
   const otro = nuevoUsuario();
   const base = { status: "approved", currency_id: "ARS", transaction_amount: 3000 };
   const pagos = {
-    "990001": { id: 990001, ...base, external_reference: duenio.id, metadata: { user_id: duenio.id } },
-    "990002": { id: 990002, ...base, external_reference: duenio.id, metadata: { user_id: otro.id } },
-    "990003": { id: 990003, ...base, external_reference: "pedido-de-otra-tienda-123", metadata: {} }
+    [P(990001)]: { id: Number(P(990001)), ...base, external_reference: duenio.id, metadata: { user_id: duenio.id } },
+    [P(990002)]: { id: Number(P(990002)), ...base, external_reference: duenio.id, metadata: { user_id: otro.id } },
+    [P(990003)]: { id: Number(P(990003)), ...base, external_reference: "pedido-de-otra-tienda-123", metadata: {} }
   };
   const firmar = id => {
     const ts = "1700000001";
@@ -173,14 +177,14 @@ test("webhook firmado: acredita al dueño (metadata user_id), rechaza dueños in
   };
   try {
     await conEnv({ MERCADO_PAGO_WEBHOOK_SECRET: secret, MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
-      await assert.rejects(() => webhook("990002"), { status: 422 });
-      await assert.rejects(() => webhook("990003"), { status: 422 });
-      await assert.rejects(() => webhook("990404"), { status: 404 });
+      await assert.rejects(() => webhook(P(990002)), { status: 422 });
+      await assert.rejects(() => webhook(P(990003)), { status: 422 });
+      await assert.rejects(() => webhook(P(990404)), { status: 404 });
       assert.equal(premiumManager.obtenerEstado(otro.id).premiumActivo, false);
       assert.equal(premiumManager.obtenerEstado(duenio.id).premiumActivo, false);
-      const ok = await webhook("990001");
+      const ok = await webhook(P(990001));
       assert.equal(ok.premiumActivo, true);
-      const otraVez = await webhook("990001");
+      const otraVez = await webhook(P(990001));
       assert.equal(otraVez.yaProcesado, true);
     });
   } finally {
