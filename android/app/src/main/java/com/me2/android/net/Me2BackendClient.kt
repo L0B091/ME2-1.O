@@ -229,7 +229,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
                     if (initiative != null) put("iniciativa", initiative)
                     if (alarmaRespondida != null) put("alarmaRespondida", alarmaRespondida)
                     // Herramientas (clima/hora): zona del teléfono + coordenadas conocidas de la memoria local.
-                    put("zonaHoraria", location?.timeZone ?: TimeZone.getDefault().id)
+                    put("zonaHoraria", com.me2.android.time.Me2Clock.ZONE_ID) // zona fija de ME2, no la del teléfono
                     location?.let { loc ->
                         if (loc.lat != null && loc.lon != null) { put("lat", loc.lat); put("lon", loc.lon) }
                         loc.city?.let { put("ciudad", it) }
@@ -319,7 +319,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         calendar: JSONArray? = null
     ): JSONObject {
         val profile = JSONObject((state.optJSONObject("perfilRitmo") ?: JSONObject()).toString())
-            .put("zonaHoraria", TimeZone.getDefault().id)
+            .put("zonaHoraria", com.me2.android.time.Me2Clock.ZONE_ID)
             .put("ultimaInteraccion", state.optLong("ultimaInteraccion"))
         val json = request(
             method = "POST",
@@ -550,6 +550,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
         body: JSONObject?
     ): JSONObject {
         check(isConfigured()) { "BACKEND_BASE_URL no configurada." }
+        val sentElapsed = android.os.SystemClock.elapsedRealtime()
         val connection = (URL("$baseUrl$path").openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 10_000
@@ -573,6 +574,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             }
 
             val responseCode = connection.responseCode
+            syncMe2Clock(connection, sentElapsed)
             val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
             val responseText = stream?.bufferedReader()?.use(BufferedReader::readText).orEmpty()
             val responseJson = responseText.takeIf { it.isNotBlank() }?.let(::JSONObject) ?: JSONObject()
@@ -585,6 +587,22 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             return responseJson
         } finally {
             connection.disconnect()
+        }
+    }
+
+    /** Reloj propio de ME2: cada respuesta del backend trae su hora (X-ME2-Server-Time; respaldo: header Date). */
+    private fun syncMe2Clock(connection: HttpURLConnection, sentElapsed: Long) {
+        runCatching {
+            val received = android.os.SystemClock.elapsedRealtime()
+            val serverMs = connection.getHeaderField("X-ME2-Server-Time")?.toLongOrNull()
+            if (serverMs != null) {
+                val procMs = connection.getHeaderField("X-ME2-Proc-Ms")?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+                // Se descuenta el procesamiento del servidor (p. ej. el LLM): solo la latencia de red cuenta como ida y vuelta.
+                com.me2.android.time.Me2Clock.onServerTime(serverMs, sentElapsed + procMs, received)
+            } else {
+                val date = connection.getHeaderFieldDate("Date", 0L)
+                if (date > 0L) com.me2.android.time.Me2Clock.onServerTime(date, sentElapsed, received, resolutionMs = 1000L)
+            }
         }
     }
 

@@ -29,17 +29,40 @@ const RELATIVA = [
   new RegExp(`\\b${CANTIDAD}\\s*${UNIDAD}\\s+(?:m[aá]s|desde\\s+ahora|a\\s+partir\\s+de\\s+ahora)\\b()`)
 ];
 
-export function horaRelativa(texto = "", ahora = Date.now(), zonaHoraria = null) {
+// Zona de ME2 fija (no la del teléfono): "hoy", "mañana" y HH:mm siempre en esta zona.
+const ZONA_ME2 = () => process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
+
+function formatoHora(epoch) {
+  const fmt = (tz) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(epoch);
+  try { return fmt(ZONA_ME2()); } catch { return fmt("America/Argentina/Buenos_Aires"); }
+}
+
+/** Instante absoluto (epoch ms, hora del servidor) de un pedido relativo; null si no hay plazo relativo. */
+export function epochRelativo(texto = "", ahora = Date.now()) {
   const t = String(texto).toLowerCase();
   const m = RELATIVA.map(re => t.match(re)).find(Boolean);
   if (!m) return null;
   const n = /^\d/.test(m[1]) ? Number(m[1]) : NUMEROS[m[1]];
   const minutos = /^h/.test(m[2]) ? n * 60 + (m[3] ? 30 : 0) : n;
   if (!(minutos >= 1 && minutos <= 24 * 60)) return null;
-  const objetivo = Math.ceil((ahora + minutos * 60e3) / 60e3) * 60e3;
-  const zona = zonaHoraria || process.env.ME2_TZ || "America/Argentina/Buenos_Aires";
-  const fmt = (tz) => new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(objetivo);
-  try { return fmt(zona); } catch { return fmt("America/Argentina/Buenos_Aires"); }
+  return Math.ceil((ahora + minutos * 60e3) / 60e3) * 60e3;
+}
+
+/** Próxima ocurrencia de "HH:mm" en la zona de ME2, estrictamente después de [ahora] (epoch ms del servidor). */
+export function epochDeHora(hora, ahora = Date.now()) {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(hora || ""));
+  if (!m) return null;
+  const objetivo = Number(m[1]) * 60 + Number(m[2]);
+  const minutoActual = Math.floor(ahora / 60e3) * 60e3;
+  const [hh, mm] = formatoHora(minutoActual).split(":").map(Number);
+  let delta = objetivo - (hh * 60 + mm);
+  if (delta <= 0) delta += 24 * 60;
+  return minutoActual + delta * 60e3;
+}
+
+export function horaRelativa(texto = "", ahora = Date.now(), _zonaHoraria = null) {
+  const epoch = epochRelativo(texto, ahora);
+  return epoch == null ? null : formatoHora(epoch);
 }
 
 export function detectarAlarma(mensaje = "", { ahora = Date.now(), zonaHoraria = null } = {}) {
@@ -51,15 +74,17 @@ export function detectarAlarma(mensaje = "", { ahora = Date.now(), zonaHoraria =
   if (!VERBOS.test(texto)) return null;
   // Para "recordame/avisame" exigimos la palabra alarma o despertar para no pisar recordatorios
   if (/\b(avis[aá]me|recordame|record[aá]me)\b/.test(texto) && !/alarma|despert/.test(texto)) return null;
-  // Relativa primero: "alarma para 2 minutos" no es la hora 02:00.
-  const hora = horaRelativa(texto, ahora, zonaHoraria) || parsearHora(texto);
+  // Relativa primero: "alarma para 2 minutos" no es la hora 02:00. El instante absoluto (epochMs) se calcula con la
+  // hora del SERVIDOR en la zona fija de ME2; el teléfono lo arma con su reloj ME2 (nunca con su propia hora).
+  const relativo = epochRelativo(texto, ahora);
+  const hora = relativo != null ? formatoHora(relativo) : parsearHora(texto);
   if (!hora) {
     // Pedido con plazo/hora que no se pudo leer ("alarma en un ratito minutos..."): se informa, nunca se confirma.
     if (!/despert|levant|\bpon|program|cre[aá]|necesito una alarma|quiero una alarma|\bminutos?\b|\bhoras?\b/.test(texto)) return null;
     return { accion: "crear", hora: null, motivo: "hora_no_entendida" };
   }
   const titulo = /despert|levant/.test(texto) ? "Hora de despertar" : "Alarma";
-  return { accion: "crear", hora, titulo };
+  return { accion: "crear", hora, titulo, epochMs: relativo ?? epochDeHora(hora, ahora) };
 }
 
 export function parsearHora(texto = "") {
@@ -77,4 +102,4 @@ export function parsearHora(texto = "") {
   return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
-export default { detectarAlarma, parsearHora, horaRelativa };
+export default { detectarAlarma, parsearHora, horaRelativa, epochRelativo, epochDeHora };

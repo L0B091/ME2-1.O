@@ -25,7 +25,7 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
             if (!store.isEnabled(session.id)) return wait(store, session.id, "deshabilitadas")
             if (inForeground()) return wait(store, session.id, "en_primer_plano")
             // Ventana de descanso aprendida en el teléfono: nunca iniciar conversación dentro de ella.
-            if (Me2InitiativeTimer(applicationContext).restWindow(session.id).contains(System.currentTimeMillis())) {
+            if (Me2InitiativeTimer(applicationContext).restWindow(session.id).contains(com.me2.android.time.Me2Clock.now())) {
                 return wait(store, session.id, "ventana_descanso_local")
             }
             if (!coordinator.canShowMessages()) return wait(store, session.id, "notificaciones_denegadas")
@@ -84,7 +84,7 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
             ) {
                 return wait(store, session.id, "contexto_cambio")
             }
-            if (initiative.getLong("expiresAt") <= System.currentTimeMillis()) {
+            if (initiative.getLong("expiresAt") <= com.me2.android.time.Me2Clock.now()) {
                 return wait(store, session.id, "iniciativa_vencida")
             }
 
@@ -116,7 +116,8 @@ class Me2InitiativeWorker(context: Context, parameters: WorkerParameters) : Work
         runCatching {
             if (store.hasUsableCache(session.id)) return
             val timer = store.timerState(session.id)
-            val at = timer.optLong("dueAt").takeIf { it > System.currentTimeMillis() } ?: (System.currentTimeMillis() + InitiativeTimerPolicy.DEFAULT_INTERVAL_MS)
+            val now = com.me2.android.time.Me2Clock.now()
+            val at = timer.optLong("dueAt").takeIf { it > now } ?: (now + InitiativeTimerPolicy.DEFAULT_INTERVAL_MS)
             val r = backend.evaluateInitiative(
                 session = session, memory = LocalMemoryStore(applicationContext).load(session.id), state = store.snapshot(session.id),
                 events = events, enPrimerPlano = false, notificacionesHabilitadas = true, prefetchAt = at,

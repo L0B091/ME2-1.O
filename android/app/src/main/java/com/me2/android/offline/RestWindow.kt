@@ -1,5 +1,6 @@
 package com.me2.android.offline
 
+import com.me2.android.time.Me2Clock
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -9,13 +10,13 @@ import java.util.TimeZone
  * Horas locales [startHour, endHour) circulares (p. ej. 1 → 8).
  */
 data class RestWindow(val startHour: Int, val endHour: Int) {
-    fun contains(millis: Long, tz: TimeZone = TimeZone.getDefault()): Boolean {
+    fun contains(millis: Long, tz: TimeZone = Me2Clock.ZONE): Boolean {
         val h = Calendar.getInstance(tz).apply { timeInMillis = millis }.get(Calendar.HOUR_OF_DAY)
         return if (startHour <= endHour) h in startHour until endHour else h >= startHour || h < endHour
     }
 
     /** Si [millis] cae en descanso, el inicio de la próxima ventana activa; si no, el mismo instante. */
-    fun nextActive(millis: Long, tz: TimeZone = TimeZone.getDefault()): Long {
+    fun nextActive(millis: Long, tz: TimeZone = Me2Clock.ZONE): Long {
         if (!contains(millis, tz)) return millis
         val c = Calendar.getInstance(tz).apply {
             timeInMillis = millis
@@ -39,7 +40,7 @@ data class RestWindow(val startHour: Int, val endHour: Int) {
          */
         fun estimate(
             observations: List<Long>,
-            tz: TimeZone = TimeZone.getDefault(),
+            tz: TimeZone = Me2Clock.ZONE,
             configured: Pair<String, String>? = null,
             wakeHour: Int? = null
         ): RestWindow {

@@ -16,11 +16,25 @@ import kotlin.concurrent.thread
 class Me2App : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Reloj propio de ME2 (hora del servidor + elapsedRealtime). Si una sincronización corrige el reloj, el instante
+        // de cada alarma/recordatorio/iniciativa en el reloj del teléfono cambió: se re-arma todo desde disco.
+        com.me2.android.time.Me2Clock.init(this) { thread(name = "me2-clock-rearm") { rearmAll() } }
         val underTest = Build.FINGERPRINT == "robolectric"
         if (BuildConfig.DEBUG && !underTest) enableStrictMode()
         if (!underTest) prewarm()
         // Ante un 401 la sesión se recupera en silencio (nunca se vuelve a pedir login salvo cierre explícito).
         com.me2.android.net.Me2SessionRecovery.renewer = com.me2.android.auth.GoogleSilentRenewer(this)
+    }
+
+    private fun rearmAll() {
+        runCatching { com.me2.android.notifications.Me2AlarmScheduler(this).restoreAll() }
+            .onFailure { Log.w(TAG, "re-armado de alarmas falló: ${it.javaClass.simpleName}") }
+        runCatching {
+            val session = com.me2.android.data.SessionStorage(this).loadUser() ?: return@runCatching
+            if (com.me2.android.notifications.Me2InitiativeStore(this).isEnabled(session.id)) {
+                com.me2.android.notifications.Me2InitiativeTimer(this).restore(session.id)
+            }
+        }.onFailure { Log.w(TAG, "re-armado de iniciativa falló: ${it.javaClass.simpleName}") }
     }
 
     private fun prewarm() {

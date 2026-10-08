@@ -171,6 +171,8 @@ function ejecutarAcciones(userId, mensaje, persistir, zonaHoraria = null, evento
     // Con el plan de los 3 intentos del orquestador: los textos de cada aviso salen de acá (no del teléfono).
     resultado.alarma = {
       accion: "crear_local", hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null,
+      // Instante absoluto calculado con la hora del servidor (el teléfono lo arma con su reloj ME2, no con su hora).
+      disparoEpochMs: pedidoAlarma.epochMs ?? null, servidorAhoraMs: Date.now(),
       dispatchPlan: protocoloDespertador.despachosAndroid({ hora: pedidoAlarma.hora, titulo: pedidoAlarma.titulo || null })
     };
     acciones.push(`Alarma CREADA en el teléfono para las ${pedidoAlarma.hora}${pedidoAlarma.titulo ? ` (${pedidoAlarma.titulo})` : ""}; suena aunque no haya conexión.`);

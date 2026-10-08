@@ -32,6 +32,7 @@ import flujoPremium from "./modulos/premium/flujoPremium.js";
 import selectorMedia from "./modulos/media/selectorMedia.js";
 import verificacionEdad from "./auth/verificacionEdad.js";
 import { headersSeguridad, corsEstricto, authPorDefecto, validarCuerpoChat, instalarRedaccionLogs, origenesPermitidos } from "./seguridad/http.js";
+import { horaServidor } from "./utils/horaServidor.js";
 
 dotenv.config();
 instalarRedaccionLogs();
@@ -72,6 +73,8 @@ const apiRateLimit = rateLimit({
 });
 const fuentesRateLimit = rateLimit({ windowMs: 60 * 1000, limit: 30, standardHeaders: true, legacyHeaders: false });
 
+// Reloj propio de ME2: cada respuesta lleva la hora del servidor (el teléfono no confía en su propio reloj).
+app.use(horaServidor);
 app.use(headersSeguridad);
 app.use(corsEstricto);
 app.use(apiRateLimit);

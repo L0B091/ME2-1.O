@@ -11,13 +11,13 @@ import java.util.TimeZone
  * Calendario propio de ME2 guardado en el teléfono (preferencias cifradas, igual que las alarmas). Persiste en disco
  * con commit() antes de devolver: sobrevive cierre y reinicio. Nunca lanza hacia la UI.
  */
-class Me2CalendarStore(context: Context, private val clock: () -> Long = System::currentTimeMillis) {
+class Me2CalendarStore(context: Context, private val clock: () -> Long = com.me2.android.time.Me2Clock::now) {
     private val preferences: SharedPreferences = SecurePreferences.open(context.applicationContext, "me2_calendar_store", listOf())
 
-    fun list(userId: String, tz: TimeZone = TimeZone.getDefault()): List<CalendarEvent> =
+    fun list(userId: String, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): List<CalendarEvent> =
         CalendarEvents.sorted(loadAll().filter { it.userId == userId }, tz)
 
-    fun upcoming(userId: String, tz: TimeZone = TimeZone.getDefault()): List<CalendarEvent> =
+    fun upcoming(userId: String, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): List<CalendarEvent> =
         CalendarEvents.upcoming(loadAll().filter { it.userId == userId }, clock(), tz)
 
     /** Próximos eventos para el orquestador (memoriaLocal.calendario). */

@@ -20,7 +20,7 @@ data class BitacoraContent(
     companion object {
         fun build(
             displayName: String?, email: String, userId: String, avatarName: String?, usageMinutes: Long,
-            now: Date = Date(), timeZone: TimeZone = TimeZone.getDefault()
+            now: Date = Date(com.me2.android.time.Me2Clock.now()), timeZone: TimeZone = com.me2.android.time.Me2Clock.ZONE
         ): BitacoraContent {
             val pct = LinkProgress.percent(usageMinutes)
             val name = displayName?.trim()?.takeIf { it.isNotEmpty() } ?: email.substringBefore('@')
@@ -34,8 +34,8 @@ data class BitacoraContent(
             )
         }
 
-        /** Fecha local dd/MM/yyyy (zona del dispositivo). */
-        fun formatDate(now: Date, timeZone: TimeZone = TimeZone.getDefault()): String =
+        /** Fecha dd/MM/yyyy en la zona fija de ME2 (no la del dispositivo). */
+        fun formatDate(now: Date, timeZone: TimeZone = com.me2.android.time.Me2Clock.ZONE): String =
             SimpleDateFormat("dd/MM/yyyy", Locale.ROOT).apply { this.timeZone = timeZone }.format(now)
 
         /** Id estable y corto derivado del userId (formato 00-00-00-0). */

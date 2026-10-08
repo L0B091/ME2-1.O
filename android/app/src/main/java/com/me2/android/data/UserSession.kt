@@ -11,7 +11,7 @@ data class UserSession(
     val usageMinutes: Long = 0L
 ) {
     val isPremium: Boolean
-        get() = premiumUntilMillis > System.currentTimeMillis()
+        get() = premiumUntilMillis > com.me2.android.time.Me2Clock.now()
 
     /** Temporary aesthetic-preview session (no Google / backend token). */
     val isDemo: Boolean

@@ -26,10 +26,10 @@ data class CalendarEvent(
     val createdBy: String = CREATED_BY_CHAT,
     val createdAt: String? = null
 ) {
-    fun startMillis(tz: TimeZone = TimeZone.getDefault()): Long? = CalendarEvents.parseMillis(date, time, tz)
+    fun startMillis(tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): Long? = CalendarEvents.parseMillis(date, time, tz)
 
     /** Fin (o inicio si no tiene fin): hasta entonces el evento sigue vigente. */
-    fun endMillis(tz: TimeZone = TimeZone.getDefault()): Long? {
+    fun endMillis(tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): Long? {
         val start = startMillis(tz) ?: return null
         val e = end?.let { CalendarEvents.parseMillis(date, it, tz) } ?: return start
         return if (e >= start) e else start
@@ -61,7 +61,7 @@ data class CalendarEvent(
             val uid = (userId ?: json.optString("userId")).trim()
             val date = json.optString("fecha")
             val time = json.optString("hora")
-            if (uid.isEmpty() || !DATE.matches(date) || !TIME.matches(time) || CalendarEvents.parseMillis(date, time, TimeZone.getDefault()) == null) return null
+            if (uid.isEmpty() || !DATE.matches(date) || !TIME.matches(time) || CalendarEvents.parseMillis(date, time, com.me2.android.time.Me2Clock.ZONE) == null) return null
             val id = json.optString("id").trim().takeIf { ID.matches(it) } ?: "ev-local-${UUID.randomUUID()}"
             val end = json.optString("fin").takeIf { !json.isNull("fin") && TIME.matches(it) && it > time }
             return CalendarEvent(
@@ -86,24 +86,24 @@ object CalendarEvents {
         SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply { this.timeZone = tz; isLenient = false }.parse("$date $time")?.time
     }.getOrNull()
 
-    fun sorted(events: List<CalendarEvent>, tz: TimeZone = TimeZone.getDefault()): List<CalendarEvent> =
+    fun sorted(events: List<CalendarEvent>, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): List<CalendarEvent> =
         events.sortedWith(compareBy<CalendarEvent>({ it.startMillis(tz) ?: Long.MAX_VALUE }, { it.title }, { it.id }))
 
     /** Vigentes (aún no terminaron), del más próximo al más lejano. */
-    fun upcoming(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = TimeZone.getDefault()): List<CalendarEvent> =
+    fun upcoming(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): List<CalendarEvent> =
         sorted(events.filter { (it.endMillis(tz) ?: Long.MIN_VALUE) >= nowMillis }, tz)
 
     /** Agrupado por día (yyyy-MM-dd) en orden cronológico. */
-    fun groupByDay(events: List<CalendarEvent>, tz: TimeZone = TimeZone.getDefault()): LinkedHashMap<String, List<CalendarEvent>> {
+    fun groupByDay(events: List<CalendarEvent>, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): LinkedHashMap<String, List<CalendarEvent>> {
         val out = LinkedHashMap<String, List<CalendarEvent>>()
         sorted(events, tz).groupBy { it.date }.forEach { (day, list) -> out[day] = list }
         return out
     }
 
-    fun prune(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = TimeZone.getDefault()): List<CalendarEvent> =
+    fun prune(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): List<CalendarEvent> =
         events.filter { (it.endMillis(tz) ?: Long.MIN_VALUE) >= nowMillis - KEEP_PAST_MS }
 
-    fun toBackendContext(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = TimeZone.getDefault()): JSONArray =
+    fun toBackendContext(events: List<CalendarEvent>, nowMillis: Long, tz: TimeZone = com.me2.android.time.Me2Clock.ZONE): JSONArray =
         JSONArray().apply { upcoming(events, nowMillis, tz).take(MAX_CONTEXT).forEach { put(it.toBackendJson()) } }
 
     data class Change(val events: List<CalendarEvent>, val created: CalendarEvent? = null, val removed: List<CalendarEvent> = emptyList())

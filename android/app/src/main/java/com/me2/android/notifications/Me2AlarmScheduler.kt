@@ -16,6 +16,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Calendar
 import java.util.UUID
+import com.me2.android.time.Me2Clock
 
 /**
  * Alarmas y recordatorios 100 % locales: el estado (intento 1/2/3, próximo disparo, respondida, sync) vive en
@@ -25,8 +26,11 @@ import java.util.UUID
  */
 class Me2AlarmScheduler(
     private val context: Context,
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val isOnline: () -> Boolean = { runCatching { Me2BackendClient().let { it.isConfigured() && it.isOnline(context) } }.getOrDefault(false) }
+    /** Reloj propio de ME2 (hora del servidor), no la hora del teléfono. Todo el estado guardado está en este reloj. */
+    private val clock: () -> Long = Me2Clock::now,
+    private val isOnline: () -> Boolean = { runCatching { Me2BackendClient().let { it.isConfigured() && it.isOnline(context) } }.getOrDefault(false) },
+    /** Instante ME2 → reloj de pared del teléfono, que es el que usa AlarmManager (RTC). */
+    private val toDeviceWall: (Long) -> Long = Me2Clock::toDeviceWall
 ) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
     private val store = Me2AlarmStore(context)
@@ -54,11 +58,18 @@ class Me2AlarmScheduler(
     fun createLocalAlarm(
         userId: String, hour: String, title: String,
         /** Textos de cada intento del orquestador (acción crear_local). Sin plan: título + hora. */
-        dispatchPlan: List<com.me2.android.net.AlarmDispatchStage> = emptyList()
+        dispatchPlan: List<com.me2.android.net.AlarmDispatchStage> = emptyList(),
+        /**
+         * Instante absoluto del backend (epoch ms con la hora del servidor). Si es coherente (no vencido, < 24 h) se usa
+         * tal cual: así una alarma "en 2 minutos" nunca se corre a mañana por un desfase de hora/zona del teléfono.
+         */
+        atMillis: Long? = null
     ): StoredAlarmRecord {
+        val now = clock()
+        val trigger = atMillis?.takeIf { it > now - AlarmEscalation.STEP_MS && it <= now + 24L * 60 * 60 * 1000 } ?: nextTriggerMillis(hour)
         val record = StoredAlarmRecord(
             id = "local-${UUID.randomUUID()}", userId = userId, hour = hour, title = title, message = "",
-            state = "ACTIVE", triggerAtMillis = nextTriggerMillis(hour), dispatchPlan = dispatchPlan,
+            state = "ACTIVE", triggerAtMillis = trigger, dispatchPlan = dispatchPlan,
             remoteId = null, syncState = StoredAlarmRecord.SYNC_CREATE
         )
         store.upsert(record)
@@ -72,7 +83,7 @@ class Me2AlarmScheduler(
         val existing = store.find(id)
         val record = if (existing != null && existing.triggerAtMillis == atMillis) existing.copy(title = title)
         else StoredAlarmRecord(
-            id = id, userId = userId, hour = SimpleDateFormat("HH:mm", Locale.ROOT).format(atMillis), title = title, message = "", state = "ACTIVE",
+            id = id, userId = userId, hour = SimpleDateFormat("HH:mm", Locale.ROOT).apply { timeZone = Me2Clock.ZONE }.format(atMillis), title = title, message = "", state = "ACTIVE",
             triggerAtMillis = atMillis, dispatchPlan = emptyList(), kind = StoredAlarmRecord.KIND_REMINDER,
             remoteId = remoteId, syncState = StoredAlarmRecord.SYNC_OK
         )
@@ -173,8 +184,9 @@ class Me2AlarmScheduler(
     fun exactAlarmPermissionIntent(): Intent? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM) else null
 
-    private fun setExact(record: StoredAlarmRecord, stage: Int, atMillis: Long) {
+    private fun setExact(record: StoredAlarmRecord, stage: Int, me2AtMillis: Long) {
         val pi = broadcastIntent(record.id, record.userId, stage)
+        val atMillis = toDeviceWall(me2AtMillis)
         val exactAllowed = runCatching { canScheduleExactAlarms() }.getOrDefault(false)
         try {
             when {
@@ -239,7 +251,8 @@ class Me2AlarmScheduler(
 
     private fun nextTriggerMillis(hour: String): Long {
         val parts = hour.split(":")
-        val calendar = Calendar.getInstance().apply { timeInMillis = clock() }
+        // Zona fija de ME2 (no la del teléfono) y "ahora" del reloj ME2.
+        val calendar = Calendar.getInstance(Me2Clock.ZONE).apply { timeInMillis = clock() }
         calendar.set(Calendar.SECOND, 0)
         calendar.set(Calendar.MILLISECOND, 0)
         calendar.set(Calendar.HOUR_OF_DAY, parts.getOrNull(0)?.toIntOrNull() ?: 0)

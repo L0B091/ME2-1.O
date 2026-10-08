@@ -68,7 +68,7 @@ data class LocalMe2Memory(
     val importantMemories: MutableList<LocalMemoryNote> = mutableListOf(),
     val codeMemories: MutableList<LocalAssetMemory> = mutableListOf(),
     val fiscalMemories: MutableList<LocalAssetMemory> = mutableListOf(),
-    val updatedAt: Long = System.currentTimeMillis(),
+    val updatedAt: Long = com.me2.android.time.Me2Clock.now(),
     val hiddenConversationThrough: Long = 0L,
     /** Premium local (JSON): {"fiscal": {...}, "proyectos": {...}}. Vive en el teléfono y viaja en el respaldo cifrado. */
     val premiumLocal: String = "{}",
@@ -80,7 +80,7 @@ data class LocalMe2Memory(
     /** Ubicación (habilita clima en el chat, el widget y las iniciativas). */
     val location: LocalLocation? = null
 ) {
-    fun withUpdatedTimestamp() = copy(updatedAt = System.currentTimeMillis())
+    fun withUpdatedTimestamp() = copy(updatedAt = com.me2.android.time.Me2Clock.now())
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("version", version)
@@ -175,7 +175,7 @@ data class LocalMe2Memory(
                 importantMemories = jsonArrayToNotes(json.optJSONArray("importantMemories")),
                 codeMemories = jsonArrayToAssets(json.optJSONArray("codeMemories")),
                 fiscalMemories = jsonArrayToAssets(json.optJSONArray("fiscalMemories")),
-                updatedAt = json.optLong("updatedAt", System.currentTimeMillis()),
+                updatedAt = json.optLong("updatedAt", com.me2.android.time.Me2Clock.now()),
                 hiddenConversationThrough = json.optLong("hiddenConversationThrough", 0L),
                 premiumLocal = json.optJSONObject("premiumLocal")?.toString() ?: "{}",
                 presentationCompletedAt = json.optLong("presentationCompletedAt", 0L),
@@ -221,7 +221,7 @@ data class LocalMe2Memory(
                 result += LocalConversationEntry(
                     role = item.optString("role", "user"),
                     text = item.optString("text", ""),
-                    timestamp = item.optLong("timestamp", System.currentTimeMillis()),
+                    timestamp = item.optLong("timestamp", com.me2.android.time.Me2Clock.now()),
                     initiativeId = item.optString("initiativeId").takeIf { it.isNotBlank() },
                     reaction = item.optString("reaction").takeIf { it.isNotBlank() },
                     pending = item.optBoolean("pendiente", false)
@@ -239,7 +239,7 @@ data class LocalMe2Memory(
                     category = item.optString("category", "general"),
                     text = item.optString("text", ""),
                     importance = item.optInt("importance", 1),
-                    timestamp = item.optLong("timestamp", System.currentTimeMillis())
+                    timestamp = item.optLong("timestamp", com.me2.android.time.Me2Clock.now())
                 )
             }
             return result
@@ -253,7 +253,7 @@ data class LocalMe2Memory(
                 result += LocalAssetMemory(
                     name = item.optString("name", ""),
                     summary = item.optString("summary", ""),
-                    timestamp = item.optLong("timestamp", System.currentTimeMillis())
+                    timestamp = item.optLong("timestamp", com.me2.android.time.Me2Clock.now())
                 )
             }
             return result
@@ -342,7 +342,7 @@ class LocalMemoryStore(context: Context) {
         save(updated)
     }
 
-    fun markPresentationCompleted(userId: String, at: Long = System.currentTimeMillis()) {
+    fun markPresentationCompleted(userId: String, at: Long = com.me2.android.time.Me2Clock.now()) {
         val memory = load(userId)
         if (memory.presentationCompletedAt > 0L) return
         save(memory.copy(presentationCompletedAt = at))
@@ -385,7 +385,7 @@ class LocalMemoryStore(context: Context) {
     /** Premium: append a code memory (scaffold; full monotributista UX is backend/TODO). */
     fun appendCodeMemory(userId: String, name: String, summary: String) {
         val memory = load(userId)
-        val asset = LocalAssetMemory(name = name.trim(), summary = summary.trim(), timestamp = System.currentTimeMillis())
+        val asset = LocalAssetMemory(name = name.trim(), summary = summary.trim(), timestamp = com.me2.android.time.Me2Clock.now())
         if (asset.name.isBlank() && asset.summary.isBlank()) return
         save(memory.copy(codeMemories = mergeAssets(memory.codeMemories, asset)))
     }
@@ -393,7 +393,7 @@ class LocalMemoryStore(context: Context) {
     /** Premium: append a fiscal memory locally. Full email-to-accountant UX is TODO. */
     fun appendFiscalMemory(userId: String, name: String, summary: String) {
         val memory = load(userId)
-        val asset = LocalAssetMemory(name = name.trim(), summary = summary.trim(), timestamp = System.currentTimeMillis())
+        val asset = LocalAssetMemory(name = name.trim(), summary = summary.trim(), timestamp = com.me2.android.time.Me2Clock.now())
         if (asset.name.isBlank() && asset.summary.isBlank()) return
         save(memory.copy(fiscalMemories = mergeAssets(memory.fiscalMemories, asset)))
     }
@@ -458,7 +458,7 @@ class LocalMemoryStore(context: Context) {
     }
 
     private fun nextMessageTime(memory: LocalMe2Memory): Long =
-        maxOf(System.currentTimeMillis(), (memory.conversation.lastOrNull()?.timestamp ?: 0L) + 1L, memory.hiddenConversationThrough + 1L)
+        maxOf(com.me2.android.time.Me2Clock.now(), (memory.conversation.lastOrNull()?.timestamp ?: 0L) + 1L, memory.hiddenConversationThrough + 1L)
 
     private fun inferFocus(text: String): String {
         val normalized = text.lowercase(Locale.US)
@@ -565,7 +565,7 @@ class LocalMemoryStore(context: Context) {
             category = inferFocus(text),
             text = text.trim(),
             importance = 2,
-            timestamp = System.currentTimeMillis()
+            timestamp = com.me2.android.time.Me2Clock.now()
         )
     }
 
@@ -584,7 +584,7 @@ class LocalMemoryStore(context: Context) {
             category = "importante",
             text = text.trim(),
             importance = 3,
-            timestamp = System.currentTimeMillis()
+            timestamp = com.me2.android.time.Me2Clock.now()
         )
     }
 
@@ -598,7 +598,7 @@ class LocalMemoryStore(context: Context) {
         if (!shouldCapture) return existing
         return mergeAssets(
             existing,
-            LocalAssetMemory(name = defaultName, summary = text.trim().take(280), timestamp = System.currentTimeMillis())
+            LocalAssetMemory(name = defaultName, summary = text.trim().take(280), timestamp = com.me2.android.time.Me2Clock.now())
         )
     }
 

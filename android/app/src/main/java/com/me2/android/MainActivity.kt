@@ -960,7 +960,7 @@ class MainActivity : AppCompatActivity() {
     private fun markCheckoutStarted() {
         if (!::currentSession.isInitialized) return
         checkoutPrefs.edit()
-            .putLong(KEY_CHECKOUT_STARTED, System.currentTimeMillis())
+            .putLong(KEY_CHECKOUT_STARTED, com.me2.android.time.Me2Clock.now())
             .putLong(KEY_CHECKOUT_BASELINE, currentSession.premiumUntilMillis)
             .apply()
     }
@@ -1021,7 +1021,7 @@ class MainActivity : AppCompatActivity() {
         if (!::currentSession.isInitialized || paymentCheckInFlight) return
         val started = checkoutPrefs.getLong(KEY_CHECKOUT_STARTED, 0L)
         if (started <= 0L) return
-        if (!com.me2.android.payments.CheckoutWatch.isActive(started, System.currentTimeMillis())) {
+        if (!com.me2.android.payments.CheckoutWatch.isActive(started, com.me2.android.time.Me2Clock.now())) {
             clearCheckoutWatch()
             return
         }
@@ -1035,7 +1035,7 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 paymentCheckInFlight = false
                 if (isFinishing || isDestroyed || after == null) return@runOnUiThread
-                if (after > baseline && after > System.currentTimeMillis()) {
+                if (after > baseline && after > com.me2.android.time.Me2Clock.now()) {
                     runCatching { showPaymentOutcome(com.me2.android.payments.PaymentOutcome.Approved(after)) }
                 }
             }
@@ -1050,7 +1050,7 @@ class MainActivity : AppCompatActivity() {
                     updateCurrentSession(currentSession.copy(premiumUntilMillis = outcome.premiumUntilMillis))
                 }
                 syncPremiumState()
-                val fecha = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(java.util.Date(outcome.premiumUntilMillis))
+                val fecha = java.text.SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).apply { timeZone = com.me2.android.time.Me2Clock.ZONE }.format(java.util.Date(outcome.premiumUntilMillis))
                 getString(R.string.payment_return_approved, fecha)
             }
             com.me2.android.payments.PaymentOutcome.Pending -> getString(R.string.payment_return_pending)
@@ -1469,7 +1469,9 @@ class MainActivity : AppCompatActivity() {
                             // Textos de los 3 intentos = plan del orquestador (sin red, banco offline al sonar).
                             alarmScheduler.createLocalAlarm(
                                 currentSession.id, hora, a.optString("titulo").takeIf { !a.isNull("titulo") }.orEmpty(),
-                                com.me2.android.net.AlarmDispatchStage.parsePlan(a.optJSONArray("dispatchPlan"))
+                                com.me2.android.net.AlarmDispatchStage.parsePlan(a.optJSONArray("dispatchPlan")),
+                                // Instante absoluto del servidor: la alarma no depende de la hora/zona del teléfono.
+                                atMillis = a.optLong("disparoEpochMs", 0L).takeIf { it > 0L }
                             )
                             // Sin permiso de notificaciones la alarma no se ve: se vuelve a pedir en este momento.
                             ensureNotificationPermission()
@@ -1541,7 +1543,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun scheduleReminderFrom(evento: JSONObject) {
         val at = runCatching {
-            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).parse("${evento.optString("fecha")} ${evento.optString("hora", "08:00")}")?.time
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.ROOT).apply { timeZone = com.me2.android.time.Me2Clock.ZONE }.parse("${evento.optString("fecha")} ${evento.optString("hora", "08:00")}")?.time
         }.getOrNull() ?: return
         alarmScheduler.scheduleReminder(currentSession.id, evento.optString("id").ifBlank { null }, evento.optString("descripcion"), at)
     }
@@ -1626,7 +1628,7 @@ class MainActivity : AppCompatActivity() {
                 // Hilo en tiempo y espacio (metadato en claro: solo fecha + zona; la ciudad la completa el backend).
                 encrypted.put("continuidad", JSONObject().apply {
                     memory.lastInteractionAt()?.let { put("ultimaInteraccionAt", it) }
-                    put("lugar", JSONObject().put("zonaHoraria", java.util.TimeZone.getDefault().id))
+                    put("lugar", JSONObject().put("zonaHoraria", com.me2.android.time.Me2Clock.ZONE_ID))
                 })
                 backendClient.uploadEncryptedBackup(currentSession, encrypted)
             }.onSuccess {

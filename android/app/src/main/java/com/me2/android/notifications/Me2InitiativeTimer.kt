@@ -1,5 +1,6 @@
 package com.me2.android.notifications
 
+import com.me2.android.time.Me2Clock
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
@@ -24,7 +25,7 @@ import kotlin.concurrent.thread
  */
 class Me2InitiativeTimer(
     context: Context,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: () -> Long = Me2Clock::now,
     private val isOnline: () -> Boolean = { runCatching { Me2BackendClient().let { it.isConfigured() && it.isOnline(context) } }.getOrDefault(false) },
     private val runOnline: (Context) -> Unit = ::enqueueOnlineEvaluation,
     private val store: Me2InitiativeStore = Me2InitiativeStore(context),
@@ -107,8 +108,10 @@ class Me2InitiativeTimer(
                 Intent(app, Me2InitiativeTimerReceiver::class.java).putExtra(Me2NotificationCoordinator.EXTRA_USER_ID, userId),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
-            else am.set(AlarmManager.RTC_WAKEUP, atMillis, pi)
+            // [atMillis] es hora ME2; AlarmManager usa el reloj de pared del teléfono.
+            val deviceAt = Me2Clock.toDeviceWall(atMillis)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, deviceAt, pi)
+            else am.set(AlarmManager.RTC_WAKEUP, deviceAt, pi)
         }.onFailure { Log.w("Me2InitiativeTimer", "setAlarm: ${it.javaClass.simpleName}") }
     }
 

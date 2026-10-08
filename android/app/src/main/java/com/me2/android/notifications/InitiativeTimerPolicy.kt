@@ -1,5 +1,6 @@
 package com.me2.android.notifications
 
+import com.me2.android.time.Me2Clock
 import com.me2.android.offline.RestWindow
 import java.util.TimeZone
 
@@ -27,7 +28,7 @@ object InitiativeTimerPolicy {
 
     fun onDue(
         now: Long, online: Boolean, rest: RestWindow, offlineRetries: Int, intervalMs: Long,
-        hasCachedMessage: Boolean, tz: TimeZone = TimeZone.getDefault(), inForeground: Boolean = false
+        hasCachedMessage: Boolean, tz: TimeZone = Me2Clock.ZONE, inForeground: Boolean = false
     ): Action = when {
         rest.contains(now, tz) -> Action.DeferTo(rest.nextActive(now, tz))
         online -> Action.RunOnline

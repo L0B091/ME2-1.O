@@ -1,5 +1,6 @@
 package com.me2.android.notifications
 
+import com.me2.android.time.Me2Clock
 import android.content.Context
 import com.me2.android.data.Me2InitiativeRecordEntity
 import com.me2.android.data.Me2InitiativeRecordDao
@@ -64,7 +65,7 @@ class Me2InitiativeStore internal constructor(
         it.put("perfilRitmo", profile)
     }
 
-    fun observeInteraction(userId: String, now: Long = System.currentTimeMillis()) = update(userId) {
+    fun observeInteraction(userId: String, now: Long = Me2Clock.now()) = update(userId) {
         val profile = it.optJSONObject("perfilRitmo") ?: JSONObject()
         val observations = profile.optJSONArray("observaciones") ?: JSONArray()
         val recent = (0 until observations.length()).map { index -> observations.getLong(index) }
@@ -72,7 +73,7 @@ class Me2InitiativeStore internal constructor(
             .toMutableList()
         if (recent.isEmpty() || now - recent.last() >= OBSERVATION_SPACING_MS) recent.add(now)
         profile.put("observaciones", JSONArray(recent.takeLast(MAX_OBSERVATIONS)))
-        profile.put("zonaHoraria", TimeZone.getDefault().id)
+        profile.put("zonaHoraria", Me2Clock.ZONE_ID)
         it.put("perfilRitmo", profile)
         it.put("ultimaInteraccion", now)
         it.remove("checkInAskedAt")
@@ -86,7 +87,7 @@ class Me2InitiativeStore internal constructor(
         merged.remove("configurado")
         current.optJSONObject("configurado")?.let { configured -> merged.put("configurado", configured) }
         merged.put("observaciones", current.optJSONArray("observaciones") ?: JSONArray())
-        merged.put("zonaHoraria", TimeZone.getDefault().id)
+        merged.put("zonaHoraria", Me2Clock.ZONE_ID)
         it.put("perfilRitmo", merged)
     }
 
@@ -115,7 +116,7 @@ class Me2InitiativeStore internal constructor(
             .put("entregarDesde", deliverAfter).put("ultimaInteraccionBase", it.optLong("ultimaInteraccion")))
     }
 
-    fun cachedOfflineInitiative(userId: String, now: Long = System.currentTimeMillis()): JSONObject? {
+    fun cachedOfflineInitiative(userId: String, now: Long = Me2Clock.now()): JSONObject? {
         val state = snapshot(userId)
         val cache = state.optJSONObject("cacheOffline") ?: return null
         val initiative = cache.optJSONObject("iniciativa") ?: return null
@@ -124,7 +125,7 @@ class Me2InitiativeStore internal constructor(
         return if (vigente) initiative else null
     }
 
-    fun hasUsableCache(userId: String, now: Long = System.currentTimeMillis()): Boolean {
+    fun hasUsableCache(userId: String, now: Long = Me2Clock.now()): Boolean {
         val cache = snapshot(userId).optJSONObject("cacheOffline") ?: return false
         return (cache.optJSONObject("iniciativa")?.optLong("expiresAt") ?: 0L) > now &&
             cache.optLong("ultimaInteraccionBase") == snapshot(userId).optLong("ultimaInteraccion")
@@ -133,7 +134,7 @@ class Me2InitiativeStore internal constructor(
     fun clearOfflineCache(userId: String) = update(userId) { it.remove("cacheOffline") }
 
     fun recordDecision(userId: String, reason: String) = update(userId) {
-        it.put("ultimaEvaluacion", JSONObject().put("motivo", reason).put("timestamp", System.currentTimeMillis()))
+        it.put("ultimaEvaluacion", JSONObject().put("motivo", reason).put("timestamp", Me2Clock.now()))
     }
 
     fun records(userId: String): List<JSONObject> = recordsFrom(snapshot(userId))
@@ -164,12 +165,12 @@ class Me2InitiativeStore internal constructor(
         inserted
     }
 
-    fun delivered(userId: String, id: String, now: Long = System.currentTimeMillis()) = change(userId, id) {
+    fun delivered(userId: String, id: String, now: Long = Me2Clock.now()) = change(userId, id) {
         if (it.isNull("enviada")) it.put("enviada", now)
         if (it.isNull("entregada")) it.put("entregada", now)
     }
 
-    fun opened(userId: String, id: String, now: Long = System.currentTimeMillis()) = update(userId) { state ->
+    fun opened(userId: String, id: String, now: Long = Me2Clock.now()) = update(userId) { state ->
         val records = recordsFrom(state)
         val record = records.firstOrNull { it.getString("id") == id }
             ?: throw IllegalArgumentException("Iniciativa no registrada")
@@ -184,7 +185,7 @@ class Me2InitiativeStore internal constructor(
     fun responded(
         userId: String,
         id: String,
-        now: Long = System.currentTimeMillis(),
+        now: Long = Me2Clock.now(),
         responseText: String = ""
     ) = change(userId, id) {
         if (it.optString("estado") == "ABIERTA") {
@@ -212,13 +213,13 @@ class Me2InitiativeStore internal constructor(
         val activeId = state.optString("activeInitiativeId")
         return recordsFrom(state).firstOrNull {
             it.getString("id") == activeId && it.optString("estado") in setOf("ABIERTA", "RESPONDIDA") &&
-                System.currentTimeMillis() - maxOf(it.optLong("abierta"), it.optLong("respondida")) < CONTEXT_WINDOW_MS
+                Me2Clock.now() - maxOf(it.optLong("abierta"), it.optLong("respondida")) < CONTEXT_WINDOW_MS
         }
     }
 
     fun clearActiveContext(userId: String) = update(userId) { it.remove("activeInitiativeId") }
 
-    fun expire(userId: String, now: Long = System.currentTimeMillis()): List<String> = synchronized(lock) {
+    fun expire(userId: String, now: Long = Me2Clock.now()): List<String> = synchronized(lock) {
         val expired = mutableListOf<String>()
         update(userId) { state ->
             val records = recordsFrom(state)
@@ -236,10 +237,10 @@ class Me2InitiativeStore internal constructor(
     fun clearSilenceEpisode(userId: String) = update(userId) {
         it.remove("checkInAskedAt")
         it.remove("postSilenceEvalArmedAt")
-        it.put("silenceEpisodeToken", System.currentTimeMillis())
+        it.put("silenceEpisodeToken", Me2Clock.now())
     }
 
-    fun shouldAskCheckIn(userId: String, now: Long = System.currentTimeMillis()): Boolean {
+    fun shouldAskCheckIn(userId: String, now: Long = Me2Clock.now()): Boolean {
         val state = snapshot(userId)
         if (!state.optBoolean("enabled", true)) return false
         if (state.has("checkInAskedAt") && !state.isNull("checkInAskedAt")) return false
@@ -248,7 +249,7 @@ class Me2InitiativeStore internal constructor(
         return now - last >= Me2InitiativeScheduler.CHECK_IN_SILENCE_MS
     }
 
-    fun markCheckInAsked(userId: String, now: Long = System.currentTimeMillis()) = update(userId) {
+    fun markCheckInAsked(userId: String, now: Long = Me2Clock.now()) = update(userId) {
         it.put("checkInAskedAt", now)
     }
 
@@ -257,7 +258,7 @@ class Me2InitiativeStore internal constructor(
         return state.has("checkInAskedAt") && !state.isNull("checkInAskedAt")
     }
 
-    fun markPostSilenceEvalArmed(userId: String, now: Long = System.currentTimeMillis()) = update(userId) {
+    fun markPostSilenceEvalArmed(userId: String, now: Long = Me2Clock.now()) = update(userId) {
         it.put("postSilenceEvalArmedAt", now)
     }
 
