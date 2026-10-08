@@ -26,6 +26,11 @@ export function exigirMayorDeEdad(userId) {
     : "Premium requiere verificar la edad con la cuenta de Google (fecha de nacimiento)");
 }
 
+/** data.id de la notificación: el mismo valor se firma (manifest) y se procesa (query primero, como indica MP). */
+function idNotificacion({ query = {}, body = {} } = {}) {
+  return String(query["data.id"] || body?.data?.id || "");
+}
+
 /**
  * Firma del webhook de Mercado Pago (x-signature: "ts=...,v1=..."; manifest "id:<data.id>;request-id:<x-request-id>;ts:<ts>;").
  * Con MERCADO_PAGO_WEBHOOK_SECRET es obligatoria. Sin secreto: rechazado en producción, aceptado en dev.
@@ -41,7 +46,7 @@ export function verificarFirmaWebhook({ headers = {}, query = {}, body = {} } = 
   const firma = String(headers["x-signature"] || "");
   const requestId = String(headers["x-request-id"] || "");
   const partes = Object.fromEntries(firma.split(",").map(p => p.split("=").map(x => x.trim())).filter(p => p.length === 2));
-  const dataId = String(query["data.id"] || body?.data?.id || "");
+  const dataId = idNotificacion({ query, body });
   if (!partes.ts || !partes.v1 || !dataId) throw new HttpError(401, "Firma de webhook inválida");
   const idManifest = /^[a-z0-9]+$/i.test(dataId) ? dataId.toLowerCase() : dataId;
   const manifest = `id:${idManifest};${requestId ? `request-id:${requestId};` : ""}ts:${partes.ts};`;
@@ -126,7 +131,8 @@ export function urlsPreferencia() {
   return {
     back_urls: backUrls,
     auto_return: backUrls ? "approved" : undefined,
-    notification_url: publica ? `${publica}/api/mercadopago/webhook` : undefined
+    // source_news=webhooks: MP manda solo Webhooks (firmados con x-signature), no IPN (topic/id, sin firma → 401 y reintentos).
+    notification_url: publica ? `${publica}/api/mercadopago/webhook?source_news=webhooks` : undefined
   };
 }
 
@@ -206,21 +212,26 @@ async function verificarPago(paymentId, expectedUserId = null) {
     ? storage.readUserData(MOCK_NS, String(paymentId), null)
     : await mercadoPagoRequest(`/v1/payments/${paymentId}`);
   if (!payment) throw new HttpError(404, "Pago no encontrado");
-  const metadataUserId = payment?.metadata?.userId || null;
+  // MP puede devolver la metadata del pago en snake_case (user_id): se aceptan ambas formas.
+  const metadataUserId = payment?.metadata?.userId || payment?.metadata?.user_id || null;
   const externalReference = payment?.external_reference || null;
+  const duenos = [externalReference, metadataUserId].filter(Boolean).map(String);
   const userId = expectedUserId || metadataUserId || externalReference;
 
   if (!userId) {
     throw new HttpError(422, "No se pudo determinar el usuario asociado al pago");
   }
 
-  if (
-    expectedUserId &&
-    metadataUserId &&
-    metadataUserId !== expectedUserId &&
-    externalReference !== expectedUserId
-  ) {
+  // /verify: el pago tiene que nombrar al usuario autenticado (external_reference o metadata). Sin dueño
+  // identificable no se acredita a quien lo reclame.
+  if (expectedUserId && !duenos.includes(String(expectedUserId))) {
     throw new HttpError(403, "El pago no pertenece al usuario autenticado");
+  }
+  // Webhook (sin usuario autenticado): metadata y external_reference no pueden contradecirse y el dueño
+  // tiene que ser una cuenta ME2 existente (pagos ajenos de la misma cuenta MP no crean registros).
+  if (!expectedUserId) {
+    if (new Set(duenos).size > 1) throw new HttpError(422, "El pago tiene datos de usuario inconsistentes");
+    if (!usuariosMemoria.obtenerUsuarioPorId(String(userId))) throw new HttpError(422, "El pago no corresponde a un usuario de ME2");
   }
 
   const previo = storage.readUserData(PAGOS_NS, String(paymentId), null);
@@ -287,14 +298,16 @@ async function pagarMock(preferenceId, estado = "approved", expectedUserId = nul
     external_reference: pref.userId, metadata: { userId: pref.userId, feature: pref.feature }, order: { id: preferenceId }
   });
   storage.writeUserData(MOCK_NS, preferenceId, { ...pref, estado, paymentId });
-  return verificarPago(paymentId);
+  // El dueño ya se comprobó contra la preferencia mock: se acredita a ese usuario.
+  return verificarPago(paymentId, pref.userId);
 }
 
 async function procesarWebhook(body = {}, query = {}, headers = {}) {
   verificarFirmaWebhook({ headers, query, body });
-  const topic = body.type || query.topic || body.topic || "";
+  const topic = body.type || query.type || query.topic || body.topic || "";
   const action = body.action || "";
-  const paymentId = body?.data?.id || query["data.id"] || query.id || null;
+  // Se procesa exactamente el id que se verificó en la firma (no otro del body).
+  const paymentId = idNotificacion({ query, body }) || null;
 
   if (
     !paymentId ||

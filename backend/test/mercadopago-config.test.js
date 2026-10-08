@@ -26,7 +26,7 @@ test("MP config: webhook = <BACKEND_PUBLIC_URL>/api/mercadopago/webhook y back_u
   MERCADO_PAGO_FAILURE_URL: "https://mi-dominio.com/pago/error"
 }, () => {
   const u = mercadoPago.urlsPreferencia();
-  assert.equal(u.notification_url, "https://api.mi-dominio.com/api/mercadopago/webhook");
+  assert.equal(u.notification_url, "https://api.mi-dominio.com/api/mercadopago/webhook?source_news=webhooks");
   assert.equal(u.auto_return, "approved");
   assert.deepEqual(u.back_urls, { success: "https://mi-dominio.com/pago/ok", pending: "https://mi-dominio.com/pago/pendiente", failure: "https://mi-dominio.com/pago/error" });
 }));
@@ -72,7 +72,7 @@ test("MP config: con token la preferencia lleva las URLs del entorno", () => con
   } finally { globalThis.fetch = fetchOriginal; }
   assert.equal(enviado.url, "https://api.mercadopago.com/checkout/preferences");
   assert.equal(enviado.auth, "Bearer TEST-token");
-  assert.equal(enviado.body.notification_url, "https://api.mi-dominio.com/api/mercadopago/webhook");
+  assert.equal(enviado.body.notification_url, "https://api.mi-dominio.com/api/mercadopago/webhook?source_news=webhooks");
   assert.equal("auto_return" in enviado.body, false);
   assert.equal("back_urls" in enviado.body, false);
 }));

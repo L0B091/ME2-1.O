@@ -104,3 +104,86 @@ test("M5: el alcance Premium no promete que el servidor no pueda leer el respald
   assert.ok(!/no puede leerla/.test(ALCANCE_PREMIUM[0]));
   assert.match(ALCANCE_PREMIUM[0], /no es cifrado de extremo a extremo/);
 });
+
+test("verify: un pago real solo se acredita al usuario que nombra (external_reference o metadata user_id/userId)", async () => {
+  const duenio = nuevoUsuario();
+  const otro = nuevoUsuario();
+  const realFetch = globalThis.fetch;
+  const pagos = {
+    // MP puede devolver la metadata en snake_case: el dueño sigue identificado por external_reference.
+    "880001": { id: 880001, status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: { user_id: duenio.id }, external_reference: duenio.id },
+    // Sin dueño identificable: nadie lo puede reclamar por /verify.
+    "880002": { id: 880002, status: "approved", currency_id: "ARS", transaction_amount: 3000, metadata: {} }
+  };
+  globalThis.fetch = async url => new Response(JSON.stringify(pagos[String(url).split("/").pop()] || { message: "Payment not found" }), { status: pagos[String(url).split("/").pop()] ? 200 : 404 });
+  try {
+    await conEnv({ MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
+      await assert.rejects(() => mercadoPago.verificarPago("880001", otro.id), { status: 403 });
+      await assert.rejects(() => mercadoPago.verificarPago("880002", otro.id), { status: 403 });
+      assert.equal(premiumManager.obtenerEstado(otro.id).premiumActivo, false);
+      const ok = await mercadoPago.verificarPago("880001", duenio.id);
+      assert.equal(ok.premiumActivo, true);
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("webhook: se procesa el mismo data.id que se firmó (no uno distinto del body)", async () => {
+  const secret = "s3cr3t-test";
+  const firmado = "770001";
+  const ts = "1700000000";
+  const requestId = "req-2";
+  const v1 = crypto.createHmac("sha256", secret).update(`id:${firmado};request-id:${requestId};ts:${ts};`).digest("hex");
+  const pedidos = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async url => { pedidos.push(String(url)); return new Response(JSON.stringify({ message: "Payment not found" }), { status: 404 }); };
+  try {
+    await conEnv({ MERCADO_PAGO_WEBHOOK_SECRET: secret, MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
+      await assert.rejects(() => mercadoPago.procesarWebhook({ type: "payment", data: { id: "770002" } }, { "data.id": firmado, type: "payment" },
+        { "x-signature": `ts=${ts},v1=${v1}`, "x-request-id": requestId }), { status: 404 });
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  assert.deepEqual(pedidos, [`https://api.mercadopago.com/v1/payments/${firmado}`]);
+});
+
+test("webhook firmado: acredita al dueño (metadata user_id), rechaza dueños inconsistentes o ajenos a ME2", async () => {
+  const secret = "s3cr3t-test";
+  const duenio = nuevoUsuario();
+  const otro = nuevoUsuario();
+  const base = { status: "approved", currency_id: "ARS", transaction_amount: 3000 };
+  const pagos = {
+    "990001": { id: 990001, ...base, external_reference: duenio.id, metadata: { user_id: duenio.id } },
+    "990002": { id: 990002, ...base, external_reference: duenio.id, metadata: { user_id: otro.id } },
+    "990003": { id: 990003, ...base, external_reference: "pedido-de-otra-tienda-123", metadata: {} }
+  };
+  const firmar = id => {
+    const ts = "1700000001";
+    const v1 = crypto.createHmac("sha256", secret).update(`id:${id};request-id:r-${id};ts:${ts};`).digest("hex");
+    return { "x-signature": `ts=${ts},v1=${v1}`, "x-request-id": `r-${id}` };
+  };
+  const webhook = id => mercadoPago.procesarWebhook({ action: "payment.updated", type: "payment", data: { id } },
+    { "data.id": id, type: "payment", source_news: "webhooks" }, firmar(id));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    const p = pagos[String(url).split("/").pop()];
+    return new Response(JSON.stringify(p || { message: "Payment not found" }), { status: p ? 200 : 404 });
+  };
+  try {
+    await conEnv({ MERCADO_PAGO_WEBHOOK_SECRET: secret, MERCADO_PAGO_ACCESS_TOKEN: "TEST-token" }, async () => {
+      await assert.rejects(() => webhook("990002"), { status: 422 });
+      await assert.rejects(() => webhook("990003"), { status: 422 });
+      await assert.rejects(() => webhook("990404"), { status: 404 });
+      assert.equal(premiumManager.obtenerEstado(otro.id).premiumActivo, false);
+      assert.equal(premiumManager.obtenerEstado(duenio.id).premiumActivo, false);
+      const ok = await webhook("990001");
+      assert.equal(ok.premiumActivo, true);
+      const otraVez = await webhook("990001");
+      assert.equal(otraVez.yaProcesado, true);
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
