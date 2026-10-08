@@ -537,6 +537,7 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     private fun setupVideo() {
         if (!::binding.isInitialized) return
         runCatching {
@@ -954,6 +955,7 @@ class MainActivity : AppCompatActivity() {
         if (idx >= 0) list[idx] = list[idx].copy(reaction = emoji)
     }
 
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     private fun playRemoteAvatarClip(url: String) {
         val exoPlayer = player ?: return
         runCatching {

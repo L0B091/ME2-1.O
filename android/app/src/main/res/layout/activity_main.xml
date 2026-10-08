@@ -150,7 +150,7 @@
                     android:padding="8dp"
                     android:rotation="-45"
                     android:src="@android:drawable/arrow_up_float"
-                    android:tint="@color/me2_accent" />
+                    app:tint="@color/me2_accent" />
             </LinearLayout>
             </FrameLayout>
         </LinearLayout>
