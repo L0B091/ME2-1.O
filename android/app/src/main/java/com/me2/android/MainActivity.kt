@@ -542,6 +542,14 @@ class MainActivity : AppCompatActivity() {
         if (!::binding.isInitialized) return
         runCatching {
             val builder = ExoPlayer.Builder(this)
+                // Audio de los clips activo (volumen 1.0) SIN pedir foco de audio: no pausa/atenúa la música de otras apps.
+                .setAudioAttributes(
+                    androidx.media3.common.AudioAttributes.Builder()
+                        .setUsage(androidx.media3.common.C.USAGE_MEDIA)
+                        .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
+                        .build(),
+                    /* handleAudioFocus = */ false
+                )
             runCatching {
                 builder.javaClass.methods
                     .firstOrNull { it.name == "setUsePlatformDiagnostics" && it.parameterCount == 1 }

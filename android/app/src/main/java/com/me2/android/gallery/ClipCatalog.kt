@@ -137,12 +137,12 @@ class ClipCatalog(context: Context) {
         )
 
         const val MEDIA_ROOT = "ME2_MEDIA"
-        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_005.mp4"          // ex avatar_calida_01 (NEUTRAL_001 eliminado)
+        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_001.mp4"          // galería v2 (base mechón tras la oreja)
         private const val PROCESANDO = "03_CONVERSACION/PROCESANDO/PROCESANDO_001.mp4" // ex me2_texting
         private const val ATENCION = "03_CONVERSACION/ATENCION/ATENCION_001.mp4"       // ex avatar_atenta_01
         private const val ALEGRIA = "02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4"      // ex avatar_alegre_01
         private const val EMPATIA = "02_REACCIONES/EMPATIA/EMPATIA_NORMAL_001.mp4"     // ex avatar_aliviada_01
-        private const val AFECTO = "02_REACCIONES/AFECTO/AFECTO_NORMAL_002.mp4"        // ex avatar_agradecida_01
+        private const val AFECTO = "02_REACCIONES/AFECTO/AFECTO_NORMAL_001.mp4"        // galería v2
 
         /** Mismo mapeo que el viejo DEMO_RAW_BY_MOOD, apuntando a los originales de ME2_MEDIA (idénticos por hash). */
         private val DEMO_MEDIA_BY_MOOD: Map<String, List<String>> = mapOf(
