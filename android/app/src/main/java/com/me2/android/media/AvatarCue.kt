@@ -40,11 +40,11 @@ object AvatarCueMapper {
             s == "AWAKE" -> MediaRequest(MediaCategoria.DESPERTADOR, "POST_ALARMA")
             s == "NOTICE" -> null
             d == "LOCAL" || d == "SYNC" || d == "MESSAGE" || d.startsWith("STAGE_") -> null
-            tokens.contains("AGRADEC") -> MediaRequest(MediaCategoria.REACCION, "AFECTO", MediaIntensidad.MEDIO)
+            tokens.contains("AGRADEC") -> MediaRequest(MediaCategoria.REACCION, "GRATITUD", MediaIntensidad.MEDIO)
             tokens.contains("ALEGRE") || tokens.contains("HAPPY") || tokens.contains("FELIZ") || tokens.contains("SONRISA") ->
                 MediaRequest(MediaCategoria.REACCION, "ALEGRIA", MediaIntensidad.NORMAL)
             tokens.contains("ATENTA") || tokens.contains("LISTENING") || tokens.contains("THINK") ->
-                MediaRequest(MediaCategoria.CONVERSACION, "ATENCION")
+                MediaRequest(MediaCategoria.CONVERSACION, "ESCUCHANDO")
             tokens.contains("TRISTE") -> MediaRequest(MediaCategoria.REACCION, "EMPATIA", MediaIntensidad.NORMAL)
             tokens.contains("ALIVIADA") || tokens.contains("CALMA") -> MediaRequest(MediaCategoria.REACCION, "ALIVIO", MediaIntensidad.NORMAL)
             s.isNotBlank() || d.isNotBlank() -> MediaRequest(MediaCategoria.REACCION, "AFECTO", MediaIntensidad.NORMAL)

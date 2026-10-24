@@ -113,6 +113,8 @@ class MainActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
     private lateinit var clipCatalog: ClipCatalog
+    /** Reacción a reproducir cuando termine el clip de tipeo (ESCRIBIENDO_*) de la respuesta en curso. */
+    private var pendingAfterTyping: MediaRequest? = null
     private var currentAvatarClipId: String? = null
     private var lastAvatarClipId: String? = null
     private lateinit var mediaLibrary: MediaLibrary
@@ -805,7 +807,13 @@ class MainActivity : AppCompatActivity() {
             ?: result.microExpression?.uppercase(Locale.getDefault())
             ?: "SYNC"
         // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
-        if (result.reply.isNotBlank() || result.media == null) {
+        val typingSub = result.escribiendo?.takeIf { result.reply.isNotBlank() && !state.startsWith("ADULT_") }
+        if (typingSub != null && (result.reply.isNotBlank() || result.media == null)) {
+            // Tipeo (variante por largo de respuesta) y luego la reacción/saludo decidida por el orquestador.
+            appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual, applyAvatar = false)
+            pendingAfterTyping = AvatarCueMapper.fromCue(result.audiovisual) ?: AvatarCueMapper.fromLegacy(state, detail)
+            playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, typingSub))
+        } else if (result.reply.isNotBlank() || result.media == null) {
             appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual)
         } else {
             applyAssistantAvatarState(state, detail, result.audiovisual)
@@ -1369,6 +1377,13 @@ class MainActivity : AppCompatActivity() {
             presentationHasNext = avatarMode == AvatarState.PRESENTACION && presentationClipIndex + 1 < gallery.size,
             alarmPending = runCatching { alarmScheduler.hasAnswerable(currentSession.id) }.getOrDefault(false)
         )
+        val afterTyping = pendingAfterTyping
+        if (avatarMode == AvatarState.CONVERSACION && currentRequest?.subcategoria?.startsWith("ESCRIBIENDO") == true) {
+            // El tipeo se reproduce una sola vez por respuesta: luego la reacción o el loop neutral.
+            pendingAfterTyping = null
+            if (afterTyping != null) playAvatarRequest(afterTyping) else fallbackToLoopNeutral(forceReload = true)
+            return
+        }
         when {
             transition.advancePresentation -> {
                 val exoPlayer = player ?: run {

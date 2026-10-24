@@ -137,23 +137,29 @@ class ClipCatalog(context: Context) {
         )
 
         const val MEDIA_ROOT = "ME2_MEDIA"
-        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_001.mp4"          // galería v2 (base mechón tras la oreja)
-        private const val PROCESANDO = "03_CONVERSACION/PROCESANDO/PROCESANDO_001.mp4" // ex me2_texting
-        private const val ATENCION = "03_CONVERSACION/ATENCION/ATENCION_001.mp4"       // ex avatar_atenta_01
-        private const val ALEGRIA = "02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4"      // ex avatar_alegre_01
-        private const val EMPATIA = "02_REACCIONES/EMPATIA/EMPATIA_NORMAL_001.mp4"     // ex avatar_aliviada_01
-        private const val AFECTO = "02_REACCIONES/AFECTO/AFECTO_NORMAL_001.mp4"        // galería v2
+        private const val NEUTRAL = "01_LOOP_NEUTRAL/NEUTRAL_001.mp4"
+        private val NEUTRALES = listOf("001", "002", "004", "005", "006").map { "01_LOOP_NEUTRAL/NEUTRAL_$it.mp4" }
+        private const val ESCUCHANDO = "03_CONVERSACION/ESCUCHANDO/ESCUCHANDO_001.mp4"
+        private const val PENSANDO = "03_CONVERSACION/PENSANDO/PENSANDO_001.mp4"
+        private const val ALEGRIA = "02_REACCIONES/ALEGRIA/ALEGRIA_MEDIO_001.mp4"
+        private const val EMPATIA = "02_REACCIONES/EMPATIA/EMPATIA_NORMAL_001.mp4"
+        private const val AFECTO = "02_REACCIONES/AFECTO/AFECTO_NORMAL_001.mp4"
+        private const val ALIVIO = "02_REACCIONES/ALIVIO/ALIVIO_NORMAL_001.mp4"
+        private const val GRATITUD = "02_REACCIONES/GRATITUD/GRATITUD_NORMAL_001.mp4"
 
-        /** Mismo mapeo que el viejo DEMO_RAW_BY_MOOD, apuntando a los originales de ME2_MEDIA (idénticos por hash). */
+        /** Respaldo por mood (res/raw no se usa): rutas reales de ME2_MEDIA (galería v4). */
         private val DEMO_MEDIA_BY_MOOD: Map<String, List<String>> = mapOf(
-            MOOD_LOOP_NEUTRAL to listOf(PROCESANDO, NEUTRAL, ATENCION, ALEGRIA, EMPATIA, AFECTO),
+            MOOD_LOOP_NEUTRAL to NEUTRALES,
             MOOD_PRESENTACION to listOf("00_PRESENTACION/PRESENTACION_001.mp4", "00_PRESENTACION/PRESENTACION_002.mp4", "00_PRESENTACION/PRESENTACION_003.mp4"),
-            MOOD_CALIDA to listOf(NEUTRAL, PROCESANDO),
+            MOOD_CALIDA to listOf(NEUTRAL, AFECTO),
             MOOD_ALEGRE to listOf(ALEGRIA, AFECTO),
-            MOOD_ATENTA to listOf(ATENCION, PROCESANDO),
-            MOOD_ALIVIADA to listOf(EMPATIA, NEUTRAL),
-            MOOD_AGRADECIDA to listOf(AFECTO, ALEGRIA)
+            MOOD_ATENTA to listOf(ESCUCHANDO, PENSANDO),
+            MOOD_ALIVIADA to listOf(ALIVIO, EMPATIA),
+            MOOD_AGRADECIDA to listOf(GRATITUD, AFECTO)
         )
+
+        /** Todas las rutas del respaldo (para verificar que existen en assets). */
+        val ALL_DEMO_PATHS: Set<String> get() = DEMO_MEDIA_BY_MOOD.values.flatten().toSet()
 
         fun normalizeMood(mood: String): String {
             val key = mood.trim().lowercase().replace('-', '_').replace(' ', '_')

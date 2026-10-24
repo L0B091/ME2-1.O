@@ -32,6 +32,8 @@ enum class MediaCategoria(val carpetas: Set<String>) {
     LOOP_NEUTRAL(setOf("LOOP_NEUTRAL", "NEUTRAL")),
     REACCION(setOf("REACCIONES", "REACCION")),
     CONVERSACION(setOf("CONVERSACION")),
+    /** 04_SALUDOS: SALUDO (al saludar) y DESPEDIDA (al despedirse). */
+    SALUDOS(setOf("SALUDOS", "SALUDO")),
     WIDGET(setOf("WIDGET")),
     DESPERTADOR(setOf("DESPERTADOR", "ALARMA")),
     TRANSICION(setOf("TRANSICIONES", "TRANSICION")),

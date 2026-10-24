@@ -520,6 +520,8 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   const { clip } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
   // Biblioteca audiovisual V1: el orquestador decide categoría + intensidad; el cliente elige el recurso concreto.
   const audiovisual = (respuesta || media) ? reaccionAudiovisual.decidir({ mensaje: mensajeUsuario, respuesta: respuesta || "" }) : null;
+  // Conversación: variante de tipeo por largo de respuesta; ESPERANDO/PENSANDO/neutral al azar.
+  const conversacion = (respuesta || media) ? reaccionAudiovisual.conversacion({ respuesta: respuesta || "" }) : null;
   // Clima actual (ya obtenido para el contexto) → widget del cliente (hora + clima en el anillo inferior).
   const climaH = herramientas?.clima;
   const clima = climaH && climaH.disponible !== false && Number.isFinite(Number(climaH.temperatura))
@@ -540,6 +542,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
     video: videoFinal,
     clip,
     audiovisual,
+    conversacion,
     clima,
     media,
     reaccion: reaccion ? { emoji: reaccion.emoji } : null,
