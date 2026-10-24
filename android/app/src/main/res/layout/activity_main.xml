@@ -90,6 +90,15 @@
                     app:show_subtitle_button="false"
                     app:show_vr_button="false"
                     app:use_controller="false" />
+
+                <!-- Último cuadro del clip saliente: se funde sobre el clip nuevo (sin cortes secos). -->
+                <ImageView
+                    android:id="@+id/crossfadeOverlay"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:importantForAccessibility="no"
+                    android:scaleType="centerCrop"
+                    android:visibility="gone" />
             </FrameLayout>
 
             <androidx.recyclerview.widget.RecyclerView

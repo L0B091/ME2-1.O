@@ -1,6 +1,5 @@
 package com.me2.android.media
 
-import com.me2.android.gallery.ClipPicker
 import com.me2.android.gallery.GalleryClip
 import kotlin.random.Random
 
@@ -24,8 +23,11 @@ object IdleLoopQueue {
     }
 
     /** Próximo clip del loop sin repetir el actual (con un solo clip, se repite: loop continuo). */
+    /** Planificador compartido: pesos, sin repetir los últimos 3, loops largos ocasionales (NEUTRAL_LARGO_*). */
+    var scheduler: NeutralLoopScheduler = NeutralLoopScheduler()
+
     fun pickNext(gallery: List<GalleryClip>, currentId: String?, random: Random = Random.Default): GalleryClip? =
-        ClipPicker.pickRandom(gallery.distinctBy { it.id }, gallery.firstOrNull { it.id == currentId }, random)
+        scheduler.pick(gallery, currentId, random)
 
     /** Deja exactamente un ítem encolado después del actual. Devuelve el encolado (null si la galería está vacía). */
     fun queueNext(playlist: Playlist, gallery: List<GalleryClip>, random: Random = Random.Default): GalleryClip? {
