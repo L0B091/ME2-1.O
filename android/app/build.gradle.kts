@@ -45,6 +45,7 @@ val releaseBackendUrlError = releaseBackendUrlProblem(explicitBackendUrl)
 
 val googleWebClientId = firstNonBlank(
     findProperty("ME2_GOOGLE_WEB_CLIENT_ID") as String?,
+    localProps.getProperty("ME2_GOOGLE_WEB_CLIENT_ID"),
     System.getenv("ME2_ANDROID_GOOGLE_WEB_CLIENT_ID")
 )
 
@@ -161,6 +162,21 @@ tasks.configureEach {
     if (esEmpaquetado || (pideReleaseEmpaquetado && name == "preReleaseBuild")) {
         dependsOn(verificarBackendUrlRelease)
     }
+}
+
+// Falla ruidosa si se empaqueta un APK (debug o release) con Google Auth activo pero sin Web Client ID.
+val verificarGoogleClientId = tasks.register("verificarGoogleClientId") {
+    group = "verification"
+    val faltante = enableGoogleAuth && !googleWebClientId.endsWith(".apps.googleusercontent.com")
+    doLast {
+        if (faltante) throw GradleException(
+            "ME2: falta ME2_GOOGLE_WEB_CLIENT_ID (*.apps.googleusercontent.com). Definilo en android/local.properties, " +
+                "-P o env ME2_ANDROID_GOOGLE_WEB_CLIENT_ID; sin él el login muestra 'Google no configurado'."
+        )
+    }
+}
+tasks.configureEach {
+    if (Regex("(pre(Debug|Release)Build)|(package|assemble|bundle)(Debug|Release)").matches(name)) dependsOn(verificarGoogleClientId)
 }
 
 dependencies {
