@@ -7,7 +7,7 @@ import kotlin.random.Random
  * Selección del loop neutral menos repetitiva:
  * - aleatoria con pesos ([weightOf]);
  * - nunca repite ninguno de los últimos [recentWindow] clips (si la galería es chica, se acota a size-1);
- * - "loops largos tranquilos" (NEUTRAL_LARGO_*: café, estirarse…) aparecen de vez en cuando
+ * - "loops largos tranquilos" (NEUTRAL_LARGO_*: sentada tranquila, mira alrededor, celular breve, acomoda manga) aparecen de vez en cuando
  *   (~[longChance]) y nunca dos veces seguidas. Sin clips largos, funciona igual con los actuales.
  */
 class NeutralLoopScheduler(

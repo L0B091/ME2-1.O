@@ -17,6 +17,16 @@ class GaleriaV4AssetsTest {
         ClipCatalog.ALL_DEMO_PATHS.forEach { assertTrue("falta $it", File(root, it).isFile) }
     }
 
+    @Test fun loopsLargosNeutrales() {
+        (1..3).forEach { n ->
+            val f = "01_LOOP_NEUTRAL/NEUTRAL_LARGO_00$n.mp4"
+            assertTrue("falta $f", File(root, f).isFile)
+            val r = MediaNameParser.parse(f)!!
+            assertEquals(MediaCategoria.LOOP_NEUTRAL, r.categoria)
+            assertTrue(com.me2.android.media.NeutralLoopScheduler.LONG_MARKER in r.archivo)
+        }
+    }
+
     @Test fun estructuraV4() {
         val emociones = File(root, "02_REACCIONES").listFiles()!!.filter { it.isDirectory }
         assertEquals(19, emociones.size)
