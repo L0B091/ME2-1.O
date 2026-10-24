@@ -52,6 +52,8 @@ data class BackendChatResult(
     val audiovisual: com.me2.android.media.AudiovisualCue? = null,
     /** Variante de tipeo elegida por el backend según el largo de la respuesta (ESCRIBIENDO_RAPIDO/MEDIO/LENTO). */
     val escribiendo: String? = null,
+    /** Variante ESPERANDO sugerida por el backend (ESPERANDO_001..003); el cliente la usa si no repite. */
+    val esperando: String? = null,
     /** Clima actual para el widget (p. ej. "23°C"), si el backend lo tiene. */
     val weatherLabel: String? = null,
     /** Acciones deterministas del turno (alarma creada/cancelada en el teléfono, evento agendado). */
@@ -281,6 +283,7 @@ class Me2BackendClient internal constructor(baseUrlOverride: String?) {
             reaction = json.optJSONObject("reaccion")?.optString("emoji")?.ifBlank { null },
             audiovisual = parseAudiovisual(json.optJSONObject("audiovisual")),
             escribiendo = json.optJSONObject("conversacion")?.optString("escribiendo")?.ifBlank { null }?.takeIf { it.startsWith("ESCRIBIENDO") },
+            esperando = json.optJSONObject("conversacion")?.optString("esperando")?.ifBlank { null }?.takeIf { it.startsWith("ESPERANDO") },
             weatherLabel = parseWeatherLabel(json.optJSONObject("clima")),
             actions = json.optJSONObject("acciones"),
             memoryFacts = parseMemoryFacts(json.optJSONObject("memoriaLocalDelta"))

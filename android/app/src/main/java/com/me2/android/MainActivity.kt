@@ -58,6 +58,7 @@ import com.me2.android.media.IdleLoopQueue
 import com.me2.android.media.MediaCategoria
 import com.me2.android.media.MediaLibrary
 import com.me2.android.media.MediaPermisos
+import com.me2.android.media.EsperandoPolicy
 import com.me2.android.media.MediaRequest
 import com.me2.android.media.MediaSelection
 import com.me2.android.media.MediaSelector
@@ -115,6 +116,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clipCatalog: ClipCatalog
     /** Reacción a reproducir cuando termine el clip de tipeo (ESCRIBIENDO_*) de la respuesta en curso. */
     private var pendingAfterTyping: MediaRequest? = null
+    /** ME2 ya respondió y espera el próximo mensaje del usuario (ESPERANDO tras la reacción + ocasionales). */
+    private var awaitingUser = false
+    private var lastReplySub: String? = null
+    private var esperandoSugerido: String? = null
+    private var lastEsperandoId: String? = null
+    private var esperandoRepeticion = 0
+    private val esperandoHandler = Handler(Looper.getMainLooper())
+    private val esperandoTick = Runnable {
+        if (awaitingUser && avatarMode == AvatarState.LOOP_NEUTRAL && !presentationSequenceActive && backendClient.isOnline(this)) {
+            playEsperando()
+        } else if (awaitingUser) {
+            scheduleEsperando()
+        }
+    }
     private var currentAvatarClipId: String? = null
     private var lastAvatarClipId: String? = null
     private lateinit var mediaLibrary: MediaLibrary
@@ -452,6 +467,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        esperandoHandler.removeCallbacks(esperandoTick)
         checkInHandler.removeCallbacks(checkInTick)
         checkInHandler.removeCallbacks(postPresentationSilenceRunnable)
         if (::binding.isInitialized) {
@@ -665,6 +681,7 @@ class MainActivity : AppCompatActivity() {
         runCatching { Me2InitiativeTimer(this).arm(currentSession.id) }
         // Mientras ME2 procesa: estado de conversación (PENSANDO → fallback neutral si no hay clip).
         // Sin red no hay "pensando": el contenedor queda en el pool neutral/escribiendo (replyOffline).
+        stopAwaitingUser()
         if (backendClient.isOnline(this)) playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, "PENSANDO"))
         renderConversation()
         dispatchChat(content, initiative, alarmaRespondida)
@@ -807,6 +824,12 @@ class MainActivity : AppCompatActivity() {
             ?: result.microExpression?.uppercase(Locale.getDefault())
             ?: "SYNC"
         // Modo adulto: la burbuja puede ser solo GIF (formato "gif"); fuera de él siempre hay texto.
+        // Desde acá ME2 espera al usuario: al terminar tipeo/reacción → ESPERANDO (ver EsperandoPolicy).
+        stopAwaitingUser()
+        awaitingUser = true
+        lastReplySub = result.audiovisual?.subcategoria
+        esperandoSugerido = result.esperando
+        scheduleEsperando() // respaldo: si no hubo reacción (directo a neutral), el ESPERANDO ocasional igual llega
         val typingSub = result.escribiendo?.takeIf { result.reply.isNotBlank() && !state.startsWith("ADULT_") }
         if (typingSub != null && (result.reply.isNotBlank() || result.media == null)) {
             // Tipeo (variante por largo de respuesta) y luego la reacción/saludo decidida por el orquestador.
@@ -1381,7 +1404,17 @@ class MainActivity : AppCompatActivity() {
         if (avatarMode == AvatarState.CONVERSACION && currentRequest?.subcategoria?.startsWith("ESCRIBIENDO") == true) {
             // El tipeo se reproduce una sola vez por respuesta: luego la reacción o el loop neutral.
             pendingAfterTyping = null
-            if (afterTyping != null) playAvatarRequest(afterTyping) else fallbackToLoopNeutral(forceReload = true)
+            if (afterTyping != null) playAvatarRequest(afterTyping) else onReplyFinished()
+            return
+        }
+        if (avatarMode == AvatarState.CONVERSACION && currentRequest?.subcategoria == EsperandoPolicy.SUBCATEGORIA) {
+            // ESPERANDO se reproduce una vez; luego loop neutral y, si la espera sigue, otro ocasional.
+            fallbackToLoopNeutral(forceReload = true)
+            scheduleEsperando()
+            return
+        }
+        if (avatarMode == AvatarState.REACCION && awaitingUser && transition.next == AvatarState.LOOP_NEUTRAL) {
+            onReplyFinished()
             return
         }
         when {
@@ -1430,6 +1463,37 @@ class MainActivity : AppCompatActivity() {
         runCatching { IdleLoopQueue.retarget(idlePlaylist(exoPlayer), currentAvatarGallery) }
         // Solo si el reproductor quedó detenido (terminado/sin medio); si está reproduciendo, sigue hasta el fin del clip.
         if (exoPlayer.playbackState == Player.STATE_ENDED || exoPlayer.playbackState == Player.STATE_IDLE) ensureAvatarPlayback()
+    }
+
+    /** Terminó la respuesta de ME2 (tipeo + reacción): ESPERANDO si corresponde; si no, loop neutral. */
+    private fun onReplyFinished() {
+        if (EsperandoPolicy.alTerminarRespuesta(awaitingUser, backendClient.isOnline(this), lastReplySub)) playEsperando()
+        else fallbackToLoopNeutral(forceReload = true)
+    }
+
+    private fun playEsperando() {
+        val recurso = EsperandoPolicy.elegir(mediaLibrary.recursos(), esperandoSugerido, lastEsperandoId, mediaPermisos())
+        esperandoSugerido = null // la sugerencia del backend vale solo para el primer ESPERANDO de la espera
+        if (recurso == null) {
+            fallbackToLoopNeutral(forceReload = !galleryContainsCurrentClip(loopNeutralGallery))
+            return
+        }
+        lastEsperandoId = recurso.id
+        playAvatarSelection(MediaRequest(MediaCategoria.CONVERSACION, EsperandoPolicy.SUBCATEGORIA), MediaSelection(recurso, 0))
+    }
+
+    private fun scheduleEsperando() {
+        esperandoHandler.removeCallbacks(esperandoTick)
+        if (!awaitingUser) return
+        val delay = EsperandoPolicy.proximaEsperaMs(esperandoRepeticion) ?: return
+        esperandoRepeticion += 1
+        esperandoHandler.postDelayed(esperandoTick, delay)
+    }
+
+    private fun stopAwaitingUser() {
+        awaitingUser = false
+        esperandoRepeticion = 0
+        esperandoHandler.removeCallbacks(esperandoTick)
     }
 
     private fun fallbackToLoopNeutral(forceReload: Boolean = false, resetStateLabel: Boolean = false) {
