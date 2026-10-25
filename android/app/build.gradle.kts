@@ -26,7 +26,10 @@ val explicitBackendUrl = firstNonBlank(
 ).trim().trimEnd('/')
 
 // SOLO debug: si no hay URL, loopback del emulador al host (comportamiento previo). Release NO tiene default.
-val debugBackendUrl = explicitBackendUrl.ifBlank { "http://10.0.2.2:3000" }
+val defaultBackendUrl = "https://me2-backend.onrender.com"
+// Debug y release usan Render por defecto. Local/emulador solo con ME2_ALLOW_LOCAL_BACKEND=true.
+val allowLocalBackend = (findProperty("ME2_ALLOW_LOCAL_BACKEND") as String? ?: System.getenv("ME2_ALLOW_LOCAL_BACKEND")) == "true"
+val debugBackendUrl = explicitBackendUrl.ifBlank { defaultBackendUrl }
 
 /** Motivo por el que la URL no sirve para release (null = OK). Release no permite cleartext ni túneles efímeros. */
 fun releaseBackendUrlProblem(url: String): String? {
@@ -41,7 +44,13 @@ fun releaseBackendUrlProblem(url: String): String? {
         else -> null
     }
 }
-val releaseBackendUrlError = releaseBackendUrlProblem(explicitBackendUrl)
+val releaseBackendUrlError = releaseBackendUrlProblem(explicitBackendUrl.ifBlank { defaultBackendUrl })
+val debugBackendUrlError = if (allowLocalBackend) null else releaseBackendUrlProblem(debugBackendUrl)
+val verificarBackendUrl = tasks.register("verificarBackendUrl") {
+    group = "verification"
+    val problema = debugBackendUrlError
+    doLast { if (problema != null) throw GradleException("ME2: backend URL inválida para APK de celular: " + problema) }
+}
 
 val googleWebClientId = firstNonBlank(
     findProperty("ME2_GOOGLE_WEB_CLIENT_ID") as String?,
@@ -109,7 +118,7 @@ android {
         release {
             buildConfigField("boolean", "DEMO_LOGIN_ENABLED", "false")
             // Sin default: la validación de abajo corta el empaquetado si falta o es inválida.
-            buildConfigField("String", "BACKEND_BASE_URL", explicitBackendUrl.gradleQuoted())
+            buildConfigField("String", "BACKEND_BASE_URL", explicitBackendUrl.ifBlank { defaultBackendUrl }.gradleQuoted())
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -176,7 +185,7 @@ val verificarGoogleClientId = tasks.register("verificarGoogleClientId") {
     }
 }
 tasks.configureEach {
-    if (Regex("(pre(Debug|Release)Build)|(package|assemble|bundle)(Debug|Release)").matches(name)) dependsOn(verificarGoogleClientId)
+    if (Regex("(pre(Debug|Release)Build)|(package|assemble|bundle)(Debug|Release)").matches(name)) dependsOn(verificarGoogleClientId, verificarBackendUrl)
 }
 
 dependencies {
