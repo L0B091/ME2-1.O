@@ -41,7 +41,8 @@ object AvatarCueMapper {
             s == "NOTICE" -> null
             d == "LOCAL" || d == "SYNC" || d == "MESSAGE" || d.startsWith("STAGE_") -> null
             tokens.contains("AGRADEC") -> MediaRequest(MediaCategoria.REACCION, "GRATITUD", MediaIntensidad.MEDIO)
-            tokens.contains("ALEGRE") || tokens.contains("HAPPY") || tokens.contains("FELIZ") || tokens.contains("SONRISA") ->
+            tokens.contains("SONRISA") -> MediaRequest(MediaCategoria.REACCION, "SONRISA", MediaIntensidad.NORMAL)
+            tokens.contains("ALEGRE") || tokens.contains("HAPPY") || tokens.contains("FELIZ") ->
                 MediaRequest(MediaCategoria.REACCION, "ALEGRIA", MediaIntensidad.NORMAL)
             tokens.contains("ATENTA") || tokens.contains("LISTENING") || tokens.contains("THINK") ->
                 MediaRequest(MediaCategoria.CONVERSACION, "ESCUCHANDO")

@@ -27,9 +27,20 @@ class GaleriaV4AssetsTest {
         }
     }
 
+    /** Gestos de reacción: un clip NORMAL cada uno (el selector usa el más cercano para MEDIO/MAXIMO). */
+    @Test fun gestosReaccion() {
+        GESTOS.forEach { g ->
+            val f = "02_REACCIONES/$g/${g}_NORMAL_001.mp4"
+            assertTrue("falta $f", File(root, f).isFile)
+            val r = MediaNameParser.parse(f)!!
+            assertEquals(MediaCategoria.REACCION, r.categoria); assertEquals(g, r.subcategoria); assertEquals(MediaIntensidad.NORMAL, r.intensidad)
+        }
+    }
+
     @Test fun estructuraV4() {
-        val emociones = File(root, "02_REACCIONES").listFiles()!!.filter { it.isDirectory }
-        assertEquals(19, emociones.size)
+        val todas = File(root, "02_REACCIONES").listFiles()!!.filter { it.isDirectory }
+        assertEquals(19 + GESTOS.size, todas.size)
+        val emociones = todas.filter { it.name !in GESTOS }
         emociones.forEach { e ->
             MediaIntensidad.entries.forEach { i ->
                 val f = "02_REACCIONES/${e.name}/${e.name}_${i.name}_001.mp4"
@@ -50,4 +61,6 @@ class GaleriaV4AssetsTest {
         }
         assertTrue(!File(root, "03_CONVERSACION/ATENCION").exists() && !File(root, "03_CONVERSACION/PROCESANDO").exists())
     }
+
+    companion object { val GESTOS = listOf("IDEA", "CONFIRMACION", "NEGACION", "DISGUSTO", "BESO", "SONRISA") }
 }

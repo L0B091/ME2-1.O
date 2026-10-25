@@ -451,12 +451,14 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // [LLM] respuesta sin filtros
   let respuesta = null;
   let pistaReaccion = null;
+  let pistaGesto = null;
   let debugLLM = { ...dolphinClient.obtenerDiagnostico(), used: false };
   try {
     const r = await dolphinClient.chat(mensajes);
     debugLLM = { ...debugLLM, ...r, respuesta: undefined };
     respuesta = r.respuesta;
     if (respuesta) ({ texto: respuesta, emoji: pistaReaccion } = reacciones.parsearPista(respuesta));
+    if (respuesta) ({ texto: respuesta, gesto: pistaGesto } = reaccionAudiovisual.parsearGesto(respuesta));
   } catch (error) {
     debugLLM = { ...debugLLM, used: false, error: error.message };
   }
@@ -487,7 +489,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       };
       try {
         const r2 = await dolphinClient.chat([...mensajes, { role: "assistant", content: respuesta }, estricta]);
-        const otra = r2?.respuesta ? textoPlano(reacciones.parsearPista(r2.respuesta).texto) : null;
+        const otra = r2?.respuesta ? textoPlano(reaccionAudiovisual.parsearGesto(reacciones.parsearPista(r2.respuesta).texto).texto) : null;
         if (otra && problemas(otra).length < antes.length) respuesta = otra;
       } catch (error) {
         debugLLM = { ...debugLLM, reintentoFechaError: error.message };
@@ -521,7 +523,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // Texto + clip siempre; GIF opcional solo en modo adulto (catálogo adulto con gating estricto).
   const { clip } = selectorMedia.mediosRespuesta({ mensaje: mensajeUsuario, respuesta: respuesta || "", adult: adultResult?.adult, videoGaleria: videoFinal });
   // Biblioteca audiovisual V1: el orquestador decide categoría + intensidad; el cliente elige el recurso concreto.
-  const audiovisual = (respuesta || media) ? reaccionAudiovisual.decidir({ mensaje: mensajeUsuario, respuesta: respuesta || "" }) : null;
+  const audiovisual = (respuesta || media) ? reaccionAudiovisual.decidir({ mensaje: mensajeUsuario, respuesta: respuesta || "", gesto: pistaGesto }) : null;
   // Conversación: variante de tipeo por largo de respuesta; ESPERANDO/PENSANDO/neutral al azar.
   const conversacion = (respuesta || media) ? reaccionAudiovisual.conversacion({ respuesta: respuesta || "" }) : null;
   // Clima actual (ya obtenido para el contexto) → widget del cliente (hora + clima en el anillo inferior).

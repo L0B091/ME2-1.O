@@ -7,8 +7,24 @@ export const REACCIONES_V1 = [
   "PREOCUPACION", "ENOJO", "MOLESTIA", "VERGUENZA", "TIMIDEZ", "COQUETA", "AFECTO", "ORGULLO", "ALIVIO",
   "CANSANCIO", "SARCASMO",
   // Galería v4: emociones nuevas (con NORMAL/MEDIO/MAXIMO en 02_REACCIONES).
-  "TERNURA", "ENTUSIASMO", "NOSTALGIA", "PICARDIA", "ASOMBRO", "GRATITUD"
+  "TERNURA", "ENTUSIASMO", "NOSTALGIA", "PICARDIA", "ASOMBRO", "GRATITUD",
+  // Gestos de reacción (un clip NORMAL cada uno; el cliente usa el más cercano para cualquier intensidad).
+  "IDEA", "CONFIRMACION", "NEGACION", "DISGUSTO", "BESO", "SONRISA"
 ];
+// Gestos que el LLM puede marcar con [[gesto: x]] (se quita del texto). Tienen prioridad sobre las señales.
+export const GESTOS = Object.freeze(["idea", "confirmacion", "negacion", "disgusto", "beso", "sonrisa"]);
+export const LINEA_GESTO = `Gesto opcional del avatar (usalo poco, solo si encaja claro): al final podés agregar [[gesto: <nombre>]] con UNO de ${GESTOS.join(", ")} (idea = se te ocurre algo; confirmacion = asentís/estás de acuerdo; negacion = decís que no con suavidad; disgusto = algo te da asquito; beso = mandás un beso cariñoso; sonrisa = sonrisa cálida). En la mayoría de los mensajes NO pongas ninguno.`;
+const RE_GESTO = /\[\[\s*gesto\s*:\s*([^\]]*?)\s*\]\]/gi;
+/** Saca [[gesto: x]] del texto del LLM → { texto, gesto: "IDEA"|...|null }. Nombre inválido → null. */
+export function parsearGesto(respuesta = "") {
+  const src = String(respuesta ?? "");
+  let gesto = null;
+  for (const m of src.matchAll(RE_GESTO)) {
+    const g = normalizar(m[1]).trim();
+    if (!gesto && GESTOS.includes(g)) gesto = g.toUpperCase();
+  }
+  return { texto: src.replace(RE_GESTO, "").replace(/[ \t]+\n/g, "\n").trim(), gesto };
+}
 // Clips presentes en ME2_MEDIA (galería v4). Variantes de conversación y loops neutrales disponibles.
 export const VARIANTES = Object.freeze({
   ESPERANDO: ["ESPERANDO_001", "ESPERANDO_002", "ESPERANDO_003"],
@@ -36,7 +52,7 @@ const SENALES = {
   VERGUENZA: [/\b(que verguenza|me da verguenza|ups|perdon|me equivoque)\b/, /😳/],
   TIMIDEZ: [/\b(sos linda|sos hermosa|me gustas|que bonita|que linda)\b/, /☺️|🥺/],
   COQUETA: [/\b(sexy|bombon|preciosa|guapa|coqueta|seduc|cita conmigo)\b/, /😏|😘|😉/],
-  AFECTO: [/\b(te quiero|te amo|te extrane|abrazo|beso|sos lo mejor|te adoro)\b/, /❤️|♥|🥰|🤗/],
+  AFECTO: [/\b(te quiero|te amo|te extrane|abrazo|sos lo mejor|te adoro)\b/, /❤️|♥|🥰|🤗/],
   GRATITUD: [/\b(gracias|muchas gracias|te agradezco|mil gracias|agradecid[oa])\b/, /🙏/],
   TERNURA: [/\b(tiern[oa]|cachorr[oa]|bebe|gatito|perrito|que dulce|awww*)\b/, /🥹|🐶|🐱/],
   ENTUSIASMO: [/\b(vamos|me muero de ganas|no veo la hora|que emocion|emocionad[oa]|a full|tengo ganas)\b/, /🔥|🤩|💪/],
@@ -45,6 +61,12 @@ const SENALES = {
   ASOMBRO: [/\b(impresionante|alucinante|que locura|flashe|asombros[oa]|maravillos[oa])\b/, /🤩|✨/],
   ALIVIO: [/\b(por fin|al fin|menos mal|zafe|ya paso|que alivio)\b/, /😌/],
   CANSANCIO: [/\b(cansad[oa]|agotad[oa]|sueno|no doy mas|reventad[oa]|dormir)\b/, /😴|🥱/],
+  IDEA: [/\b(se me ocurre|se me ocurrio|tengo una idea|que idea|alguna idea|ideas para|que me recomendas|que hago)\b/, /💡/],
+  CONFIRMACION: [/\b(de una|exacto|tal cual|obvio que si|estas de acuerdo|confirmo|claro que si)\b/, /👍|👌/],
+  NEGACION: [/\b(para nada|ni loc[oa]|de ninguna manera|nunca jamas|no no)\b/, /🙅|👎/],
+  DISGUSTO: [/\b(que asco|asqueros[oa]|guacala|puaj|iugh|me da asco|horrible olor)\b/, /🤢|🤮/],
+  BESO: [/\b(un beso|besito|besos|muack|mua+)\b/, /😘|💋/],
+  SONRISA: [/\b(sonrei|sonrisa|me sacaste una sonrisa|me alegraste)\b/, /😊|🙂/],
   SARCASMO: [/\b(si claro|obvio que no|aja|re que si|seguro que si)\b/, /🙃/]
 };
 const INTENSIFICADORES = /\b(muy|re|super|demasiado|mucho|recontra|tan|tanto|terrible|mal)\b/g;
@@ -105,10 +127,12 @@ export function saludoDe(mensaje = "") {
   return null;
 }
 
-export function decidir({ mensaje = "", respuesta = "" } = {}) {
+export function decidir({ mensaje = "", respuesta = "", gesto = null } = {}) {
   const t = normalizar(mensaje);
   const saludo = saludoDe(mensaje);
   if (saludo) return { categoria: "SALUDOS", subcategoria: saludo, intensidad: null, motivo: saludo.toLowerCase() };
+  const g = gesto && GESTOS.includes(normalizar(gesto)) ? normalizar(gesto).toUpperCase() : null;
+  if (g) return { categoria: "REACCION", subcategoria: g, intensidad: "NORMAL", motivo: "gesto" };
   let mejor = null;
   for (const [sub, patrones] of Object.entries(SENALES)) {
     const n = puntaje(t, patrones);
@@ -126,4 +150,4 @@ export function decidir({ mensaje = "", respuesta = "" } = {}) {
   return { categoria: "REACCION", subcategoria: mejor.sub, intensidad: intensidadDe(mensaje, mejor.n), motivo: "mensaje" };
 }
 
-export default { decidir, intensidadDe, conversacion, escribiendoPara, saludoDe, REACCIONES_V1, INTENSIDADES_V1, VARIANTES };
+export default { decidir, parsearGesto, GESTOS, LINEA_GESTO, intensidadDe, conversacion, escribiendoPara, saludoDe, REACCIONES_V1, INTENSIDADES_V1, VARIANTES };
