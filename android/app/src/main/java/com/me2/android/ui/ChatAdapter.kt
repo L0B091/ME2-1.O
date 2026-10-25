@@ -78,6 +78,14 @@ class ChatAdapter(
             val reaction = ChatMediaRouting.reactionFor(message.fromMe2, message.reaction)
             binding.reactionPill.text = reaction.orEmpty()
             binding.reactionPill.visibility = if (reaction == null) View.GONE else View.VISIBLE
+            binding.reactionPill.animate().cancel()
+            binding.reactionPill.alpha = 1f; binding.reactionPill.scaleX = 1f; binding.reactionPill.scaleY = 1f
+            if (reaction != null && message.popReaction && ReactionPolicy.popped.add(System.identityHashCode(message))) {
+                binding.reactionPill.alpha = 0f; binding.reactionPill.scaleX = 0.4f; binding.reactionPill.scaleY = 0.4f
+                binding.reactionPill.animate().alpha(1f).scaleX(1f).scaleY(1f)
+                    .setDuration(ReactionPolicy.POP_MS)
+                    .setInterpolator(android.view.animation.OvershootInterpolator(1.6f)).start()
+            }
             val gif = message.gifUrl?.takeIf { message.fromMe2 }
             binding.gifView.setImageDrawable(null)
             binding.gifView.visibility = if (gif == null) View.GONE else View.VISIBLE

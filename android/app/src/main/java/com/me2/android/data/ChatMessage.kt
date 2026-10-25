@@ -7,5 +7,7 @@ data class ChatMessage(
     /** Reacción emoji del avatar (solo burbujas del usuario). */
     val reaction: String? = null,
     /** GIF inline: solo burbujas del avatar y solo en modo adulto (el usuario no envía GIFs). */
-    val gifUrl: String? = null
+    val gifUrl: String? = null,
+    /** Transitorio (no se persiste): animar el pop-in de la reacción una sola vez. */
+    val popReaction: Boolean = false
 )

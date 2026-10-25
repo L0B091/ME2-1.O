@@ -966,6 +966,9 @@ class MainActivity : AppCompatActivity() {
     /** Sin red: el mensaje del usuario queda guardado como pendiente y ME2 responde con el banco offline + clip. */
     private fun replyOffline() {
         val userId = currentSession.id
+        fullConversation.lastOrNull { !it.fromMe2 }?.let { last ->
+            scheduleUserReaction(com.me2.android.ui.ReactionPolicy.offline(fullConversation, last.text, Math.random()))
+        }
         val reply = com.me2.android.offline.OfflineChatResponder(
             pick = { cat, vars -> com.me2.android.offline.OfflinePhrases(this).pick(cat, vars) },
             markPending = { localMemoryStore.markLastUserMessagePending(userId) }
@@ -1052,11 +1055,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun applyChatMedia(result: com.me2.android.net.BackendChatResult) {
         val adultUnlocked = result.adultMode?.unlocked == true
-        result.reaction?.let { emoji ->
-            markLastUserReaction(fullConversation, emoji)
-            markLastUserReaction(visibleConversation, emoji)
-            runCatching { localMemoryStore.setReactionOnLastUserMessage(currentSession.id, emoji) }
-        }
+        scheduleUserReaction(com.me2.android.ui.ReactionPolicy.aceptar(fullConversation, result.reaction))
         ChatMediaRouting.avatarRemoteClipUrl(result.clip, adultUnlocked)?.let { playRemoteAvatarClip(it) }
         ChatMediaRouting.inlineGifUrl(result.media, adultUnlocked)?.let { url ->
             val gifBubble = ChatMessage("", true, gifUrl = url)
@@ -1066,9 +1065,22 @@ class MainActivity : AppCompatActivity() {
         renderConversation()
     }
 
+    /** Reacción sutil: aparece poco después (durante el tipeo) con pop-in; se persiste con el mensaje. */
+    private fun scheduleUserReaction(emoji: String?) {
+        if (emoji == null) return
+        val target = fullConversation.lastOrNull { !it.fromMe2 } ?: return
+        binding.root.postDelayed({
+            if (fullConversation.lastOrNull { !it.fromMe2 } !== target) return@postDelayed
+            markLastUserReaction(fullConversation, emoji)
+            markLastUserReaction(visibleConversation, emoji)
+            runCatching { localMemoryStore.setReactionOnLastUserMessage(currentSession.id, emoji) }
+            renderConversation()
+        }, com.me2.android.ui.ReactionPolicy.DELAY_MS)
+    }
+
     private fun markLastUserReaction(list: MutableList<ChatMessage>, emoji: String) {
         val idx = list.indexOfLast { !it.fromMe2 }
-        if (idx >= 0) list[idx] = list[idx].copy(reaction = emoji)
+        if (idx >= 0) list[idx] = list[idx].copy(reaction = emoji, popReaction = true)
     }
 
     @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])

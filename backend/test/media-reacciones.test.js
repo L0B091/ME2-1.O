@@ -47,13 +47,38 @@ test("reacciones: solo con señal, baja probabilidad, nunca en turnos seguidos",
   assert.equal(reacciones.candidato("hola, ¿qué hora es?"), null);
   assert.equal(reacciones.candidato("¡aprobé el final!").emoji, "🎉");
   assert.equal(reacciones.candidato("jajaja buenísimo").emoji, "😂");
-  assert.equal(reacciones.candidato("hoy estoy re cansado").emoji, "😴");
+  assert.equal(reacciones.candidato("hoy estoy re cansado").emoji, "😅");
   const siempre = () => 0;
   assert.equal(reacciones.decidir(u, "gracias!", { random: siempre }).emoji, "❤️");
   assert.equal(reacciones.decidir(u, "gracias de nuevo!", { random: siempre }), null, "no dos seguidas");
   assert.equal(reacciones.decidir(u, "gracias otra vez", { random: siempre }), null);
+  assert.equal(reacciones.decidir(u, "gracias x3", { random: siempre }), null, "mínimo 4 turnos");
   assert.ok(reacciones.decidir(u, "mil gracias", { random: siempre }));
   assert.equal(reacciones.decidir(`${u}-b`, "gracias!", { random: () => 0.99 }), null, "probabilidad baja");
   assert.equal(reacciones.decidir(`${u}-c`, "¿qué hora es?", { random: siempre }), null, "sin señal no reacciona");
   [u, `${u}-b`, `${u}-c`].forEach(id => storage.writeUserData("reacciones", id, {}));
+});
+
+test("reacciones: allowlist, pista del LLM y tope de frecuencia", () => {
+  assert.equal(reacciones.validarEmoji("❤️"), "❤️");
+  assert.equal(reacciones.validarEmoji("❤"), "❤️", "sin selector de variación");
+  assert.equal(reacciones.validarEmoji("🍆"), null);
+  assert.equal(reacciones.validarEmoji("hola"), null);
+  assert.deepEqual(reacciones.parsearPista("¡Qué bueno!\n[[reaccion: 🎉]]"), { texto: "¡Qué bueno!", emoji: "🎉" });
+  assert.deepEqual(reacciones.parsearPista("Ok [[reacción: 🍆]]"), { texto: "Ok", emoji: null });
+  assert.deepEqual(reacciones.parsearPista("Sin pista"), { texto: "Sin pista", emoji: null });
+  assert.ok(reacciones.LINEA_CONTRATO.includes("MUY poco"));
+  const siempre = () => 0;
+  // La pista del LLM elige el emoji pero no habilita reaccionar a un mensaje neutro.
+  assert.equal(reacciones.decidir("anonimo-test-pista-a", "qué hora es", { pistaLLM: "😂", random: siempre }), null);
+  assert.equal(reacciones.decidir("anonimo-test-pista-b", "jajaja", { pistaLLM: "🔥", random: siempre }).emoji, "🔥");
+  assert.equal(reacciones.decidir("anonimo-test-pista-c", "jajaja", { pistaLLM: "🍆", random: siempre }).emoji, "😂");
+  // Simulación: aun con todos los mensajes "reaccionables" y azar, ~≤1 de cada 5 y nunca dos seguidas.
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const uid = "anonimo-test-frecuencia"; let total = 0; let prev = false;
+  for (let i = 0; i < 600; i++) {
+    const r = Boolean(reacciones.decidir(uid, "gracias!", { random: rnd }));
+    assert.ok(!(r && prev), "nunca consecutivas"); prev = r; if (r) total++;
+  }
+  assert.ok(total / 600 <= 1 / 4.5 && total / 600 >= 1 / 9, `tasa ${total}/600`);
 });

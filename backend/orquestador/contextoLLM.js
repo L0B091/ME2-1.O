@@ -11,6 +11,7 @@ import gestorDeAlarmas from "../modulos/gestorDeAlarmas.js";
 import premiumManager from "../modulos/premium/premiumManager.js";
 import adultMode from "../modulos/premium/adultMode.js";
 import { lineaEvento } from "../modulos/detectorAgenda.js";
+import reacciones from "../modulos/interaccion/reacciones.js";
 
 const cache = new Map();
 async function cacheado(clave, ttlMs, fn) {
@@ -169,6 +170,7 @@ export function construirMensajeContexto({ mensaje = "", herramientas, memoria, 
   const l = [];
   l.push("[Contexto de la app ME2 — datos del sistema]");
   l.push(guardia.LINEA_CONTRATO);
+  l.push(reacciones.LINEA_CONTRATO);
   const d = guardia.datoDeUsuario;
   const nombre = memoria?.nombre ? d(memoria.nombre, 80) : null;
   l.push(`Nombre del usuario: ${nombre || "desconocido"}`);

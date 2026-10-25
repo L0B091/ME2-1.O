@@ -450,11 +450,13 @@ async function orquestador(mensajeUsuario, contexto = {}) {
 
   // [LLM] respuesta sin filtros
   let respuesta = null;
+  let pistaReaccion = null;
   let debugLLM = { ...dolphinClient.obtenerDiagnostico(), used: false };
   try {
     const r = await dolphinClient.chat(mensajes);
     debugLLM = { ...debugLLM, ...r, respuesta: undefined };
     respuesta = r.respuesta;
+    if (respuesta) ({ texto: respuesta, emoji: pistaReaccion } = reacciones.parsearPista(respuesta));
   } catch (error) {
     debugLLM = { ...debugLLM, used: false, error: error.message };
   }
@@ -485,7 +487,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
       };
       try {
         const r2 = await dolphinClient.chat([...mensajes, { role: "assistant", content: respuesta }, estricta]);
-        const otra = r2?.respuesta ? textoPlano(r2.respuesta) : null;
+        const otra = r2?.respuesta ? textoPlano(reacciones.parsearPista(r2.respuesta).texto) : null;
         if (otra && problemas(otra).length < antes.length) respuesta = otra;
       } catch (error) {
         debugLLM = { ...debugLLM, reintentoFechaError: error.message };
@@ -530,7 +532,7 @@ async function orquestador(mensajeUsuario, contexto = {}) {
   // Reacción ocasional (emoji) sobre la burbuja del usuario, persistida en el historial.
   let reaccion = null;
   if ((respuesta || media) && userId !== "anonimo") {
-    reaccion = reacciones.decidir(userId, mensajeUsuario, { gustosNuevos: memoriaEscritura?.hechos?.gustos || [] });
+    reaccion = reacciones.decidir(userId, mensajeUsuario, { gustosNuevos: memoriaEscritura?.hechos?.gustos || [], pistaLLM: pistaReaccion });
     if (reaccion && persistirEnServidor) historialConversacion.anotarReaccion(userId, reaccion.emoji);
   }
 
