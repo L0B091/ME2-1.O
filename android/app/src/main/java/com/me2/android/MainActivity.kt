@@ -116,9 +116,8 @@ class MainActivity : AppCompatActivity() {
 
     private var player: ExoPlayer? = null
     /** Clip pedido mientras el actual termina (último gana). */
-    private val pendingAvatarClip = PlaybackTransition.Pending<GalleryClip>()
+    private val transitions = com.me2.android.media.TransitionSequencer<GalleryClip>()
     private var crossfadeToken = 0
-    private var crossfadeAwaitingFrame = false
     private lateinit var clipCatalog: ClipCatalog
     /** Reacción a reproducir cuando termine el clip de tipeo (ESCRIBIENDO_*) de la respuesta en curso. */
     private var pendingAfterTyping: MediaRequest? = null
@@ -627,18 +626,21 @@ class MainActivity : AppCompatActivity() {
                 exoPlayer.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         if (playbackState == Player.STATE_ENDED) {
-                            val pending = pendingAvatarClip.take()
-                            if (pending != null) startAvatarClip(exoPlayer, pending) else handleAvatarPlaybackEnded()
+                            if (transitions.overlayVisible) return
+                            val cmd = transitions.onClipEnded()
+                            if (cmd is com.me2.android.media.TransitionSequencer.Cmd.Start) startAvatarClip(exoPlayer, cmd.clip)
+                            else if (!transitions.hasPending) handleAvatarPlaybackEnded()
                         }
                     }
 
                     override fun onRenderedFirstFrame() {
-                        if (crossfadeAwaitingFrame) fadeOutCrossfadeOverlay()
+                        if (transitions.onFirstFrame()) fadeOutCrossfadeOverlay()
                     }
 
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                            pendingAvatarClip.take()?.let { startAvatarClip(exoPlayer, it); return }
+                            val cmd = transitions.onClipEnded()
+                            if (cmd is com.me2.android.media.TransitionSequencer.Cmd.Start) { startAvatarClip(exoPlayer, cmd.clip); return }
                         }
                         // Loop de reposo: pasó solo (sin corte) al clip encolado → se encola el siguiente.
                         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) {
@@ -1672,72 +1674,63 @@ class MainActivity : AppCompatActivity() {
             (exoPlayer.playbackState == Player.STATE_READY || exoPlayer.playbackState == Player.STATE_BUFFERING)
         val duration = exoPlayer.duration
         val remaining = if (duration == androidx.media3.common.C.TIME_UNSET) null else duration - exoPlayer.currentPosition
-        when (PlaybackTransition.decide(playing, remaining)) {
-            PlaybackTransition.Action.START_NOW -> startAvatarClip(exoPlayer, clip)
-            PlaybackTransition.Action.WAIT_FOR_END -> {
-                pendingAvatarClip.offer(clip)
+        dispatchTransition(exoPlayer, transitions.request(clip, playing, remaining))
+    }
+
+    private fun dispatchTransition(exoPlayer: ExoPlayer, cmd: com.me2.android.media.TransitionSequencer.Cmd<GalleryClip>) {
+        when (cmd) {
+            is com.me2.android.media.TransitionSequencer.Cmd.Start -> startAvatarClip(exoPlayer, cmd.clip)
+            is com.me2.android.media.TransitionSequencer.Cmd.Crossfade -> crossfadeToClip(exoPlayer, cmd.clip)
+            is com.me2.android.media.TransitionSequencer.Cmd.Wait -> runCatching {
                 // Sin ítems encolados después del actual: al terminar llega STATE_ENDED y arranca el pendiente.
-                runCatching {
-                    val next = exoPlayer.currentMediaItemIndex + 1
-                    if (exoPlayer.mediaItemCount > next) exoPlayer.removeMediaItems(next, exoPlayer.mediaItemCount)
-                }
+                val next = exoPlayer.currentMediaItemIndex + 1
+                if (exoPlayer.mediaItemCount > next) exoPlayer.removeMediaItems(next, exoPlayer.mediaItemCount)
             }
-            PlaybackTransition.Action.CROSSFADE -> crossfadeToClip(exoPlayer, clip)
+            else -> Unit
         }
     }
 
     /**
-     * Fundido sin destello: el video va en TextureView (se compone en la misma pasada que la vista, no en una
-     * capa aparte como SurfaceView), así el cuadro se copia de forma SÍNCRONA y el overlay aparece en el mismo
-     * frame en que se cambia el clip. Si había un fundido a medias, se copia lo que realmente se ve (video +
-     * overlay con su alfa actual) para no saltar de imagen.
+     * Fundido sin destello ni superposición: TextureView + copia síncrona del cuadro. El secuenciador garantiza
+     * que no hay otro fundido en curso, así la foto es siempre UN solo cuadro limpio del clip actual.
      */
     private fun crossfadeToClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
-        pendingAvatarClip.clear()
         val token = ++crossfadeToken
         val texture = binding.playerView.videoSurfaceView as? android.view.TextureView
         val frame = texture?.takeIf { it.isAvailable && it.width > 0 && it.height > 0 }
             ?.let { runCatching { it.bitmap }.getOrNull() }
+        val overlay = binding.crossfadeOverlay
         if (frame == null) {
+            transitions.crossfadeAborted()
             startAvatarClip(exoPlayer, clip)
             return
         }
-        val overlay = binding.crossfadeOverlay
         overlay.animate().cancel()
-        val onScreen = if (overlay.visibility == View.VISIBLE && overlay.alpha > 0f && overlay.drawable != null && overlay.width > 0 && overlay.height > 0) {
-            runCatching {
-                // Lienzo del tamaño del overlay: video en su posición real (zoom) + overlay con su alfa actual.
-                val out = android.graphics.Bitmap.createBitmap(overlay.width, overlay.height, android.graphics.Bitmap.Config.ARGB_8888)
-                val canvas = android.graphics.Canvas(out)
-                val tl = IntArray(2).also { texture.getLocationInWindow(it) }
-                val ol = IntArray(2).also { overlay.getLocationInWindow(it) }
-                canvas.drawBitmap(frame, (tl[0] - ol[0]).toFloat(), (tl[1] - ol[1]).toFloat(), null)
-                canvas.saveLayerAlpha(0f, 0f, overlay.width.toFloat(), overlay.height.toFloat(), (overlay.alpha * 255).toInt())
-                overlay.draw(canvas)
-                canvas.restore()
-                out
-            }.getOrDefault(frame)
-        } else frame
-        overlay.setImageBitmap(onScreen)
+        overlay.setImageBitmap(frame)
         overlay.alpha = 1f
         overlay.visibility = View.VISIBLE
-        crossfadeAwaitingFrame = true
         // Respaldo si no llega onRenderedFirstFrame.
-        overlay.postDelayed({ if (token == crossfadeToken && crossfadeAwaitingFrame) fadeOutCrossfadeOverlay() }, 1500)
+        overlay.postDelayed({ if (token == crossfadeToken && transitions.onFirstFrame()) fadeOutCrossfadeOverlay() }, 1500)
         startAvatarClip(exoPlayer, clip)
     }
 
     private fun fadeOutCrossfadeOverlay() {
-        crossfadeAwaitingFrame = false
-        binding.crossfadeOverlay.animate().cancel()
-        binding.crossfadeOverlay.animate().alpha(0f).setDuration(PlaybackTransition.CROSSFADE_MS).withEndAction {
-            binding.crossfadeOverlay.visibility = View.GONE
-            binding.crossfadeOverlay.setImageDrawable(null)
+        val overlay = binding.crossfadeOverlay
+        overlay.animate().cancel()
+        overlay.animate().alpha(0f).setDuration(PlaybackTransition.CROSSFADE_MS).withEndAction {
+            overlay.visibility = View.GONE
+            overlay.setImageDrawable(null)
+            overlay.alpha = 1f
+            val p = player ?: return@withEndAction
+            val playing = p.playWhenReady && (p.playbackState == Player.STATE_READY || p.playbackState == Player.STATE_BUFFERING)
+            val d = p.duration
+            val rem = if (d == androidx.media3.common.C.TIME_UNSET) null else d - p.currentPosition
+            dispatchTransition(p, transitions.onFadeEnd(playing, rem))
+            if (p.playbackState == Player.STATE_ENDED && !transitions.overlayVisible && !transitions.hasPending) handleAvatarPlaybackEnded()
         }.start()
     }
 
     private fun startAvatarClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
-        pendingAvatarClip.clear()
         lastAvatarClipId = currentAvatarClipId
         currentAvatarClipId = clip.id
         Log.i(TAG, "avatar clip=${clip.id} mode=$avatarMode")
