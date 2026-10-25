@@ -89,6 +89,7 @@
                     app:show_buffering="never"
                     app:show_subtitle_button="false"
                     app:show_vr_button="false"
+                    app:surface_type="texture_view"
                     app:use_controller="false" />
 
                 <!-- Último cuadro del clip saliente: se funde sobre el clip nuevo (sin cortes secos). -->

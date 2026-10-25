@@ -1686,31 +1686,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Fundido sin destello: el video va en TextureView (se compone en la misma pasada que la vista, no en una
+     * capa aparte como SurfaceView), así el cuadro se copia de forma SÍNCRONA y el overlay aparece en el mismo
+     * frame en que se cambia el clip. Si había un fundido a medias, se copia lo que realmente se ve (video +
+     * overlay con su alfa actual) para no saltar de imagen.
+     */
     private fun crossfadeToClip(exoPlayer: ExoPlayer, clip: GalleryClip) {
         pendingAvatarClip.clear()
-        val surface = binding.playerView.videoSurfaceView as? android.view.SurfaceView
         val token = ++crossfadeToken
-        if (surface == null || surface.width <= 0 || surface.height <= 0) {
+        val texture = binding.playerView.videoSurfaceView as? android.view.TextureView
+        val frame = texture?.takeIf { it.isAvailable && it.width > 0 && it.height > 0 }
+            ?.let { runCatching { it.bitmap }.getOrNull() }
+        if (frame == null) {
             startAvatarClip(exoPlayer, clip)
             return
         }
-        val bitmap = runCatching { android.graphics.Bitmap.createBitmap(surface.width, surface.height, android.graphics.Bitmap.Config.ARGB_8888) }
-            .getOrNull() ?: return startAvatarClip(exoPlayer, clip)
-        runCatching {
-            android.view.PixelCopy.request(surface, bitmap, { result ->
-                if (token != crossfadeToken) return@request
-                if (result == android.view.PixelCopy.SUCCESS) {
-                    binding.crossfadeOverlay.animate().cancel()
-                    binding.crossfadeOverlay.setImageBitmap(bitmap)
-                    binding.crossfadeOverlay.alpha = 1f
-                    binding.crossfadeOverlay.visibility = View.VISIBLE
-                    crossfadeAwaitingFrame = true
-                    // Respaldo si no llega onRenderedFirstFrame.
-                    binding.crossfadeOverlay.postDelayed({ if (token == crossfadeToken && crossfadeAwaitingFrame) fadeOutCrossfadeOverlay() }, 1500)
-                }
-                startAvatarClip(exoPlayer, clip)
-            }, android.os.Handler(mainLooper))
-        }.onFailure { startAvatarClip(exoPlayer, clip) }
+        val overlay = binding.crossfadeOverlay
+        overlay.animate().cancel()
+        val onScreen = if (overlay.visibility == View.VISIBLE && overlay.alpha > 0f && overlay.drawable != null && overlay.width > 0 && overlay.height > 0) {
+            runCatching {
+                // Lienzo del tamaño del overlay: video en su posición real (zoom) + overlay con su alfa actual.
+                val out = android.graphics.Bitmap.createBitmap(overlay.width, overlay.height, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(out)
+                val tl = IntArray(2).also { texture.getLocationInWindow(it) }
+                val ol = IntArray(2).also { overlay.getLocationInWindow(it) }
+                canvas.drawBitmap(frame, (tl[0] - ol[0]).toFloat(), (tl[1] - ol[1]).toFloat(), null)
+                canvas.saveLayerAlpha(0f, 0f, overlay.width.toFloat(), overlay.height.toFloat(), (overlay.alpha * 255).toInt())
+                overlay.draw(canvas)
+                canvas.restore()
+                out
+            }.getOrDefault(frame)
+        } else frame
+        overlay.setImageBitmap(onScreen)
+        overlay.alpha = 1f
+        overlay.visibility = View.VISIBLE
+        crossfadeAwaitingFrame = true
+        // Respaldo si no llega onRenderedFirstFrame.
+        overlay.postDelayed({ if (token == crossfadeToken && crossfadeAwaitingFrame) fadeOutCrossfadeOverlay() }, 1500)
+        startAvatarClip(exoPlayer, clip)
     }
 
     private fun fadeOutCrossfadeOverlay() {
