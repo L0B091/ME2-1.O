@@ -93,7 +93,7 @@ object MediaSelector {
         return pool.filter { dist(it) == min }
     }
 
-    /** Presentación: todas las variantes habilitadas en orden de variante (primer arranque: PRESENTACION_001 → 002 → 003; clips provisionales). */
+    /** Presentación: todas las variantes habilitadas en orden de variante (primer arranque: PRESENTACION_001 = presentación v5 completa, 22 s, termina en pose base). */
     fun secuenciaPresentacion(recursos: List<MediaResource>, permisos: MediaPermisos = MediaPermisos()): List<MediaResource> =
         recursos.filter { it.categoria == MediaCategoria.PRESENTACION && it.tipo == MediaTipo.VIDEO && permisos.permite(it) }
             .sortedWith(compareBy({ it.variante }, { it.id }))

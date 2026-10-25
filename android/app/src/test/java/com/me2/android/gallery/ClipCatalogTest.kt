@@ -34,9 +34,9 @@ class ClipCatalogTest {
         assertTrue(presentacion.isNotEmpty())
         assertTrue(presentacion.first().carriesVoice)
         assertTrue(catalog.runtimeGalleryRoot().exists())
-        // M9: Presentación = PRESENTACION_001 → 002 → 003 (ME2_MEDIA), en ese orden, sin condicionales vacuos.
+        // M9: Presentación = PRESENTACION_001 único (v5), sin condicionales vacuos.
         val names = presentacion.map { it.displayName.uppercase().substringBeforeLast('.') }
-        assertEquals(listOf("PRESENTACION_001", "PRESENTACION_002", "PRESENTACION_003"), names.take(3))
+        assertEquals(listOf("PRESENTACION_001"), names)
     }
 
     @Test

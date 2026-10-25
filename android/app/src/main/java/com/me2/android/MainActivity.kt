@@ -1335,7 +1335,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun maybePlayPresentation() {
-        // Primer contacto (Google y demo/sin login): PRESENTACION_001 → 002 → 003 desde assets/ME2_MEDIA.
+        // Primer contacto (Google y demo/sin login): PRESENTACION_001 (v5, archivo único) desde assets/ME2_MEDIA.
         if (hasPlayedPresentation || sessionStorage.isPresentationIntroCompleted()) {
             setChatInputEnabled(true)
             return

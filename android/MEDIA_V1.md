@@ -3,7 +3,7 @@
 Raíz empaquetada: `app/src/main/assets/ME2_MEDIA/` · drop-in en runtime: `filesDir/ME2_MEDIA/` (misma estructura; mismo id reemplaza al empaquetado).
 
 ```
-00_PRESENTACION/PRESENTACION_001.mp4          (todas las variantes, en orden, una sola vez)
+00_PRESENTACION/PRESENTACION_001.mp4          (presentación v5 completa, archivo único, 22 s, una sola vez)
 01_LOOP_NEUTRAL/NEUTRAL_001.mp4
 02_REACCIONES/<REACCION>/<REACCION>_<NORMAL|MEDIO|MAXIMO>_<VARIANTE>.mp4
 03_CONVERSACION/<ESCUCHANDO|ATENCION|PENSANDO|ESPERANDO|PROCESANDO|DESPEDIDA>/<SUB>_001.mp4

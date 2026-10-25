@@ -150,7 +150,7 @@ class ClipCatalog(context: Context) {
         /** Respaldo por mood (res/raw no se usa): rutas reales de ME2_MEDIA (galería v4). */
         private val DEMO_MEDIA_BY_MOOD: Map<String, List<String>> = mapOf(
             MOOD_LOOP_NEUTRAL to NEUTRALES,
-            MOOD_PRESENTACION to listOf("00_PRESENTACION/PRESENTACION_001.mp4", "00_PRESENTACION/PRESENTACION_002.mp4", "00_PRESENTACION/PRESENTACION_003.mp4"),
+            MOOD_PRESENTACION to listOf("00_PRESENTACION/PRESENTACION_001.mp4"),
             MOOD_CALIDA to listOf(NEUTRAL, AFECTO),
             MOOD_ALEGRE to listOf(ALEGRIA, AFECTO),
             MOOD_ATENTA to listOf(ESCUCHANDO, PENSANDO),
