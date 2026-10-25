@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
         private const val PREFS_PERMISSIONS = "me2_permissions"
         private const val KEY_LOCATION_ASKED = "location_asked"
         private const val PREFS_CHECKOUT = "me2_checkout"
+        private const val PREFS_WELCOME = "me2_welcome_back"
         private const val KEY_CHECKOUT_STARTED = "checkout_started_at"
         private const val KEY_CHECKOUT_BASELINE = "checkout_premium_baseline"
         private const val AVATAR_VOLUME = 1f
@@ -121,6 +122,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clipCatalog: ClipCatalog
     /** Reacción a reproducir cuando termine el clip de tipeo (ESCRIBIENDO_*) de la respuesta en curso. */
     private var pendingAfterTyping: MediaRequest? = null
+    /** Texto de la respuesta retenido hasta que termine el clip de tipeo (TypingGate). */
+    private val typingPending = com.me2.android.media.TypingGate.Pending()
+    private var offlineTypingActive = false
+    private val typingTimeout = Runnable { if (typingPending.flush()) Log.w(TAG, "tipeo: timeout, texto entregado") }
+    /** "Volviste": momento (elapsedRealtime) en que la app pasó a segundo plano; 0 = sin ausencia registrada. */
+    private var welcomeStoppedAt = 0L
     /** ME2 ya respondió y espera el próximo mensaje del usuario (ESPERANDO tras la reacción + ocasionales). */
     private var awaitingUser = false
     private var lastReplySub: String? = null
@@ -419,6 +426,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onStop() {
+        welcomeStoppedAt = if (isChangingConfigurations) 0L else SystemClock.elapsedRealtime()
+        if (::sessionStorage.isInitialized && !isChangingConfigurations) runCatching {
+            getSharedPreferences(PREFS_WELCOME, MODE_PRIVATE).edit().putLong("stoppedAtWall", System.currentTimeMillis()).apply()
+        }
         networkMonitor?.stop()
         super.onStop()
     }
@@ -444,6 +455,34 @@ class MainActivity : AppCompatActivity() {
             // Returning to foreground cancels a pending post-silence eval only if user is active;
             // observeInteraction is reserved for real chat/widget interactions.
             maybeAskSilenceCheckIn()
+        }
+        runCatching { maybeWelcomeBack() }.onFailure { Log.e(TAG, "volviste", it) }
+    }
+
+    /** Volvió al frente (o se reabrió con sesión): saludo SALUDO + frase variada, por el gate de tipeo. */
+    private fun maybeWelcomeBack() {
+        val prefs = getSharedPreferences(PREFS_WELCOME, MODE_PRIVATE)
+        val now = SystemClock.elapsedRealtime()
+        val ausenteMs = if (welcomeStoppedAt > 0L) now - welcomeStoppedAt else {
+            // Reapertura en frío: ausencia según el reloj de pared guardado en onStop.
+            val wall = prefs.getLong("stoppedAtWall", 0L)
+            if (wall > 0L) (System.currentTimeMillis() - wall).coerceAtLeast(0L) else -1L
+        }
+        welcomeStoppedAt = 0L
+        prefs.edit().remove("stoppedAtWall").apply()
+        if (ausenteMs < 0L || !::currentSession.isInitialized || !::mediaLibrary.isInitialized) return
+        val enCurso = presentationSequenceActive || typingPending.activo ||
+            currentRequest?.subcategoria == "PENSANDO" || (::binding.isInitialized && !binding.sendButton.isEnabled)
+        if (!com.me2.android.media.WelcomeBackPolicy.debeSaludar(1L, 1L + ausenteMs, false, enCurso)) return
+        val idx = com.me2.android.media.WelcomeBackPolicy.elegirIndice(prefs.getInt("lastIdx", -1))
+        prefs.edit().putInt("lastIdx", idx).apply()
+        val text = com.me2.android.media.WelcomeBackPolicy.frase(idx, currentSession.greetingName)
+        stopAwaitingUser()
+        awaitingUser = true
+        lastReplySub = com.me2.android.media.WelcomeBackPolicy.SUBCATEGORIA
+        playTypingThen(com.me2.android.media.TypingGate.elegir(text, null),
+            MediaRequest(MediaCategoria.SALUDOS, com.me2.android.media.WelcomeBackPolicy.SUBCATEGORIA)) {
+            appendAssistantReply(text, "ONLINE", "SALUDO", applyAvatar = false)
         }
     }
 
@@ -473,6 +512,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         esperandoHandler.removeCallbacks(esperandoTick)
+        if (::binding.isInitialized) binding.root.removeCallbacks(typingTimeout)
         checkInHandler.removeCallbacks(checkInTick)
         checkInHandler.removeCallbacks(postPresentationSilenceRunnable)
         if (::binding.isInitialized) {
@@ -843,12 +883,14 @@ class MainActivity : AppCompatActivity() {
         lastReplySub = result.audiovisual?.subcategoria
         esperandoSugerido = result.esperando
         scheduleEsperando() // respaldo: si no hubo reacción (directo a neutral), el ESPERANDO ocasional igual llega
-        val typingSub = result.escribiendo?.takeIf { result.reply.isNotBlank() && !state.startsWith("ADULT_") }
-        if (typingSub != null && (result.reply.isNotBlank() || result.media == null)) {
-            // Tipeo (variante por largo de respuesta) y luego la reacción/saludo decidida por el orquestador.
-            appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual, applyAvatar = false)
-            pendingAfterTyping = AvatarCueMapper.fromCue(result.audiovisual) ?: AvatarCueMapper.fromLegacy(state, detail)
-            playAvatarRequest(MediaRequest(MediaCategoria.CONVERSACION, typingSub))
+        if (result.reply.isNotBlank() && !state.startsWith("ADULT_")) {
+            // Tipeo SIEMPRE antes del texto (variante por largo); el texto aparece al terminar el clip; luego la reacción.
+            val reply = result.reply
+            val cue = result.audiovisual
+            playTypingThen(com.me2.android.media.TypingGate.elegir(reply, result.escribiendo),
+                AvatarCueMapper.fromCue(cue) ?: AvatarCueMapper.fromLegacy(state, detail)) {
+                appendAssistantReply(reply, state, detail, typewriter = true, cue = cue, applyAvatar = false)
+            }
         } else if (result.reply.isNotBlank() || result.media == null) {
             appendAssistantReply(result.reply, state, detail, typewriter = true, cue = result.audiovisual)
         } else {
@@ -931,8 +973,11 @@ class MainActivity : AppCompatActivity() {
             nombre = currentSession.greetingName,
             fallbackText = getString(R.string.offline_memory_notice)
         )
-        appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue, applyAvatar = false)
+        typingPending.retener { appendAssistantReply(reply.text, "OFFLINE", "LOCAL", cue = reply.cue, applyAvatar = false) }
+        binding.root.removeCallbacks(typingTimeout)
         playOfflineNeutral()
+        if (offlineTypingActive) binding.root.postDelayed(typingTimeout, com.me2.android.media.TypingGate.timeoutMs)
+        else typingPending.flush()
     }
 
     /**
@@ -949,6 +994,7 @@ class MainActivity : AppCompatActivity() {
             currentRequest = null
             currentAvatarGallery = listOf(mediaLibrary.toClip(tipeo))
             Log.i(TAG, "offline escribiendo clip=${tipeo.id}")
+            offlineTypingActive = true
             playAvatarClip(exoPlayer, mediaLibrary.toClip(tipeo))
             return
         }
@@ -965,6 +1011,22 @@ class MainActivity : AppCompatActivity() {
         val clip = plan.neutral?.let(mediaLibrary::toClip) ?: pickNextClip(idle, currentAvatarClipId) ?: return
         Log.i(TAG, "offline neutral clip=${clip.id}")
         playAvatarClip(exoPlayer, clip)
+    }
+
+    /** Clip ESCRIBIENDO_* y recién al terminar (o timeout) [deliver]; después [after] (reacción) o fin de respuesta. */
+    private fun playTypingThen(typingSub: String, after: MediaRequest?, deliver: () -> Unit) {
+        typingPending.retener(deliver)
+        binding.root.removeCallbacks(typingTimeout)
+        val request = MediaRequest(MediaCategoria.CONVERSACION, typingSub)
+        val selection = if (presentationSequenceActive || player == null) null else selectMedia(request)
+        if (selection == null) {
+            typingPending.flush()
+            if (after != null) playAvatarRequest(after) else onReplyFinished()
+            return
+        }
+        pendingAfterTyping = after
+        binding.root.postDelayed(typingTimeout, com.me2.android.media.TypingGate.timeoutMs)
+        playAvatarSelection(request, selection)
     }
 
     private fun appendAssistantReply(
@@ -1414,9 +1476,16 @@ class MainActivity : AppCompatActivity() {
             alarmPending = runCatching { alarmScheduler.hasAnswerable(currentSession.id) }.getOrDefault(false)
         )
         val afterTyping = pendingAfterTyping
+        if (offlineTypingActive) {
+            offlineTypingActive = false
+            binding.root.removeCallbacks(typingTimeout)
+            typingPending.flush()
+        }
         if (avatarMode == AvatarState.CONVERSACION && currentRequest?.subcategoria?.startsWith("ESCRIBIENDO") == true) {
             // El tipeo se reproduce una sola vez por respuesta: luego la reacción o el loop neutral.
             pendingAfterTyping = null
+            binding.root.removeCallbacks(typingTimeout)
+            typingPending.flush()
             if (afterTyping != null) playAvatarRequest(afterTyping) else onReplyFinished()
             return
         }
